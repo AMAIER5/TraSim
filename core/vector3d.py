@@ -203,20 +203,17 @@ class Vector3D:
 
         return self.norm_squared() < tolerance * tolerance
 
+    from core.tolerance import VECTOR_TOLERANCE
+
     def almost_equal(
         self,
         other: "Vector3D",
-        tolerance: float = DEFAULT_TOLERANCE,
+        tolerance: float = VECTOR_TOLERANCE,
     ) -> bool:
         """
-        Component-wise comparison.
+        Geometric comparison using Euclidean distance.
         """
-
-        return (
-            abs(self.x - other.x) < tolerance
-            and abs(self.y - other.y) < tolerance
-            and abs(self.z - other.z) < tolerance
-        )
+        return (self - other).norm() < tolerance
 
     def as_numpy(self) -> np.ndarray:
         """
