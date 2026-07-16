@@ -16,7 +16,7 @@ License:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import acos, isclose
+from math import acos, isclose, sqrt
 from typing import Iterator
 
 import numpy as np
@@ -113,9 +113,18 @@ class Vector3D:
 
     def norm(self) -> float:
         """
-        Euclidean vector length.
+        Return Euclidean vector length.
+
+        Formula
+        -------
+        norm(v) = sqrt(x*x + y*y + z*z)
         """
-        return float(np.sqrt(self.norm_squared()))
+
+        return sqrt(
+            self.x * self.x
+            + self.y * self.y
+            + self.z * self.z
+        )
 
     def normalized(self) -> "Vector3D":
         """

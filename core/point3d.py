@@ -14,6 +14,7 @@ License:
 """
 
 from __future__ import annotations
+from typing import overload
 
 from dataclasses import dataclass
 
@@ -70,7 +71,26 @@ class Point3D:
             self.z + vector.z,
         )
 
-    def __sub__(self, other):
+    @overload
+    def __sub__(
+        self,
+        other: "Point3D",
+    ) -> Vector3D:
+        ...
+
+
+    @overload
+    def __sub__(
+        self,
+        other: "Vector3D",
+    ) -> "Point3D":
+        ...
+
+
+    def __sub__(
+        self,
+        other: Point3D | Vector3D,
+    ) -> Vector3D | Point3D:
         """
         Supported operations
 
@@ -134,6 +154,23 @@ class Point3D:
     # ------------------------------------------------------------------
     # Utility
     # ------------------------------------------------------------------
+
+    from core.tolerance import LENGTH_TOLERANCE
+    from core.vector3d import Vector3D
+
+    def almost_equal(
+        self,
+        other: "Point3D",
+        tolerance: float = LENGTH_TOLERANCE,
+    ) -> bool:
+        """
+        Compare two points using Euclidean distance.
+        """
+
+        difference: Vector3D = self - other
+
+        return difference.norm() < tolerance    
+
 
     def as_numpy(self) -> np.ndarray:
         """

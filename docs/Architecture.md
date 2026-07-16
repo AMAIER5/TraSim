@@ -83,6 +83,23 @@ Only the input/output layer performs unit conversion.
 
 No internal class shall store angles in degrees.
 
+## Mathematical notation
+
+All mathematical descriptions shall use ASCII-compatible notation
+where possible.
+
+Examples:
+
+cross(a,b)   instead of   a × b
+dot(a,b)     instead of   a · b
+norm(v)      instead of   |v|
+
+The goal is maximum compatibility between:
+- source code
+- documentation
+- version control
+- automated tools
+
 ---
 
 # 4. Rotation Convention
