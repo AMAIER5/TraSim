@@ -330,6 +330,15 @@ Every public function shall provide
 - Unit tests
 - Usage example
 
+The project is developed in vertical slices.
+
+Each sprint shall produce a complete, tested and usable increment.
+
+Future ideas are collected separately and never implemented
+before the current sprint is complete.
+
+No sprint may introduce unrelated features.
+
 ---
 
 # 15. Long-Term Roadmap
