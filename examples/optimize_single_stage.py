@@ -1,32 +1,34 @@
 """
-Example:
-Optimize a single mechanism stage.
+examples/optimize_single_stage.py
 
-This represents the intended user workflow.
+First complete optimization example.
+
+This example demonstrates the complete workflow:
+
+Parameter template
+    ->
+Optimization
+    ->
+Best mechanism
 """
 
 from __future__ import annotations
 
+import math
 import random
 
-from mechanics.mechanism_factory import (
-    MechanismFactory,
+from analysis.target_curve import TargetCurve
+
+from optimization.curve_fitness import (
+    CurveFitness,
 )
 
-from mechanics.standard_mechanism_builder import (
-    StandardMechanismBuilder,
+from optimization.optimization_pipeline import (
+    OptimizationPipeline,
 )
 
-from optimization.evolution_engine import (
-    EvolutionEngine,
-)
-
-from optimization.mechanism_optimizer import (
-    MechanismOptimizer,
-)
-
-from optimization.optimizer_runner import (
-    OptimizerRunner,
+from optimization.optimization_problem import (
+    OptimizationProblem,
 )
 
 from optimization.parameter import (
@@ -37,24 +39,25 @@ from optimization.parameter_set import (
     ParameterSet,
 )
 
-from optimization.population_factory import (
-    PopulationFactory,
+from mechanics.standard_mechanism_builder import (
+    StandardMechanismBuilder,
 )
 
-from optimization.reproduction import (
-    Reproduction,
+from optimization.mechanism_simulator import (
+    MechanismSimulator,
 )
 
-from optimization.parameter_mutation import (
-    ParameterMutation,
+from simulation.stage_simulator import (
+    StageSimulator,
 )
 
-from optimization.selection import (
-    Selection,
+# Import Stage enum for correct typing when constructing StageSimulator
+from mechanics.stage import (
+    Stage,
 )
 
 
-def create_parameter_template():
+def create_parameter_template() -> ParameterSet:
 
     return ParameterSet(
         (
@@ -64,123 +67,91 @@ def create_parameter_template():
                 maximum=80.0,
                 value=40.0,
             ),
-
             Parameter(
                 name="output_lever_length",
                 minimum=20.0,
                 maximum=80.0,
-                value=30.0,
+                value=40.0,
             ),
-
             Parameter(
                 name="rod_length",
-                minimum=80.0,
-                maximum=160.0,
+                minimum=60.0,
+                maximum=180.0,
                 value=120.0,
             ),
         )
     )
 
 
+def create_target_curve():
+
+    #
+    # Identity transfer
+    #
+    # output = input
+    #
+
+    return TargetCurve(
+        function=lambda angle: angle,
+    )
+
+
 def main():
 
-    #
-    # 1. Create initial population
-    #
+    # use the Stage enum instead of a raw int to satisfy type requirements
+    stage_simulator = StageSimulator()
 
-    population = (
-        PopulationFactory(
-            random_generator=random.Random(1)
-        )
-        .create(
-            create_parameter_template(),
-            size=20,
+    mechanism_simulator = (
+        MechanismSimulator(
+            stage_simulator=stage_simulator.run,
         )
     )
 
-
-    #
-    # 2. Connect mechanism generation
-    #
-
-    builder = (
-        StandardMechanismBuilder()
+    fitness = CurveFitness(
+        target_curve=create_target_curve(),
     )
 
-    factory = MechanismFactory(
-        builder=builder.build,
-    )
+    problem = OptimizationProblem(
 
-
-    #
-    # 3. Define evaluation
-    #
-
-    mechanism_optimizer = (
-        MechanismOptimizer(
-            mechanism_factory=factory.create,
-
-            # Placeholder simulation
-            simulator=lambda mechanism:
-                len(
-                    mechanism.stages
-                ),
-
-            # Placeholder fitness
-            fitness=lambda result:
-                float(result),
-        )
-    )
-
-
-    #
-    # 4. Create evolution engine
-    #
-
-    engine = EvolutionEngine(
-        population=population,
-
-        evaluator=(
-            mechanism_optimizer.evaluate
+        parameter_template=(
+            create_parameter_template()
         ),
 
-        selection=Selection(),
+        builder=StandardMechanismBuilder(),
 
-        reproduction=Reproduction(
-            mutation=ParameterMutation(
-                random_generator=random.Random(2)
-            )
-        ),
+        simulator=lambda mechanism:
+            mechanism_simulator.simulate(
+                mechanism
+            )[0],
+
+        fitness=fitness,
+
+        random_generator=random.Random(1),
     )
 
-
-    #
-    # 5. Run optimization
-    #
-
-    runner = OptimizerRunner(
-        engine=engine,
+    pipeline = OptimizationPipeline(
+        problem=problem,
     )
 
-    result = runner.run(
-        generations=10,
-        children_count=10,
+    population = pipeline.run(
+        population_size=30,
+        generations=50,
+        children_per_generation=20,
     )
 
+    best = population[0]
 
-    #
-    # 6. Display result
-    #
+    print()
+    print("Optimization finished")
+    print("---------------------")
+    print()
 
-    best = result[0]
+    for parameter in best.parameters:
 
-    print(
-        "Best candidate:"
-    )
-
-    print(
-        best
-    )
+        print(
+            f"{parameter.name:25}"
+            f"{parameter.value:8.3f}"
+        )
 
 
 if __name__ == "__main__":

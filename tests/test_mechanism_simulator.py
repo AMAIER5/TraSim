@@ -1,103 +1,101 @@
 """
 tests/test_mechanism_simulator.py
 
-Tests for multi-stage simulation.
+Tests for MechanismSimulator.
 """
 
 from __future__ import annotations
 
-import math
-
-from core.point3d import Point3D
-from core.vector3d import Vector3D
-
-from mechanics.lever import Lever
 from mechanics.mechanism import Mechanism
 from mechanics.stage import Stage
 
-from simulation.mechanism_simulator import (
+from optimization.mechanism_simulator import (
     MechanismSimulator,
 )
 
 
 def create_stage() -> Stage:
 
-    input_lever = Lever(
-        pivot=Point3D(0, 0, 0),
-        axis=Vector3D(0, 0, 1),
-        length=50,
-    )
-
-    output_lever = Lever(
-        pivot=Point3D(100, 0, 0),
-        axis=Vector3D(0, 0, 1),
-        length=50,
-    )
-
-    return Stage.from_reference_position(
-        input_lever=input_lever,
-        output_lever=output_lever,
+    return Stage(
+        input_lever=None,
+        output_lever=None,
+        rod_length=100.0,
         input_angle=0.0,
         output_angle=0.0,
+        input_endpoint=None,
+        output_endpoint=None,
     )
 
 
-def test_two_stage_mechanism_creation():
+def test_simulates_single_stage():
 
     mechanism = Mechanism(
         stages=(
+            create_stage(),
+        )
+    )
+
+    simulator = MechanismSimulator(
+        stage_simulator=lambda stage: "curve"
+    )
+
+    result = simulator.simulate(
+        mechanism
+    )
+
+    assert result == (
+        "curve",
+    )
+
+
+def test_simulates_all_stages():
+
+    mechanism = Mechanism(
+        stages=(
+            create_stage(),
             create_stage(),
             create_stage(),
         )
     )
 
     simulator = MechanismSimulator(
+        stage_simulator=lambda stage: id(stage)
+    )
+
+    result = simulator.simulate(
         mechanism
     )
 
-    assert simulator.mechanism == mechanism
+    assert len(result) == 3
+
+    assert len(set(result)) == 3
 
 
-def test_two_stage_simulation_runs():
+def test_stage_order_is_preserved():
+
+    stage1 = create_stage()
+    stage2 = create_stage()
 
     mechanism = Mechanism(
         stages=(
-            create_stage(),
-            create_stage(),
+            stage1,
+            stage2,
         )
     )
 
     simulator = MechanismSimulator(
-        mechanism
-    )
-
-    result = simulator.solve(
-        input_angle=0.0,
-    )
-
-    assert result.success
-
-    assert len(result.output_angles) == 2
-
-
-def test_stage_output_is_next_stage_input():
-
-    mechanism = Mechanism(
-        stages=(
-            create_stage(),
-            create_stage(),
+        stage_simulator=lambda stage: (
+            "A"
+            if stage is stage1
+            else "B"
         )
     )
 
-    simulator = MechanismSimulator(
+    result = simulator.simulate(
         mechanism
     )
 
-    result = simulator.solve(
-        input_angle=0.0,
-    )
-
-    assert math.isclose(
-        result.stage_inputs[1],
-        result.output_angles[0],
+    assert result == (
+        "A",
+        "B",
     )
