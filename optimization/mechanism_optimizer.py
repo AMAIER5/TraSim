@@ -7,8 +7,16 @@ and evolutionary optimization.
 
 from __future__ import annotations
 
-from typing import Callable, Any
+from mechanics.standard_mechanism_builder import (
+    StandardMechanismBuilder,
+)
 
+from optimization.fitness_function import (
+    FitnessFunction,
+)
+from simulation.mechanism_simulator import (
+    MechanismSimulator,
+)
 from optimization.parameter_set import (
     ParameterSet,
 )
@@ -17,63 +25,33 @@ from optimization.parameter_set import (
 class MechanismOptimizer:
     """
     Evaluates mechanism candidates.
-
-    Pipeline:
-
-    ParameterSet
-        ->
-    Mechanism
-        ->
-    Simulation
-        ->
-    Fitness
     """
 
     def __init__(
         self,
         *,
-        mechanism_factory: Callable[
-            [ParameterSet],
-            Any,
-        ],
-        simulator: Callable[
-            [Any],
-            Any,
-        ],
-        fitness: Callable[
-            [Any],
-            float,
-        ],
-    ):
+        builder: StandardMechanismBuilder,
+        simulator: MechanismSimulator,
+        fitness: FitnessFunction,
+    ) -> None:
 
-        self.mechanism_factory = (
-            mechanism_factory
-        )
-
-        self.simulator = simulator
-
-        self.fitness = fitness
+        self._builder = builder
+        self._simulator = simulator
+        self._fitness = fitness
 
     def evaluate(
         self,
         parameters: ParameterSet,
     ) -> float:
-        """
-        Evaluate one mechanism candidate.
-        """
 
-        mechanism = (
-            self.mechanism_factory(
-                parameters
-            )
+        mechanism = self._builder.build(
+            parameters
         )
 
-        result = (
-            self.simulator(
-                mechanism
-            )
+        simulation = self._simulator.simulate(
+            mechanism
         )
 
-        return self.fitness(
-            result
+        return self._fitness.evaluate(
+            simulation
         )

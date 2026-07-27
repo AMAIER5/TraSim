@@ -1,96 +1,69 @@
 """
 simulation/mechanism_simulator.py
 
-Simulator for complete multi-stage mechanisms.
+Simulation of complete mechanisms.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from mechanics.mechanism import Mechanism
 
-from solver.solver_state import SolverState
-from solver.stage_solver import StageSolver
-
-
-@dataclass(frozen=True, slots=True)
-class MechanismSimulationResult:
-    """
-    Result of a complete mechanism calculation.
-    """
-
-    stage_inputs: tuple[float, ...]
-
-    output_angles: tuple[float, ...]
-
-    success: bool
+from simulation.motion_range import MotionRange
+from simulation.simulation_result import SimulationResult
+from simulation.stage_simulator import StageSimulator
 
 
 class MechanismSimulator:
     """
-    Simulates a chain of connected stages.
+    Simulates every stage of a mechanism.
+
+    The simulator is configured with a motion range and can
+    repeatedly evaluate different mechanisms using identical
+    simulation settings.
     """
 
     def __init__(
         self,
-        mechanism: Mechanism,
-    ):
-
-        self.mechanism = mechanism
-
-        self.stage_solvers = tuple(
-            StageSolver(stage)
-            for stage in mechanism.stages
+        *,
+        motion: MotionRange,
+        stage_simulator: StageSimulator | None = None,
+    ) -> None:
+        self._motion = motion
+        self._stage_simulator = (
+            stage_simulator
+            if stage_simulator is not None
+            else StageSimulator()
         )
 
-    def solve(
+    @property
+    def motion(self) -> MotionRange:
+        """
+        Motion range used for all simulations.
+        """
+        return self._motion
+
+    def simulate(
         self,
-        *,
-        input_angle: float,
-    ) -> MechanismSimulationResult:
+        mechanism: Mechanism,
+    ) -> tuple[SimulationResult, ...]:
         """
-        Solve all stages sequentially.
+        Simulate every stage of a mechanism.
+
+        Parameters
+        ----------
+        mechanism:
+            Mechanism to simulate.
+
+        Returns
+        -------
+        tuple[SimulationResult, ...]
+            One SimulationResult per stage.
         """
 
-        stage_inputs = []
-
-        output_angles = []
-
-        current_angle = input_angle
-
-        for solver in self.stage_solvers:
-
-            stage_inputs.append(
-                current_angle
+        return tuple(
+            self._stage_simulator.run(
+                stage=stage,
+                motion=self._motion,
             )
-
-            state = SolverState(
-                last_input_angle=current_angle,
-                last_output_angle=current_angle,
-            )
-
-            result, _ = solver.solve(
-                input_angle=current_angle,
-                state=state,
-            )
-
-            if not result.success:
-
-                return MechanismSimulationResult(
-                    stage_inputs=tuple(stage_inputs),
-                    output_angles=tuple(output_angles),
-                    success=False,
-                )
-
-            output_angles.append(
-                result.angle
-            )
-
-            current_angle = result.angle
-
-        return MechanismSimulationResult(
-            stage_inputs=tuple(stage_inputs),
-            output_angles=tuple(output_angles),
-            success=True,
+            for stage in mechanism.stages
         )

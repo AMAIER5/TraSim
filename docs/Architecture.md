@@ -354,3 +354,274 @@ No sprint may introduce unrelated features.
 | 1.0 | Stable simulation engine |
 | 2.0 | Evolutionary optimization |
 | 3.0 | Interactive GUI |
+
+# 16. Software Architecture
+
+The project is organized into independent layers.
+
+```Application
+    │
+    ▼
+Optimization
+    │
+    ▼
+Simulation
+    │
+    ▼
+Solver
+    │
+    ▼
+Mechanics
+    │
+    ▼
+Geometry
+```
+Dependencies always point downward.
+Higher layers shall never be referenced by lower layers.
+
+# 17. Project Structure
+
+```core/
+    Point3D
+    Vector3D
+    Quaternion
+
+mechanics/
+    Lever
+    Rod
+    Stage
+    Mechanism
+    MechanismFactory
+    StandardMechanismBuilder
+
+solver/
+    AngleSolver
+    StageSolver
+    SolverState
+    SolverResult
+
+simulation/
+    MotionRange
+    SimulationResult
+    StageSimulator
+    MechanismSimulator
+    MechanismMotionSimulator
+    CSVExporter
+
+analysis/
+    TransferCurve
+    TargetCurve
+    ErrorMetric
+    CurveFitness
+
+optimization/
+    Parameter
+    ParameterSet
+    Population
+    PopulationFactory
+    ParameterMutation
+    Selection
+    Reproduction
+    EvolutionEngine
+    OptimizerRunner
+    FitnessFunction
+    MechanismOptimizer
+    OptimizationProblem
+
+examples/
+tests/
+```
+# 18. Simulation Pipeline
+
+The simulation pipeline is strictly layered.
+
+```Mechanism
+        │
+        ▼
+StageSimulator
+        │
+        ▼
+StageSolver
+        │
+        ▼
+AngleSolver
+        │
+        ▼
+SolverResult
+```
+Each layer has exactly one responsibility.
+
+# 19. Optimization Pipeline
+
+The optimization process is independent from the solver implementation.
+
+```ParameterSet
+        │
+        ▼
+MechanismBuilder
+        │
+        ▼
+Mechanism
+        │
+        ▼
+MechanismSimulator
+        │
+        ▼
+SimulationResult
+        │
+        ▼
+TransferCurve
+        │
+        ▼
+CurveFitness
+        │
+        ▼
+EvolutionEngine
+```
+The optimization layer never accesses solver internals.
+
+# 20. Design Principles
+
+The project follows the Single Responsibility Principle.
+
+Each class owns exactly one responsibility.
+
+Examples
+```StageSolver
+    computes one solver step
+
+StageSimulator
+    simulates one stage
+
+MechanismSimulator
+    simulates all stages
+
+CurveFitness
+    evaluates one transfer curve
+
+EvolutionEngine
+    performs one evolutionary generation
+```
+# 21. Immutability
+
+Domain objects are immutable whenever possible.
+
+Required
+
+- dataclass(frozen=True)
+- slots=True
+- tuple instead of list
+- explicit validation in post_init()
+
+Mutable state is restricted to algorithms.
+
+Examples
+```SolverState
+PopulationFactory
+EvolutionEngine
+```
+
+# 22. Dependency Rules
+
+The following dependencies are forbidden.
+
+```Geometry
+    -> Simulation
+
+Mechanics
+    -> Optimization
+
+Solver
+    -> Analysis
+
+Analysis
+    -> Solver
+
+Optimization
+    -> Solver internals
+```
+
+Allowed dependency graph
+
+```Optimization
+        │
+        ▼
+Analysis
+        │
+        ▼
+Simulation
+        │
+        ▼
+Solver
+        │
+        ▼
+Mechanics
+        │
+        ▼
+Core
+```
+
+# 23. Public API
+
+Public interfaces shall be strongly typed.
+
+Forbidden
+```Callable
+Any
+dict
+```
+
+for public APIs where dedicated domain types exist.
+
+Preferred
+
+```MechanismSimulator
+CurveFitness
+Population
+ParameterSet
+SimulationResult
+TransferCurve
+```
+
+# 24. Testing Strategy
+
+Every production module shall have a corresponding test module.
+
+Naming convention
+
+```module.py
+
+↓
+
+test_module.py
+```
+
+Each public class requires tests for
+
+- construction
+- invalid parameters
+- nominal behaviour
+- edge cases
+- regression tests
+
+Whenever an interface changes, all dependent tests shall be updated in the same change set.
+
+# 25. Development Workflow
+
+Development proceeds in vertical slices.
+
+Each sprint shall
+
+- introduce one coherent feature,
+-include complete unit tests,
+- keep the project fully executable,
+- avoid partially migrated APIs.
+
+API refactorings shall update
+
+- production code,
+- tests,
+- examples,
+- documentation
+
+within the same sprint.

@@ -19,7 +19,7 @@ import random
 
 from analysis.target_curve import TargetCurve
 
-from optimization.curve_fitness import (
+from analysis.curve_fitness import (
     CurveFitness,
 )
 
@@ -43,7 +43,7 @@ from mechanics.standard_mechanism_builder import (
     StandardMechanismBuilder,
 )
 
-from optimization.mechanism_simulator import (
+from simulation.mechanism_simulator import (
     MechanismSimulator,
 )
 

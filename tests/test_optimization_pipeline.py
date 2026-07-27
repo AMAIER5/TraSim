@@ -55,6 +55,27 @@ def create_parameters():
 
 def test_complete_optimization_pipeline():
 
+    class DummySimulator:
+
+        def simulate(
+            self,
+            mechanism,
+        ):
+            return {
+                "stages": len(mechanism.stages),
+            }
+
+
+    class DummyFitness:
+
+        def evaluate(
+            self,
+            result,
+        ) -> float:
+            return float(
+                result["stages"]
+            )
+        
     builder = (
         StandardMechanismBuilder()
     )
@@ -62,22 +83,10 @@ def test_complete_optimization_pipeline():
     factory = MechanismFactory(
         builder=builder.build,
     )
-
     optimizer = MechanismOptimizer(
-        mechanism_factory=factory.create,
-
-        simulator=lambda mechanism:
-            {
-                "stages":
-                    len(
-                        mechanism.stages
-                    )
-            },
-
-        fitness=lambda result:
-            float(
-                result["stages"]
-            ),
+        builder=builder,
+        simulator=DummySimulator(),
+        fitness=DummyFitness(),
     )
 
     score = optimizer.evaluate(

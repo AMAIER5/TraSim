@@ -27,14 +27,42 @@ from optimization.population import (
 )
 
 
+class DummyMechanism:
+
+    def __init__(self):
+
+        self.stages = (object(),)
+
+
 class DummyBuilder:
 
     def build(
         self,
         parameters,
     ):
-        return parameters
 
+        return DummyMechanism()
+
+class DummySimulator:
+
+    def simulate(
+        self,
+        mechanism,
+    ):
+        return {
+            "stages": len(mechanism.stages),
+        }
+
+
+class DummyFitness:
+
+    def evaluate(
+        self,
+        result,
+    ) -> float:
+        return float(
+            result["stages"]
+        )
 
 def create_template():
 
@@ -56,8 +84,8 @@ def test_pipeline_returns_population():
         problem=OptimizationProblem(
             parameter_template=create_template(),
             builder=DummyBuilder(),
-            simulator=lambda mechanism: mechanism,
-            fitness=lambda mechanism: 0.0,
+            simulator=DummySimulator(),
+            fitness=DummyFitness(),
             random_generator=random.Random(1),
         )
     )
@@ -80,8 +108,8 @@ def test_pipeline_population_size():
         problem=OptimizationProblem(
             parameter_template=create_template(),
             builder=DummyBuilder(),
-            simulator=lambda mechanism: mechanism,
-            fitness=lambda mechanism: 0.0,
+            simulator=DummySimulator(),
+            fitness=DummyFitness(),
             random_generator=random.Random(1),
         )
     )

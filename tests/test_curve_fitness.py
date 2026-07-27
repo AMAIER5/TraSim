@@ -4,19 +4,18 @@ tests/test_curve_fitness.py
 
 from __future__ import annotations
 
-from analysis.transfer_curve import (
-    TransferCurve,
+from analysis.curve_fitness import (
+    CurveFitness,
 )
 from analysis.target_curve import (
     TargetCurve,
 )
-
-from optimization.curve_fitness import (
-    CurveFitness,
+from analysis.transfer_curve import (
+    TransferCurve,
 )
 
 
-def create_transfer_curve():
+def create_transfer_curve() -> TransferCurve:
 
     return TransferCurve(
         input_angles=(
@@ -37,11 +36,11 @@ def test_identical_curve_has_zero_error():
     fitness = CurveFitness(
         target_curve=TargetCurve(
             function=lambda angle: angle,
-        )
+        ),
     )
 
     result = fitness(
-        create_transfer_curve()
+        create_transfer_curve(),
     )
 
     assert result == 0.0
@@ -52,7 +51,7 @@ def test_shifted_curve_has_positive_error():
     fitness = CurveFitness(
         target_curve=TargetCurve(
             function=lambda angle: angle,
-        )
+        ),
     )
 
     simulated = TransferCurve(
@@ -73,19 +72,19 @@ def test_shifted_curve_has_positive_error():
 
 def test_target_is_sampled_at_input_angles():
 
-    sampled = {}
+    sampled: dict[str, tuple[float, ...]] = {}
 
     class RecordingTargetCurve(TargetCurve):
 
         def sample(
             self,
-            input_angles,
-        ):
+            input_angles: tuple[float, ...],
+        ) -> tuple[float, ...]:
 
             sampled["angles"] = input_angles
 
             return super().sample(
-                input_angles
+                input_angles,
             )
 
     transfer = create_transfer_curve()
@@ -93,22 +92,20 @@ def test_target_is_sampled_at_input_angles():
     fitness = CurveFitness(
         target_curve=RecordingTargetCurve(
             function=lambda angle: angle,
-        )
+        ),
     )
 
     fitness(transfer)
 
-    assert (
-        sampled["angles"]
-        == transfer.input_angles
-    )
-    
+    assert sampled["angles"] == transfer.input_angles
+
+
 def test_metric_is_cached():
 
     fitness = CurveFitness(
         target_curve=TargetCurve(
             function=lambda angle: angle,
-        )
+        ),
     )
 
     curve = create_transfer_curve()

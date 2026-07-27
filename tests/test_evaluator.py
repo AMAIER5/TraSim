@@ -1,27 +1,70 @@
 """
 tests/test_evaluator.py
 
-Tests for optimization evaluator.
+Tests for MechanismOptimizer.
 """
 
 from __future__ import annotations
 
-import math
+from mechanics.mechanism import Mechanism
 
-from optimization.evaluator import (
-    Evaluator,
+from optimization.fitness_function import (
+    FitnessFunction,
 )
-
+from optimization.mechanism_optimizer import (
+    MechanismOptimizer,
+)
 from optimization.parameter import (
     Parameter,
 )
-
 from optimization.parameter_set import (
     ParameterSet,
 )
 
 
-def create_parameter_set():
+class DummyBuilder:
+
+    def build(
+        self,
+        parameters: ParameterSet,
+    ) -> Mechanism:
+
+        return Mechanism(stages=())
+
+
+class DummySimulator:
+
+    def __init__(self):
+
+        self.called = False
+
+    def simulate(
+        self,
+        mechanism: Mechanism,
+    ):
+
+        self.called = True
+
+        return ("simulation",)
+
+
+class DummyFitness(FitnessFunction):
+
+    def __init__(self):
+
+        self.called = False
+
+    def evaluate(
+        self,
+        simulation,
+    ) -> float:
+
+        self.called = True
+
+        return 42.0
+
+
+def create_parameter_set() -> ParameterSet:
 
     return ParameterSet(
         (
@@ -37,51 +80,33 @@ def create_parameter_set():
 
 def test_evaluator_returns_fitness_value():
 
-    evaluator = Evaluator(
-        evaluate_function=lambda parameters: 1.5,
+    optimizer = MechanismOptimizer(
+        builder=DummyBuilder(),
+        simulator=DummySimulator(),
+        fitness=DummyFitness(),
     )
 
-    result = evaluator.evaluate(
-        create_parameter_set()
-    )
-
-    assert math.isclose(
-        result,
-        1.5,
-    )
-
-
-def test_evaluator_calls_function():
-
-    called = False
-
-    def function(parameters):
-
-        nonlocal called
-
-        called = True
-
-        return 0.0
-
-    evaluator = Evaluator(
-        evaluate_function=function,
-    )
-
-    evaluator.evaluate(
-        create_parameter_set()
-    )
-
-    assert called
-
-
-def test_evaluator_is_independent_of_parameter_content():
-
-    evaluator = Evaluator(
-        evaluate_function=lambda parameters: 42.0,
-    )
-
-    result = evaluator.evaluate(
+    result = optimizer.evaluate(
         create_parameter_set()
     )
 
     assert result == 42.0
+
+
+def test_evaluator_calls_simulator_and_fitness():
+
+    simulator = DummySimulator()
+    fitness = DummyFitness()
+
+    optimizer = MechanismOptimizer(
+        builder=DummyBuilder(),
+        simulator=simulator,
+        fitness=fitness,
+    )
+
+    optimizer.evaluate(
+        create_parameter_set()
+    )
+
+    assert simulator.called
+    assert fitness.called

@@ -11,12 +11,10 @@ from dataclasses import dataclass
 
 from mechanics.mechanism import Mechanism
 
-from simulation.motion_range import MotionRange
 from simulation.mechanism_simulator import (
     MechanismSimulator,
 )
-
-from solver.mechanism_state import MechanismState
+from simulation.motion_range import MotionRange
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,13 +46,9 @@ class MechanismMotionSimulator:
     def __init__(
         self,
         mechanism: Mechanism,
-    ):
+    ) -> None:
 
-        self.mechanism = mechanism
-
-        self.simulator = MechanismSimulator(
-            mechanism
-        )
+        self._mechanism = mechanism
 
     def run(
         self,
@@ -64,47 +58,53 @@ class MechanismMotionSimulator:
         Run complete motion.
         """
 
-        input_angles = []
-
-        stage_outputs = []
-
-        state = MechanismState(
-            stage_states=()
+        simulator = MechanismSimulator(
+            motion=motion,
         )
 
-        for angle in motion:
+        stage_results = simulator.simulate(
+            self._mechanism,
+        )
 
-            result = self.simulator.solve(
-                input_angle=angle,
+        if not stage_results:
+
+            return MechanismMotionResult(
+                input_angles=(),
+                stage_outputs=(),
+                success=True,
             )
 
-            if not result.success:
+        input_angles = (
+            stage_results[0].input_angles
+        )
 
-                return MechanismMotionResult(
-                    input_angles=tuple(
-                        input_angles
-                    ),
-                    stage_outputs=tuple(
-                        stage_outputs
-                    ),
-                    success=False,
-                    blocked_at=angle,
-                )
+        success = all(
+            result.success
+            for result in stage_results
+        )
 
-            input_angles.append(
-                angle
+        blocked_at = next(
+            (
+                result.blocked_at
+                for result in stage_results
+                if not result.success
+            ),
+            None,
+        )
+
+        stage_outputs = tuple(
+            tuple(
+                result.output_angles[index]
+                for result in stage_results
             )
-
-            stage_outputs.append(
-                result.output_angles
+            for index in range(
+                len(input_angles)
             )
+        )
 
         return MechanismMotionResult(
-            input_angles=tuple(
-                input_angles
-            ),
-            stage_outputs=tuple(
-                stage_outputs
-            ),
-            success=True,
+            input_angles=input_angles,
+            stage_outputs=stage_outputs,
+            success=success,
+            blocked_at=blocked_at,
         )
