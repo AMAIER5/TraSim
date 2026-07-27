@@ -7,7 +7,6 @@ Objective functions for kinematic solvers.
 from __future__ import annotations
 
 from mechanics.stage import Stage
-
 from solver.constraints import rod_length_error
 
 

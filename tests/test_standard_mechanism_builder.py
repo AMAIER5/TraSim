@@ -9,11 +9,9 @@ from __future__ import annotations
 from mechanics.standard_mechanism_builder import (
     StandardMechanismBuilder,
 )
-
 from optimization.parameter import (
     Parameter,
 )
-
 from optimization.parameter_set import (
     ParameterSet,
 )

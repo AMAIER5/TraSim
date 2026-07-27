@@ -9,19 +9,15 @@ import random
 from optimization.optimization_pipeline import (
     OptimizationPipeline,
 )
-
 from optimization.optimization_problem import (
     OptimizationProblem,
 )
-
 from optimization.parameter import (
     Parameter,
 )
-
 from optimization.parameter_set import (
     ParameterSet,
 )
-
 from optimization.population import (
     Population,
 )

@@ -10,10 +10,8 @@ import math
 
 from core.point3d import Point3D
 from core.vector3d import Vector3D
-
 from mechanics.lever import Lever
 from mechanics.stage import Stage
-
 from solver.objective import stage_error
 
 

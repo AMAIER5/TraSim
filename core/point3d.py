@@ -14,9 +14,9 @@ License:
 """
 
 from __future__ import annotations
-from typing import overload
 
 from dataclasses import dataclass
+from typing import overload
 
 import numpy as np
 
@@ -58,7 +58,7 @@ class Point3D:
     # Point / Vector operations
     # ------------------------------------------------------------------
 
-    def __add__(self, vector: Vector3D) -> "Point3D":
+    def __add__(self, vector: Vector3D) -> Point3D:
         """
         Translate point by a vector.
         """
@@ -74,7 +74,7 @@ class Point3D:
     @overload
     def __sub__(
         self,
-        other: "Point3D",
+        other: Point3D,
     ) -> Vector3D:
         ...
 
@@ -82,8 +82,8 @@ class Point3D:
     @overload
     def __sub__(
         self,
-        other: "Vector3D",
-    ) -> "Point3D":
+        other: Vector3D,
+    ) -> Point3D:
         ...
 
 
@@ -119,14 +119,14 @@ class Point3D:
     # Geometry
     # ------------------------------------------------------------------
 
-    def distance_to(self, other: "Point3D") -> float:
+    def distance_to(self, other: Point3D) -> float:
         """
         Euclidean distance to another point.
         """
 
         return (self - other).norm()
 
-    def midpoint(self, other: "Point3D") -> "Point3D":
+    def midpoint(self, other: Point3D) -> Point3D:
         """
         Midpoint between two points.
         """
@@ -137,14 +137,14 @@ class Point3D:
             (self.z + other.z) * 0.5,
         )
 
-    def translate(self, vector: Vector3D) -> "Point3D":
+    def translate(self, vector: Vector3D) -> Point3D:
         """
         Translate point by vector.
         """
 
         return self + vector
 
-    def vector_to(self, other: "Point3D") -> Vector3D:
+    def vector_to(self, other: Point3D) -> Vector3D:
         """
         Vector pointing from this point to another point.
         """
@@ -160,7 +160,7 @@ class Point3D:
 
     def almost_equal(
         self,
-        other: "Point3D",
+        other: Point3D,
         tolerance: float = LENGTH_TOLERANCE,
     ) -> bool:
         """

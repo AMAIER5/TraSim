@@ -8,24 +8,18 @@ from __future__ import annotations
 
 import math
 
-from analysis.error_metric import (
-    ErrorMetric,
-)
-
 from analysis.fitness import (
     Fitness,
 )
-
 from analysis.target_curve import (
     TargetCurve,
 )
-
 from analysis.transfer_curve import (
     TransferCurve,
 )
 
 
-def create_target():
+def create_target() -> TargetCurve:
 
     return TargetCurve(
         function=lambda x: x,
@@ -35,7 +29,7 @@ def create_target():
 def test_perfect_curve_has_zero_fitness():
 
     fitness = Fitness(
-        target=create_target()
+        target=create_target(),
     )
 
     curve = TransferCurve(
@@ -51,9 +45,7 @@ def test_perfect_curve_has_zero_fitness():
         ),
     )
 
-    result = fitness.evaluate(
-        curve
-    )
+    result = fitness.evaluate(curve)
 
     assert math.isclose(
         result,
@@ -64,7 +56,7 @@ def test_perfect_curve_has_zero_fitness():
 def test_wrong_curve_has_higher_fitness():
 
     fitness = Fitness(
-        target=create_target()
+        target=create_target(),
     )
 
     curve = TransferCurve(
@@ -80,9 +72,7 @@ def test_wrong_curve_has_higher_fitness():
         ),
     )
 
-    result = fitness.evaluate(
-        curve
-    )
+    result = fitness.evaluate(curve)
 
     assert result > 0.0
 
@@ -93,9 +83,8 @@ def test_custom_error_metric_can_be_used():
 
         def calculate(
             self,
-            curve,
-        ):
-
+            curve: TransferCurve,
+        ) -> float:
             return 42.0
 
     fitness = Fitness(
@@ -114,6 +103,4 @@ def test_custom_error_metric_can_be_used():
         ),
     )
 
-    assert fitness.evaluate(
-        curve
-    ) == 42.0
+    assert fitness.evaluate(curve) == 42.0

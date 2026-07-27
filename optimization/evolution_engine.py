@@ -6,20 +6,17 @@ High level evolutionary optimization loop.
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from optimization.parameter_set import (
     ParameterSet,
 )
-
 from optimization.population import (
     Population,
 )
-
 from optimization.reproduction import (
     Reproduction,
 )
-
 from optimization.selection import (
     Selection,
 )

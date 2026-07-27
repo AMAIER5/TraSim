@@ -11,7 +11,6 @@ import math
 from core.rotation import Rotation
 from core.vector3d import Vector3D
 
-
 # ---------------------------------------------------------------------------
 # Simple axis rotation
 # ---------------------------------------------------------------------------

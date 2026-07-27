@@ -9,12 +9,9 @@ from __future__ import annotations
 
 from core.point3d import Point3D
 from core.vector3d import Vector3D
-
 from mechanics.lever import Lever
-from mechanics.rod import Rod
-from mechanics.stage import Stage
 from mechanics.mechanism import Mechanism
-
+from mechanics.stage import Stage
 from optimization.parameter_set import ParameterSet
 
 
@@ -81,12 +78,6 @@ class StandardMechanismBuilder:
 
         output_endpoint = output_lever.end_position(
             0.0
-        )
-
-        rod = Rod(
-            point_a=input_endpoint,
-            point_b=output_endpoint,
-            length=rod_length,
         )
 
         stage = Stage(

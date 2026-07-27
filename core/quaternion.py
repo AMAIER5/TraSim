@@ -32,7 +32,6 @@ import numpy as np
 
 from core.vector3d import Vector3D
 
-
 DEFAULT_TOLERANCE = 1.0e-12
 
 
@@ -60,7 +59,7 @@ class Quaternion:
     # ------------------------------------------------------------------
 
     @classmethod
-    def identity(cls) -> "Quaternion":
+    def identity(cls) -> Quaternion:
         """
         Return identity rotation.
 
@@ -74,7 +73,7 @@ class Quaternion:
         cls,
         axis: Vector3D,
         angle_rad: float,
-    ) -> "Quaternion":
+    ) -> Quaternion:
         """
         Create quaternion from axis-angle representation.
 
@@ -124,7 +123,7 @@ class Quaternion:
 
         return sqrt(self.norm_squared())
 
-    def normalized(self) -> "Quaternion":
+    def normalized(self) -> Quaternion:
         """
         Return normalized quaternion.
         """
@@ -147,7 +146,7 @@ class Quaternion:
     # Quaternion operations
     # ------------------------------------------------------------------
 
-    def conjugate(self) -> "Quaternion":
+    def conjugate(self) -> Quaternion:
         """
         Quaternion conjugate.
 
@@ -161,7 +160,7 @@ class Quaternion:
             -self.z,
         )
 
-    def inverse(self) -> "Quaternion":
+    def inverse(self) -> Quaternion:
         """
         Quaternion inverse.
 
@@ -188,8 +187,8 @@ class Quaternion:
 
     def __mul__(
         self,
-        other: "Quaternion",
-    ) -> "Quaternion":
+        other: Quaternion,
+    ) -> Quaternion:
         """
         Hamilton product.
 

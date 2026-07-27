@@ -9,15 +9,12 @@ from __future__ import annotations
 from optimization.parameter import (
     Parameter,
 )
-
 from optimization.parameter_set import (
     ParameterSet,
 )
-
 from optimization.population import (
     Population,
 )
-
 from optimization.selection import (
     Selection,
 )

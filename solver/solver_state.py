@@ -53,7 +53,7 @@ class SolverState:
         *,
         input_angle: float,
         output_angle: float,
-    ) -> "SolverState":
+    ) -> SolverState:
         """
         Return the next immutable solver state.
 
@@ -72,7 +72,7 @@ class SolverState:
             direction=self.direction,
         )
 
-    def reversed(self) -> "SolverState":
+    def reversed(self) -> SolverState:
         """
         Return a new solver state with reversed simulation direction.
         """

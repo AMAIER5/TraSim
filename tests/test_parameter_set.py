@@ -11,7 +11,6 @@ import pytest
 from optimization.parameter import (
     Parameter,
 )
-
 from optimization.parameter_set import (
     ParameterSet,
 )

@@ -14,7 +14,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from core.point3d import Point3D
-
 from mechanics.lever import Lever
 
 
@@ -54,7 +53,7 @@ class Stage:
         output_lever: Lever,
         input_angle: float,
         output_angle: float,
-    ) -> "Stage":
+    ) -> Stage:
         """
         Create stage from a valid reference position.
 
@@ -116,26 +115,3 @@ class Stage:
             angle
         )
 
-    def rod_error(
-        self,
-        input_angle: float,
-        output_angle: float,
-    ) -> float:
-        """
-        Calculate deviation from ideal rod length.
-
-        Used later by the solver.
-
-        Formula
-        -------
-        error =
-            current_distance - rod_length
-        """
-
-        distance = (
-            self.output_position(output_angle)
-            -
-            self.input_position(input_angle)
-        ).norm()
-
-        return distance - self.rod_length

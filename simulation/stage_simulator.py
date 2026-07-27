@@ -9,10 +9,8 @@ from __future__ import annotations
 from typing import Protocol
 
 from mechanics.stage import Stage
-
 from simulation.motion_range import MotionRange
 from simulation.simulation_result import SimulationResult
-
 from solver.solver_result import SolverResult
 from solver.solver_state import SolverState
 from solver.stage_solver import StageSolver

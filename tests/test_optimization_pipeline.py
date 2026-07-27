@@ -6,22 +6,15 @@ End-to-end test for optimization pipeline.
 
 from __future__ import annotations
 
-from mechanics.mechanism_factory import (
-    MechanismFactory,
-)
-
 from mechanics.standard_mechanism_builder import (
     StandardMechanismBuilder,
 )
-
 from optimization.mechanism_optimizer import (
     MechanismOptimizer,
 )
-
 from optimization.parameter import (
     Parameter,
 )
-
 from optimization.parameter_set import (
     ParameterSet,
 )
@@ -80,9 +73,6 @@ def test_complete_optimization_pipeline():
         StandardMechanismBuilder()
     )
 
-    factory = MechanismFactory(
-        builder=builder.build,
-    )
     optimizer = MechanismOptimizer(
         builder=builder,
         simulator=DummySimulator(),

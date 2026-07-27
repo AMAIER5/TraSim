@@ -79,7 +79,7 @@ def test_target_is_sampled_at_input_angles():
         def sample(
             self,
             input_angles: tuple[float, ...],
-        ) -> tuple[float, ...]:
+        ) -> TransferCurve:
 
             sampled["angles"] = input_angles
 

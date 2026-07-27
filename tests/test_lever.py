@@ -8,11 +8,9 @@ from __future__ import annotations
 
 import math
 
-from mechanics.lever import Lever
-
 from core.point3d import Point3D
 from core.vector3d import Vector3D
-
+from mechanics.lever import Lever
 
 # ---------------------------------------------------------------------------
 # Construction

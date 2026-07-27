@@ -17,7 +17,6 @@ import pytest
 from core.quaternion import Quaternion
 from core.vector3d import Vector3D
 
-
 # ---------------------------------------------------------------------------
 # Construction
 # ---------------------------------------------------------------------------

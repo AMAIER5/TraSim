@@ -7,7 +7,6 @@ Simulation of complete mechanisms.
 from __future__ import annotations
 
 from mechanics.mechanism import Mechanism
-
 from simulation.motion_range import MotionRange
 from simulation.simulation_result import SimulationResult
 from simulation.stage_simulator import StageSimulator

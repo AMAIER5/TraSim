@@ -21,7 +21,6 @@ from __future__ import annotations
 from optimization.optimization_problem import (
     OptimizationProblem,
 )
-
 from optimization.population import (
     Population,
 )

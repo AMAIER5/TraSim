@@ -15,12 +15,11 @@ License:
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from math import acos, isclose, sqrt
-from typing import Iterator
 
 import numpy as np
-
 
 DEFAULT_TOLERANCE = 1.0e-12
 
@@ -60,34 +59,34 @@ class Vector3D:
     # Basic arithmetic
     # ------------------------------------------------------------------
 
-    def __add__(self, other: "Vector3D") -> "Vector3D":
+    def __add__(self, other: Vector3D) -> Vector3D:
         return Vector3D(
             self.x + other.x,
             self.y + other.y,
             self.z + other.z,
         )
 
-    def __sub__(self, other: "Vector3D") -> "Vector3D":
+    def __sub__(self, other: Vector3D) -> Vector3D:
         return Vector3D(
             self.x - other.x,
             self.y - other.y,
             self.z - other.z,
         )
 
-    def __neg__(self) -> "Vector3D":
+    def __neg__(self) -> Vector3D:
         return Vector3D(-self.x, -self.y, -self.z)
 
-    def __mul__(self, scalar: float) -> "Vector3D":
+    def __mul__(self, scalar: float) -> Vector3D:
         return Vector3D(
             self.x * scalar,
             self.y * scalar,
             self.z * scalar,
         )
 
-    def __rmul__(self, scalar: float) -> "Vector3D":
+    def __rmul__(self, scalar: float) -> Vector3D:
         return self * scalar
 
-    def __truediv__(self, scalar: float) -> "Vector3D":
+    def __truediv__(self, scalar: float) -> Vector3D:
 
         if isclose(scalar, 0.0, abs_tol=DEFAULT_TOLERANCE):
             raise ZeroDivisionError("Division by zero.")
@@ -126,7 +125,7 @@ class Vector3D:
             + self.z * self.z
         )
 
-    def normalized(self) -> "Vector3D":
+    def normalized(self) -> Vector3D:
         """
         Return normalized vector.
 
@@ -143,7 +142,7 @@ class Vector3D:
 
         return self / length
 
-    def dot(self, other: "Vector3D") -> float:
+    def dot(self, other: Vector3D) -> float:
         """
         Dot product.
         """
@@ -153,7 +152,7 @@ class Vector3D:
             + self.z * other.z
         )
 
-    def cross(self, other: "Vector3D") -> "Vector3D":
+    def cross(self, other: Vector3D) -> Vector3D:
         """
         Cross product.
         """
@@ -163,13 +162,13 @@ class Vector3D:
             self.x * other.y - self.y * other.x,
         )
 
-    def distance_to(self, other: "Vector3D") -> float:
+    def distance_to(self, other: Vector3D) -> float:
         """
         Euclidean distance.
         """
         return (self - other).norm()
 
-    def angle_to(self, other: "Vector3D") -> float:
+    def angle_to(self, other: Vector3D) -> float:
         """
         Angle between vectors [rad].
 
@@ -192,7 +191,7 @@ class Vector3D:
         return float(acos(cosine))
 
     
-    def __matmul__(self, other: "Vector3D") -> float:
+    def __matmul__(self, other: Vector3D) -> float:
         """
         Dot product using the @ operator.
         """
@@ -216,7 +215,7 @@ class Vector3D:
 
     def almost_equal(
         self,
-        other: "Vector3D",
+        other: Vector3D,
         tolerance: float = VECTOR_TOLERANCE,
     ) -> bool:
         """

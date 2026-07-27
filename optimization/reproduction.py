@@ -9,11 +9,9 @@ from __future__ import annotations
 from optimization.parameter_mutation import (
     ParameterMutation,
 )
-
 from optimization.parameter_set import (
     ParameterSet,
 )
-
 from optimization.population import (
     Population,
 )

@@ -11,11 +11,9 @@ import pytest
 from mechanics.mechanism_factory import (
     MechanismFactory,
 )
-
 from optimization.parameter import (
     Parameter,
 )
-
 from optimization.parameter_set import (
     ParameterSet,
 )

@@ -9,13 +9,9 @@ import random
 from analysis.curve_fitness import (
     CurveFitness,
 )
-from simulation.mechanism_simulator import (
-    MechanismSimulator,
-)
 from optimization.optimization_problem import (
     OptimizationProblem,
 )
-
 from optimization.parameter import (
     Parameter,
 )
@@ -25,7 +21,9 @@ from optimization.parameter_set import (
 from optimization.population import (
     Population,
 )
-
+from simulation.mechanism_simulator import (
+    MechanismSimulator,
+)
 from simulation.motion_range import (
     MotionRange,
 )

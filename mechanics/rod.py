@@ -46,7 +46,7 @@ class Rod:
         cls,
         point_a: Point3D,
         point_b: Point3D,
-    ) -> "Rod":
+    ) -> Rod:
         """
         Create rod from two endpoints.
 
@@ -83,27 +83,3 @@ class Rod:
         return (
             self.point_b - self.point_a
         ).normalized()
-
-    def current_length(self) -> float:
-        """
-        Calculate current distance between endpoints.
-
-        This method is useful later for solver diagnostics.
-        """
-
-        return (
-            self.point_b - self.point_a
-        ).norm()
-
-    def is_connected(
-        self,
-        tolerance: float = 1e-9,
-    ) -> bool:
-        """
-        Check if current geometry satisfies rod constraint.
-        """
-
-        return abs(
-            self.current_length()
-            - self.length
-        ) < tolerance

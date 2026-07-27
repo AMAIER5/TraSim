@@ -9,7 +9,6 @@ from __future__ import annotations
 from optimization.evolution_engine import (
     EvolutionEngine,
 )
-
 from optimization.population import (
     Population,
 )

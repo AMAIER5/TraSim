@@ -11,7 +11,6 @@ import math
 from analysis.error_metric import (
     ErrorMetric,
 )
-
 from analysis.transfer_curve import (
     TransferCurve,
 )

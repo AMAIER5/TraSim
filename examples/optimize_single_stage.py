@@ -17,44 +17,24 @@ from __future__ import annotations
 import math
 import random
 
+from analysis.curve_fitness import CurveFitness
 from analysis.target_curve import TargetCurve
-
-from analysis.curve_fitness import (
-    CurveFitness,
-)
-
-from optimization.optimization_pipeline import (
-    OptimizationPipeline,
-)
-
-from optimization.optimization_problem import (
-    OptimizationProblem,
-)
-
-from optimization.parameter import (
-    Parameter,
-)
-
-from optimization.parameter_set import (
-    ParameterSet,
-)
-
 from mechanics.standard_mechanism_builder import (
     StandardMechanismBuilder,
 )
-
+from optimization.optimization_pipeline import (
+    OptimizationPipeline,
+)
+from optimization.optimization_problem import (
+    OptimizationProblem,
+)
+from optimization.parameter import Parameter
+from optimization.parameter_set import ParameterSet
 from simulation.mechanism_simulator import (
     MechanismSimulator,
 )
-
-from simulation.stage_simulator import (
-    StageSimulator,
-)
-
-# Import Stage enum for correct typing when constructing StageSimulator
-from mechanics.stage import (
-    Stage,
-)
+from simulation.motion_range import MotionRange
+from simulation.stage_simulator import StageSimulator
 
 
 def create_parameter_template() -> ParameterSet:
@@ -83,28 +63,27 @@ def create_parameter_template() -> ParameterSet:
     )
 
 
-def create_target_curve():
-
-    #
-    # Identity transfer
-    #
-    # output = input
-    #
+def create_target_curve() -> TargetCurve:
 
     return TargetCurve(
         function=lambda angle: angle,
     )
 
 
-def main():
+def create_motion() -> MotionRange:
 
-    # use the Stage enum instead of a raw int to satisfy type requirements
-    stage_simulator = StageSimulator()
+    return MotionRange(
+        start_angle=0.0,
+        max_angle=math.radians(90.0),
+        step=math.radians(1.0),
+    )
 
-    mechanism_simulator = (
-        MechanismSimulator(
-            stage_simulator=stage_simulator.run,
-        )
+
+def main() -> None:
+
+    mechanism_simulator = MechanismSimulator(
+        motion=create_motion(),
+        stage_simulator=StageSimulator(),
     )
 
     fitness = CurveFitness(
@@ -112,20 +91,10 @@ def main():
     )
 
     problem = OptimizationProblem(
-
-        parameter_template=(
-            create_parameter_template()
-        ),
-
+        parameter_template=create_parameter_template(),
         builder=StandardMechanismBuilder(),
-
-        simulator=lambda mechanism:
-            mechanism_simulator.simulate(
-                mechanism
-            )[0],
-
+        simulator=mechanism_simulator,
         fitness=fitness,
-
         random_generator=random.Random(1),
     )
 
@@ -147,7 +116,6 @@ def main():
     print()
 
     for parameter in best.parameters:
-
         print(
             f"{parameter.name:25}"
             f"{parameter.value:8.3f}"
@@ -155,5 +123,4 @@ def main():
 
 
 if __name__ == "__main__":
-
     main()

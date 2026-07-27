@@ -9,7 +9,6 @@ from __future__ import annotations
 import math
 
 from mechanics.stage import Stage
-
 from solver.objective import stage_error
 from solver.solver_result import SolverResult
 from solver.solver_state import SolverState

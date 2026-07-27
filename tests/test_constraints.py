@@ -9,12 +9,10 @@ from __future__ import annotations
 import math
 
 from core.point3d import Point3D
-
 from solver.constraints import (
     distance,
     rod_length_error,
 )
-
 
 # ---------------------------------------------------------------------------
 # Distance

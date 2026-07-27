@@ -11,13 +11,11 @@ import random
 from optimization.parameter import (
     Parameter,
 )
-
-from optimization.parameter_set import (
-    ParameterSet,
-)
-
 from optimization.parameter_mutation import (
     ParameterMutation,
+)
+from optimization.parameter_set import (
+    ParameterSet,
 )
 
 

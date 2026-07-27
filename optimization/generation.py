@@ -6,12 +6,11 @@ Evolutionary generation step.
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from optimization.parameter_set import (
     ParameterSet,
 )
-
 from optimization.population import (
     Population,
 )

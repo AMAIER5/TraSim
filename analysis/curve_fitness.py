@@ -7,9 +7,7 @@ from __future__ import annotations
 from analysis.error_metric import ErrorMetric
 from analysis.target_curve import TargetCurve
 from analysis.transfer_curve import TransferCurve
-
 from optimization.fitness_function import FitnessFunction
-
 from simulation.simulation_result import (
     SimulationResult,
 )

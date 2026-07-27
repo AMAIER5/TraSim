@@ -13,11 +13,9 @@ import pytest
 from optimization.parameter import (
     Parameter,
 )
-
 from optimization.parameter_set import (
     ParameterSet,
 )
-
 from optimization.population_factory import (
     PopulationFactory,
 )

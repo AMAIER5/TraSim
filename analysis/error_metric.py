@@ -6,8 +6,6 @@ Error calculation between transfer curves.
 
 from __future__ import annotations
 
-import math
-
 from analysis.transfer_curve import (
     TransferCurve,
 )

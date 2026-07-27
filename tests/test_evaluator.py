@@ -7,7 +7,9 @@ Tests for MechanismOptimizer.
 from __future__ import annotations
 
 from mechanics.mechanism import Mechanism
-
+from mechanics.standard_mechanism_builder import (
+    StandardMechanismBuilder,
+)
 from optimization.fitness_function import (
     FitnessFunction,
 )
@@ -20,9 +22,15 @@ from optimization.parameter import (
 from optimization.parameter_set import (
     ParameterSet,
 )
+from simulation.mechanism_simulator import (
+    MechanismSimulator,
+)
+from simulation.simulation_result import (
+    SimulationResult,
+)
 
 
-class DummyBuilder:
+class DummyBuilder(StandardMechanismBuilder):
 
     def build(
         self,
@@ -32,7 +40,7 @@ class DummyBuilder:
         return Mechanism(stages=())
 
 
-class DummySimulator:
+class DummySimulator(MechanismSimulator):
 
     def __init__(self):
 
@@ -41,11 +49,11 @@ class DummySimulator:
     def simulate(
         self,
         mechanism: Mechanism,
-    ):
+    ) -> tuple[SimulationResult, ...]:
 
         self.called = True
 
-        return ("simulation",)
+        return ()
 
 
 class DummyFitness(FitnessFunction):
@@ -56,7 +64,7 @@ class DummyFitness(FitnessFunction):
 
     def evaluate(
         self,
-        simulation,
+        simulation: tuple[SimulationResult, ...],
     ) -> float:
 
         self.called = True

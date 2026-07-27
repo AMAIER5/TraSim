@@ -8,13 +8,10 @@ import math
 
 from core.point3d import Point3D
 from core.vector3d import Vector3D
-
 from mechanics.lever import Lever
 from mechanics.stage import Stage
-
 from simulation.motion_range import MotionRange
 from simulation.stage_simulator import StageSimulator
-
 from solver.solver_result import SolverResult
 from solver.solver_state import SolverState
 

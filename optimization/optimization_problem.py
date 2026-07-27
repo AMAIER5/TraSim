@@ -9,21 +9,17 @@ from __future__ import annotations
 import random
 from random import Random
 
-from mechanics.standard_mechanism_builder import (
-    StandardMechanismBuilder,
-)
-
 from analysis.curve_fitness import (
     CurveFitness,
+)
+from mechanics.standard_mechanism_builder import (
+    StandardMechanismBuilder,
 )
 from optimization.evolution_engine import (
     EvolutionEngine,
 )
 from optimization.mechanism_optimizer import (
     MechanismOptimizer,
-)
-from simulation.mechanism_simulator import (
-    MechanismSimulator,
 )
 from optimization.optimizer_runner import (
     OptimizerRunner,
@@ -42,6 +38,9 @@ from optimization.population_factory import (
 )
 from optimization.reproduction import (
     Reproduction,
+)
+from simulation.mechanism_simulator import (
+    MechanismSimulator,
 )
 
 

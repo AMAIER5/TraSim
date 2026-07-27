@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from mechanics.mechanism import Mechanism
-
 from simulation.mechanism_simulator import (
     MechanismSimulator,
 )

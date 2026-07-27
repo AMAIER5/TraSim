@@ -7,7 +7,6 @@ High level solver for one mechanical stage.
 from __future__ import annotations
 
 from mechanics.stage import Stage
-
 from solver.angle_solver import AngleSolver
 from solver.solver_result import SolverResult
 from solver.solver_state import SolverState

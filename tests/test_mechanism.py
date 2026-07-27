@@ -10,7 +10,6 @@ import pytest
 
 from core.point3d import Point3D
 from core.vector3d import Vector3D
-
 from mechanics.lever import Lever
 from mechanics.mechanism import Mechanism
 from mechanics.stage import Stage
@@ -44,7 +43,7 @@ def create_stage() -> Stage:
 def test_empty_mechanism_is_allowed():
 
     mechanism = Mechanism(
-        stages=()
+        stages=(),
     )
 
     assert len(mechanism.stages) == 0
@@ -59,11 +58,10 @@ def test_mechanism_stores_stages():
         stages=(
             stage_a,
             stage_b,
-        )
+        ),
     )
 
     assert len(mechanism.stages) == 2
-
     assert mechanism.stages[0] == stage_a
     assert mechanism.stages[1] == stage_b
 
@@ -71,20 +69,20 @@ def test_mechanism_stores_stages():
 def test_mechanism_is_immutable():
 
     mechanism = Mechanism(
-        stages=()
+        stages=(),
     )
 
-    with pytest.raises(
-        AttributeError
-    ):
+    with pytest.raises(AttributeError):
         mechanism.stages = ()
 
 
 def test_mechanism_requires_tuple():
 
-    with pytest.raises(
-        TypeError
-    ):
+    with pytest.raises(TypeError):
         Mechanism(
-            stages=[]
+            stages=(),
+        )
+
+        Mechanism(
+            stages=[],
         )
