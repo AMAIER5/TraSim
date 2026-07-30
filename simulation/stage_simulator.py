@@ -14,6 +14,7 @@ from simulation.simulation_result import SimulationResult
 from solver.solver_result import SolverResult
 from solver.solver_state import SolverState
 from solver.stage_solver import StageSolver
+from solver.objective import stage_error
 
 
 class SolverProtocol(Protocol):
@@ -80,11 +81,40 @@ class StageSimulator:
         output_angles: list[float] = []
 
         state = SolverState(
-            last_input_angle=motion.start_angle,
-            last_output_angle=motion.start_angle,
+            last_input_angle=stage.input_angle,
+            last_output_angle=stage.output_angle,
+        )
+        
+        reference_error = abs(
+            stage_error(
+                stage,
+                stage.input_angle,
+                stage.output_angle,
+            )
         )
 
-        for input_angle in motion:
+        if reference_error > 1e-9:
+            raise ValueError(
+                f"Invalid stage reference geometry: {reference_error}"
+            )
+        angles = list(motion)
+
+        if not angles:
+            return SimulationResult(
+                input_angles=(),
+                output_angles=(),
+                success=True,
+            )
+
+        start_angle = stage.input_angle
+
+        if angles[0] != start_angle:
+            angles.insert(
+                0,
+                start_angle,
+            )
+
+        for input_angle in angles:
 
             result, state = solver.solve(
                 input_angle=input_angle,

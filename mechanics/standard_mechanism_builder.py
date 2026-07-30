@@ -23,7 +23,10 @@ class StandardMechanismBuilder:
 
     input_lever_length
     output_lever_length
-    rod_length
+    input_angle_offset
+    output_angle_offset
+
+    All angles are stored internally in radians.
     """
 
     def build(
@@ -31,7 +34,17 @@ class StandardMechanismBuilder:
         parameters: ParameterSet,
     ) -> Mechanism:
         """
-        Create mechanism from parameters.
+        Build a mechanism from optimization parameters.
+
+        The rod length is calculated automatically
+        from the reference position.
+
+        Reference position:
+            input_angle  = 0 rad
+            output_angle = 0 rad
+
+        The lever installation offsets are included
+        in the reference geometry.
         """
 
         input_length = parameters.get(
@@ -42,8 +55,12 @@ class StandardMechanismBuilder:
             "output_lever_length"
         ).value
 
-        rod_length = parameters.get(
-            "rod_length"
+        input_angle_offset = parameters.get(
+            "input_angle_offset"
+        ).value
+
+        output_angle_offset = parameters.get(
+            "output_angle_offset"
         ).value
 
         rotation_axis = Vector3D(
@@ -65,29 +82,20 @@ class StandardMechanismBuilder:
         output_lever = Lever(
             pivot=Point3D(
                 100.0,
-            0.0,
+                0.0,
                 0.0,
             ),
             axis=rotation_axis,
             length=output_length,
         )
 
-        input_endpoint = input_lever.end_position(
-            0.0
-        )
-
-        output_endpoint = output_lever.end_position(
-            0.0
-        )
-
-        stage = Stage(
+        stage = Stage.from_reference_position(
             input_lever=input_lever,
             output_lever=output_lever,
-            rod_length=rod_length,
             input_angle=0.0,
             output_angle=0.0,
-            input_endpoint=input_endpoint,
-            output_endpoint=output_endpoint,
+            input_angle_offset=input_angle_offset,
+            output_angle_offset=output_angle_offset,
         )
 
         return Mechanism(

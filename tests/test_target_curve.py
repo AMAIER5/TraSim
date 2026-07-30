@@ -79,4 +79,153 @@ def test_target_curve_is_immutable():
         AttributeError
     ):
 
-        curve.function = lambda x: x * 2
+        curve.function = (
+            lambda x: x * 2
+        )
+
+
+def test_target_curve_from_points():
+
+    curve = TargetCurve.from_points(
+        input_angles=(
+            0.0,
+            10.0,
+            20.0,
+        ),
+        output_angles=(
+            0.0,
+            20.0,
+            40.0,
+        ),
+    )
+
+    assert math.isclose(
+        curve.evaluate(5.0),
+        10.0,
+    )
+
+    assert math.isclose(
+        curve.evaluate(15.0),
+        30.0,
+    )
+
+
+def test_target_curve_clamps_to_endpoints():
+
+    curve = TargetCurve.from_points(
+        input_angles=(
+            0.0,
+            10.0,
+            20.0,
+        ),
+        output_angles=(
+            0.0,
+            20.0,
+            40.0,
+        ),
+    )
+
+    assert math.isclose(
+        curve.evaluate(-5.0),
+        0.0,
+    )
+
+    assert math.isclose(
+        curve.evaluate(25.0),
+        40.0,
+    )
+
+
+def test_target_curve_from_points_requires_same_length():
+
+    with pytest.raises(
+        ValueError
+    ):
+
+        TargetCurve.from_points(
+            input_angles=(
+                0.0,
+                10.0,
+            ),
+            output_angles=(
+                0.0,
+            ),
+        )
+
+
+def test_target_curve_from_points_requires_sorted_input():
+
+    with pytest.raises(
+        ValueError
+    ):
+
+        TargetCurve.from_points(
+            input_angles=(
+                10.0,
+                0.0,
+            ),
+            output_angles=(
+                20.0,
+                0.0,
+            ),
+        )
+
+
+def test_target_curve_from_csv(
+    tmp_path,
+):
+
+    csv_file = (
+        tmp_path
+        / "curve.csv"
+    )
+
+    csv_file.write_text(
+        (
+            "input_angle,output_angle\n"
+            "0,0\n"
+            "10,20\n"
+            "20,40\n"
+        ),
+        encoding="utf-8",
+    )
+
+    curve = TargetCurve.from_csv(
+        csv_file
+    )
+
+    assert math.isclose(
+        curve.evaluate(5.0),
+        10.0,
+    )
+
+    assert math.isclose(
+        curve.evaluate(15.0),
+        30.0,
+    )
+
+
+def test_target_curve_from_csv_requires_columns(
+    tmp_path,
+):
+
+    csv_file = (
+        tmp_path
+        / "curve.csv"
+    )
+
+    csv_file.write_text(
+        (
+            "x,y\n"
+            "0,0\n"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError
+    ):
+
+        TargetCurve.from_csv(
+            csv_file
+        )

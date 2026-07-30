@@ -73,8 +73,8 @@ def create_target_curve() -> TargetCurve:
 def create_motion() -> MotionRange:
 
     return MotionRange(
-        start_angle=0.0,
-        max_angle=math.radians(90.0),
+        start_angle=-50.0,
+        max_angle=math.radians(50.0),
         step=math.radians(1.0),
     )
 
@@ -87,7 +87,8 @@ def main() -> None:
     )
 
     fitness = CurveFitness(
-        target_curve=create_target_curve(),
+        #target_curve=create_target_curve(),
+        target_curve=TargetCurve.from_csv("examples/target_curve2.csv"),
     )
 
     problem = OptimizationProblem(
@@ -108,7 +109,7 @@ def main() -> None:
         children_per_generation=20,
     )
 
-    best = population[0]
+    best = population[10]
 
     print()
     print("Optimization finished")

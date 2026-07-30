@@ -3,8 +3,8 @@ mechanics/stage.py
 
 Mechanical stage consisting of two levers connected by an ideal rod.
 
-Version 0.1:
-    Geometry definition only.
+Version 0.2:
+    Added angular installation offsets for input and output levers.
 
 The kinematic solution is intentionally separated.
 """
@@ -22,6 +22,9 @@ class Stage:
     """
     One mechanical linkage stage.
 
+    A stage consists of two levers connected by
+    an ideal coupling rod.
+
     Parameters
     ----------
     input_lever:
@@ -32,11 +35,21 @@ class Stage:
 
     rod_length:
         Fixed coupling rod length.
+
+    input_angle_offset:
+        Installation offset of input lever [rad].
+
+    output_angle_offset:
+        Installation offset of output lever [rad].
     """
 
     input_lever: Lever
     output_lever: Lever
+
     rod_length: float
+
+    input_angle_offset: float
+    output_angle_offset: float
 
     # Stored reference configuration
 
@@ -51,13 +64,18 @@ class Stage:
         cls,
         input_lever: Lever,
         output_lever: Lever,
-        input_angle: float,
-        output_angle: float,
+        input_angle: float = 0.0,
+        output_angle: float = 0.0,
+        input_angle_offset: float = 0.0,
+        output_angle_offset: float = 0.0,
     ) -> Stage:
         """
         Create stage from a valid reference position.
 
         The rod length is calculated automatically.
+
+        Angles describe shaft positions.
+        Offsets describe lever installation angles.
 
         Formula
         -------
@@ -67,13 +85,13 @@ class Stage:
 
         input_endpoint = (
             input_lever.end_position(
-                input_angle
+                input_angle + input_angle_offset
             )
         )
 
         output_endpoint = (
             output_lever.end_position(
-                output_angle
+                output_angle + output_angle_offset
             )
         )
 
@@ -85,6 +103,8 @@ class Stage:
             input_lever=input_lever,
             output_lever=output_lever,
             rod_length=rod_length,
+            input_angle_offset=input_angle_offset,
+            output_angle_offset=output_angle_offset,
             input_angle=input_angle,
             output_angle=output_angle,
             input_endpoint=input_endpoint,
@@ -97,10 +117,12 @@ class Stage:
     ) -> Point3D:
         """
         Calculate input lever endpoint.
+
+        The installation offset is applied automatically.
         """
 
         return self.input_lever.end_position(
-            angle
+            angle + self.input_angle_offset
         )
 
     def output_position(
@@ -109,9 +131,10 @@ class Stage:
     ) -> Point3D:
         """
         Calculate output lever endpoint.
+
+        The installation offset is applied automatically.
         """
 
         return self.output_lever.end_position(
-            angle
+            angle + self.output_angle_offset
         )
-

@@ -17,6 +17,12 @@ class CurveFitness(FitnessFunction):
     """
     Calculates the fitness of a simulated transfer curve.
 
+    Lower values are better.
+
+    Failed simulations receive a penalty based on:
+    - where the simulation stopped
+    - how many points were successfully calculated
+
     ErrorMetric instances are cached for identical
     input-angle grids.
     """
@@ -34,6 +40,7 @@ class CurveFitness(FitnessFunction):
             ErrorMetric,
         ] = {}
 
+
     def evaluate(
         self,
         simulation: tuple[SimulationResult, ...],
@@ -43,11 +50,61 @@ class CurveFitness(FitnessFunction):
         """
 
         if not simulation:
-            raise ValueError("Simulation must contain at least one stage.")
+            raise ValueError(
+                "Simulation must contain at least one stage."
+            )
 
-        # For now, optimization uses the transfer curve of the
-        # first stage.
+        # Currently only first stage is optimized.
         result = simulation[0]
+
+
+        # -------------------------------------------------
+        # Invalid / blocked simulation
+        # -------------------------------------------------
+
+        if not result.success:
+
+            calculated_points = len(
+                result.input_angles
+            )
+
+            if result.blocked_at is not None:
+
+                blocked_penalty = abs(
+                    result.blocked_at
+                )
+
+            else:
+
+                blocked_penalty = 100.0
+
+
+            missing_penalty = (
+                100.0
+                *
+                max(
+                    0,
+                    11 - calculated_points,
+                )
+            )
+
+            return (
+                1000.0
+                +
+                blocked_penalty
+                +
+                missing_penalty
+            )
+
+
+        # -------------------------------------------------
+        # Valid simulation
+        # -------------------------------------------------
+
+        if len(result.input_angles) < 2:
+
+            return 1e6
+
 
         transfer_curve = TransferCurve(
             input_angles=result.input_angles,
@@ -56,11 +113,15 @@ class CurveFitness(FitnessFunction):
 
         key = transfer_curve.input_angles
 
-        metric = self._cache.get(key)
+        metric = self._cache.get(
+            key
+        )
 
         if metric is None:
 
-            target = self._target_curve.sample(key)
+            target = self._target_curve.sample(
+                key
+            )
 
             metric = ErrorMetric(
                 target=target,
@@ -68,9 +129,11 @@ class CurveFitness(FitnessFunction):
 
             self._cache[key] = metric
 
+
         return metric.calculate(
             transfer_curve,
         )
+
 
     def __call__(
         self,
@@ -82,17 +145,22 @@ class CurveFitness(FitnessFunction):
 
         key = transfer_curve.input_angles
 
-        metric = self._cache.get(key)
+        metric = self._cache.get(
+            key
+        )
 
         if metric is None:
 
-            target = self._target_curve.sample(key)
+            target = self._target_curve.sample(
+                key
+            )
 
             metric = ErrorMetric(
                 target=target,
             )
 
             self._cache[key] = metric
+
 
         return metric.calculate(
             transfer_curve,
