@@ -3,15 +3,17 @@ analysis/curve_fitness.py
 """
 
 from __future__ import annotations
-from unittest import result
+
+import logging
 
 from analysis.error_metric import ErrorMetric
 from analysis.target_curve import TargetCurve
 from analysis.transfer_curve import TransferCurve
 from optimization.fitness_function import FitnessFunction
-from simulation.simulation_result import (
-    SimulationResult,
-)
+from simulation.simulation_result import SimulationResult
+
+
+logger = logging.getLogger(__name__)
 
 
 class CurveFitness(FitnessFunction):
@@ -58,21 +60,13 @@ class CurveFitness(FitnessFunction):
         # Currently only first stage is optimized.
         result = simulation[0]
 
-        #   -------------------------------------------------
-        #  Temp change start
-        #   -------------------------------------------------
-
-        print(
-            "SIM:",
-            "success=", result.success,
-            "points=", len(result.input_angles),
-            "blocked=", result.blocked_at,
+        logger.debug(
+            "Simulation result: success=%s points=%d blocked_at=%s",
+            result.success,
+            len(result.input_angles),
+            result.blocked_at,
         )
 
-        #   -------------------------------------------------
-        #  Temp change stop
-        #   -------------------------------------------------
-        
         # -------------------------------------------------
         # Invalid / blocked simulation
         # -------------------------------------------------
