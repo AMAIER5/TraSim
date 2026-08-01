@@ -13,9 +13,9 @@ from mechanics.lever import Lever
 from mechanics.mechanism import Mechanism
 from mechanics.stage import Stage
 from optimization.parameter_set import ParameterSet
+from optimization.mechanism_builder import MechanismBuilder
 
-
-class StandardMechanismBuilder:
+class StandardMechanismBuilder(MechanismBuilder):
     """
     Builds a standard single-stage mechanism.
 
@@ -29,10 +29,7 @@ class StandardMechanismBuilder:
     All angles are stored internally in radians.
     """
 
-    def build(
-        self,
-        parameters: ParameterSet,
-    ) -> Mechanism:
+    def build(self, parameters: ParameterSet) -> Mechanism:
         """
         Build a mechanism from optimization parameters.
 

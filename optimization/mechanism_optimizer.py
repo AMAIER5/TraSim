@@ -7,9 +7,7 @@ and evolutionary optimization.
 
 from __future__ import annotations
 
-from mechanics.standard_mechanism_builder import (
-    StandardMechanismBuilder,
-)
+from optimization.mechanism_builder import MechanismBuilder
 from optimization.fitness_function import (
     FitnessFunction,
 )
@@ -29,7 +27,7 @@ class MechanismOptimizer:
     def __init__(
         self,
         *,
-        builder: StandardMechanismBuilder,
+        builder: MechanismBuilder,
         simulator: MechanismSimulator,
         fitness: FitnessFunction,
     ) -> None:

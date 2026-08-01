@@ -6,14 +6,15 @@ Build a mechanical mechanism from a MechanismDefinition.
 
 from __future__ import annotations
 
-from core.point3d import Point3D
 from mechanics.lever import Lever
 from mechanics.mechanism import Mechanism
 from mechanics.stage import Stage
 from model.mechanism_definition import MechanismDefinition
+from optimization.mechanism_builder import MechanismBuilder
+from optimization.parameter_set import ParameterSet
 
 
-class CsvMechanismBuilder:
+class CsvMechanismBuilder(MechanismBuilder):
     """
     Build a Mechanism from a MechanismDefinition.
 
@@ -21,25 +22,36 @@ class CsvMechanismBuilder:
     into simulation-ready mechanical components.
     """
 
-    def build(
+    def __init__(
         self,
         definition: MechanismDefinition,
+    ) -> None:
+        self._definition = definition
+
+    def build(
+        self,
+        parameters: ParameterSet,
     ) -> Mechanism:
         """
         Build a mechanism.
+
+        Parameters are currently ignored. A later sprint
+        will map optimization parameters onto the
+        mechanism definition before constructing the
+        mechanism.
         """
 
         levers = self._create_levers(
-            definition
+            self._definition,
         )
 
         stages = self._create_stages(
-            definition,
+            self._definition,
             levers,
         )
 
         return Mechanism(
-            stages=tuple(stages)
+            stages=tuple(stages),
         )
 
     def _create_levers(
@@ -53,9 +65,7 @@ class CsvMechanismBuilder:
         result: dict[int, Lever] = {}
 
         for lever_definition in definition.levers:
-            result[
-                lever_definition.id
-            ] = Lever(
+            result[lever_definition.id] = Lever(
                 pivot=lever_definition.pivot,
                 axis=lever_definition.axis,
                 length=lever_definition.length_start,
@@ -75,21 +85,16 @@ class CsvMechanismBuilder:
         stages: list[Stage] = []
 
         for lever_definition in definition.levers:
-
             if lever_definition.driver is None:
                 continue
 
-            stage = Stage.from_reference_position(
-                input_lever=levers[
-                    lever_definition.driver
-                ],
-                output_lever=levers[
-                    lever_definition.id
-                ],
-                input_angle=0.0,
-                output_angle=0.0,
+            stages.append(
+                Stage.from_reference_position(
+                    input_lever=levers[lever_definition.driver],
+                    output_lever=levers[lever_definition.id],
+                    input_angle=0.0,
+                    output_angle=0.0,
+                )
             )
-
-            stages.append(stage)
 
         return stages

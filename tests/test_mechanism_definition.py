@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from core.vector3d import Vector3D
+from core.point3d import Point3D
 from model.lever_definition import LeverDefinition
 from model.mechanism_definition import MechanismDefinition
 
@@ -19,6 +20,7 @@ def create_lever(
 
     return LeverDefinition(
         id=lever_id,
+        pivot=Point3D(0, 0, 0),
         length_min=40,
         length_max=100,
         length_start=60,
