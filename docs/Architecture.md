@@ -4,7 +4,7 @@
 
 | Property | Value |
 |----------|-------|
-| Version | 0.1.0 |
+| Version | 0.2.0 |
 | Status | Draft |
 | Language | English (source code) |
 | Units | mm / deg (user), mm / rad (internal) |
@@ -24,12 +24,13 @@ The primary goals are:
 - Automatic optimization using evolutionary algorithms
 - Fully reproducible engineering calculations
 
-The simulator shall support:
+The simulator supports:
 
 - 3D lever axes
-- Spherical joints
+- Fixed pivot positions
 - Rigid coupling rods
 - Multi-stage mechanisms
+- **CSV**-based mechanism definitions
 - Evolutionary optimization
 
 ---
@@ -39,589 +40,400 @@ The simulator shall support:
 The simulator uses a **right-handed Cartesian coordinate system**.
 
 ```text
-             +Z
-             |
-             |
-             |
-             o──────── +X
-            /
-           /
-         +Y
-```
+    +Z
+    |
+    |
+    |
+    o──────── +X
+    /
+    /
+    +Y
 
 Coordinates are represented by
 
-```python
 Point3D(x, y, z)
-```
 
 Unit:
 
-```
 millimeter [mm]
-```
+3. Units
+### User Interface
+Quantity	Unit
+Length	mm
+Angle	deg
+### Internal Calculations
+Quantity	Unit
+Length	mm
+Angle	rad
 
----
+Only input/output layers perform unit conversion.
 
-# 3. Units
+No internal class stores angles in degrees.
 
-## User Interface
+## Rotation Convention
 
-| Quantity | Unit |
-|----------|------|
-| Length | mm |
-| Angle | deg |
+Internally all rotations follow the right-hand rule.
 
-## Internal Calculations
+Positive rotations are counter-clockwise when looking along the positive rotation axis.
 
-| Quantity | Unit |
-|----------|------|
-| Length | mm |
-| Angle | rad |
+Rotations are represented using quaternions.
 
-Only the input/output layer performs unit conversion.
-
-No internal class shall store angles in degrees.
-
-## Mathematical notation
-
-All mathematical descriptions shall use ASCII-compatible notation
-where possible.
-
-Examples:
-
-cross(a,b)   instead of   a × b
-dot(a,b)     instead of   a · b
-norm(v)      instead of   |v|
-
-The goal is maximum compatibility between:
-- source code
-- documentation
-- version control
-- automated tools
-
----
-
-# 4. Rotation Convention
-
-Internally all rotations follow the **right-hand rule**.
-
-Positive mathematical rotations are counter-clockwise when looking along the positive rotation axis.
-
-User input/output may use engineering conventions.
-
-All conversions are handled exclusively by the I/O layer.
-
----
-
-# 5. Basic Geometric Entities
-
-## Point3D
-
-Represents a position in space.
-
-Properties
-
-- x
-- y
-- z
-
-Example
-
-```python
-Point3D(10.0, 20.0, 5.0)
-```
-
----
-
-## Vector3D
-
-Represents a direction or displacement.
-
-Operations
-
-- Addition
-- Subtraction
-- Scaling
-- Dot product
-- Cross product
-- Normalization
-- Angle calculation
-- Rotation
-
----
-
-## Rotation
-
-Rotations are internally represented by **quaternions**.
-
-Advantages
-
-- No gimbal lock
-- Stable interpolation
-- Efficient composition
-- Suitable for animation
-
----
-
-# 6. Lever Definition
-
-A lever is completely defined by
-
-```text
-Lever
-│
-├── pivot_point : Point3D
-├── axis        : Vector3D
-├── length      : float
-├── reference   : Vector3D
-└── angle       : float
-```
-
-The tip position is calculated by
-
-```
-tip = pivot + rotate(reference * length)
-```
-
----
-
-# 7. Coupler Rod Definition
-
-A rod is an ideal rigid body.
-
-```text
-Rod
-│
-├── point_a
-├── point_b
-└── length
-```
-
-Constraint
-
-```
-distance(point_a, point_b) == length
-```
-
-Both rod ends are ideal spherical joints.
-
----
-
-# 8. Stage Definition
-
-A stage consists of
-
-```text
-Input Lever
-      │
-      ●────────────●
-      │            │
-      │ Coupler    │
-      │            │
-      ●────────────●
-     Output Lever
-```
-
-Each stage contains
-
-- Input lever
-- Output lever
-- Coupler rod
-
-Both pivots are fixed to the global frame.
-
----
-
-# 9. Mechanism Structure
-
-```text
-Mechanism
-
-├── Stage 1
-├── Stage 2
-├── Stage 3
-└── ...
-```
-
-The number of stages is unlimited.
-
----
-
-# 10. Solver Requirements
-
-The solver shall
-
-- accept an arbitrary start angle
-- simulate in positive direction
-- simulate in negative direction
-- stop at configured limits
-- stop when no valid solution exists
-- return NaN for impossible positions
-- preserve continuous angle tracking
-
----
-
-# 11. Numerical Rules
-
-Floating point values shall never be compared directly.
-
-Forbidden
-
-```python
-if value == 0:
-```
-
-Required
-
-```python
-if abs(value) < tolerance:
-```
-
-All tolerances are defined centrally.
-
----
-
-# 12. Testing Philosophy
-
-Every mathematical module requires
-
-- Unit tests
-- Boundary tests
-- Invalid input tests
-- Numerical stability tests
-
-Mechanism modules may only depend on tested geometry modules.
-
----
-
-# 13. Future Optimization Interface
-
-The solver shall expose a deterministic interface.
-
-Input
-
-- Mechanism definition
-- Simulation configuration
-
-Output
-
-- Joint positions
-- Lever angles
-- Solver status
-- Validity flags
-
-The optimizer shall never access internal solver implementation details.
-
----
-
-# 14. Development Principles
-
-The project follows these priorities:
-
-1. Correctness before performance
-2. Performance before convenience
-3. Readability before cleverness
-
-Every public function shall provide
-
-- Type hints
-- Docstring
-- Unit tests
-- Usage example
-
-The project is developed in vertical slices.
-
-Each sprint shall produce a complete, tested and usable increment.
-
-Future ideas are collected separately and never implemented
-before the current sprint is complete.
-
-No sprint may introduce unrelated features.
-
----
-
-# 15. Long-Term Roadmap
-
-| Version | Goal |
-|----------|------|
-| 0.1 | Geometry library |
-| 0.2 | Spatial lever |
-| 0.3 | Single linkage stage |
-| 0.4 | Multi-stage mechanism |
-| 0.5 | CSV I/O |
-| 0.6 | Visualization |
-| 1.0 | Stable simulation engine |
-| 2.0 | Evolutionary optimization |
-| 3.0 | Interactive GUI |
-
-# 16. Software Architecture
+## Software Architecture
 
 The project is organized into independent layers.
 
-```Application
-    │
-    ▼
+Application
+    |
+    v
 Optimization
-    │
-    ▼
+    |
+    v
+Analysis
+    |
+    v
 Simulation
-    │
-    ▼
+    |
+    v
 Solver
-    │
-    ▼
+    |
+    v
 Mechanics
-    │
-    ▼
-Geometry
-```
+    |
+    v
+Core
+
 Dependencies always point downward.
+
 Higher layers shall never be referenced by lower layers.
 
-# 17. Project Structure
+## Geometry Layer
 
-```core/
-    Point3D
-    Vector3D
-    Quaternion
+The geometry layer contains mathematical primitives.
 
-mechanics/
-    Lever
-    Rod
-    Stage
-    Mechanism
-    MechanismFactory
-    StandardMechanismBuilder
+Point3D
 
-solver/
-    AngleSolver
-    StageSolver
-    SolverState
-    SolverResult
+Represents a position in space.
 
-simulation/
-    MotionRange
-    SimulationResult
-    StageSimulator
-    MechanismSimulator
-    MechanismMotionSimulator
-    CSVExporter
+Properties:
 
-analysis/
-    TransferCurve
-    TargetCurve
-    ErrorMetric
-    CurveFitness
+x y z Vector3D
 
-optimization/
-    Parameter
-    ParameterSet
-    Population
-    PopulationFactory
-    ParameterMutation
-    Selection
-    Reproduction
-    EvolutionEngine
-    OptimizerRunner
-    FitnessFunction
-    MechanismOptimizer
-    OptimizationProblem
+Represents direction or displacement.
 
-examples/
-tests/
-```
-# 18. Simulation Pipeline
+Operations:
+
+Addition Subtraction Scaling Dot product Cross product Normalization Rotation Quaternion
+
+Used internally for rotations.
+
+Advantages:
+
+No gimbal lock Stable interpolation Efficient composition ## Mechanism Definition Model
+
+Input data is separated from simulation objects.
+
+The external definition model describes a mechanism before construction.
+
+MechanismDefinition
+
+├── LeverDefinition 1 ├── LeverDefinition 2 ├── LeverDefinition 3 └── ...
+
+A lever definition contains:
+
+LeverDefinition
+
+├── id ├── pivot : Point3D ├── axis  : Vector3D │ ├── length_min ├── length_max ├── length_start │ ├── angle_min ├── angle_max ├── angle_start │ ├── driver └── coupled
+
+The definition contains:
+
+fixed geometry optimization ranges linkage relationships ## CSV Interface
+
+**CSV** files are the external user interface.
+
+The **CSV** layer is responsible for:
+
+parsing input files writing reproducible definitions unit conversion validation of input data
+
+The **CSV** layer does not perform simulation.
+
+Mechanism **CSV** Format
+
+Example:
+
+id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,driver,coupled 1,40,**100**,60,-40,40,0,0,0,0,0,0,1,, 2,30,90,45,-60,60,0,**100**,0,0,0,0,1,1, ### Driver Relationship
+
+A driver defines a mechanical stage.
+
+Example:
+
+Lever 2 driver = 1
+
+creates:
+
+Stage(
+    input = Lever 1,
+    output = Lever 2
+)
+### Coupled Relationship
+
+A coupled lever maintains a constant angular relation.
+
+Example:
+
+Lever 3 coupled = 2
+
+means:
+
+angle(Lever3) - angle(Lever2) = constant
+
+A lever shall not be controlled by both:
+
+driver coupled
+
+If both are specified:
+
+coupled has priority driver is ignored ## Mechanical Components Lever
+
+A lever is immutable.
+
+Lever
+
+├── pivot : Point3D ├── axis  : Vector3D └── length
+
+The endpoint is calculated from:
+
+tip = pivot + rotate(reference * length)
+
+The lever does not store dynamic angle state.
+
+Rod
+
+A rod is an ideal rigid body.
+
+Rod
+
+├── point_a ├── point_b └── length
+
+Constraint:
+
+distance(point_a, point_b) == length ## Stage Definition
+
+A stage consists of two levers connected by an ideal rod.
+
+### Input Lever
+
+    |
+    ●────────────●
+    |
+    |
+    ●────────────●
+### Output Lever
+
+Each stage contains:
+
+Input lever Output lever Rod length Reference configuration
+
+Rod length is calculated automatically from the reference position.
+
+## Mechanism Structure
+
+The simulation model contains stages.
+
+Mechanism
+
+├── Stage 1 ├── Stage 2 ├── Stage 3 └── ...
+
+The number of stages is unlimited.
+
+## Mechanism Builders
+
+Builders convert definition models into simulation models.
+
+Available builders:
+
+StandardMechanismBuilder
+
+ParameterSet
+    |
+    v
+Mechanism
+CsvMechanismBuilder
+
+MechanismDefinition
+    |
+    v
+Mechanism
+
+Builders are responsible only for construction.
+
+They do not perform simulation.
+
+## Simulation Pipeline
 
 The simulation pipeline is strictly layered.
 
-```Mechanism
-        │
-        ▼
+Mechanism
+    |
+    v
 StageSimulator
-        │
-        ▼
+    |
+    v
 StageSolver
-        │
-        ▼
+    |
+    v
 AngleSolver
-        │
-        ▼
+    |
+    v
 SolverResult
-```
+
 Each layer has exactly one responsibility.
 
-# 19. Optimization Pipeline
+## Optimization Pipeline
 
-The optimization process is independent from the solver implementation.
+Optimization is independent from solver implementation.
 
-```ParameterSet
-        │
-        ▼
+ParameterSet
+    |
+    v
 MechanismBuilder
-        │
-        ▼
+    |
+    v
 Mechanism
-        │
-        ▼
+    |
+    v
 MechanismSimulator
-        │
-        ▼
+    |
+    v
 SimulationResult
-        │
-        ▼
+    |
+    v
 TransferCurve
-        │
-        ▼
+    |
+    v
 CurveFitness
-        │
-        ▼
+    |
+    v
 EvolutionEngine
-```
-The optimization layer never accesses solver internals.
 
-# 20. Design Principles
+The optimizer never accesses solver internals.
 
-The project follows the Single Responsibility Principle.
+## Numerical Rules
 
-Each class owns exactly one responsibility.
+Floating point values shall never be compared directly.
 
-Examples
-```StageSolver
-    computes one solver step
+Forbidden:
 
-StageSimulator
-    simulates one stage
+if value == 0:
 
-MechanismSimulator
-    simulates all stages
+Required:
 
-CurveFitness
-    evaluates one transfer curve
+if abs(value) < tolerance:
 
-EvolutionEngine
-    performs one evolutionary generation
-```
-# 21. Immutability
+All tolerances are defined centrally.
+
+## Testing Strategy
+
+Every production module requires:
+
+Unit tests Boundary tests Invalid input tests Numerical stability tests
+
+**CSV** interfaces require:
+
+Reader tests Writer tests Roundtrip tests
+
+Mechanism builders require:
+
+Construction tests Geometry transfer tests Relationship tests ## Immutability
 
 Domain objects are immutable whenever possible.
 
-Required
+Required:
 
-- dataclass(frozen=True)
-- slots=True
-- tuple instead of list
-- explicit validation in post_init()
+dataclass(frozen=True) slots=True tuple instead of list validation in post_init()
 
 Mutable state is restricted to algorithms.
 
-Examples
-```SolverState
-PopulationFactory
-EvolutionEngine
-```
+Examples:
 
-# 22. Dependency Rules
-
-The following dependencies are forbidden.
-
-```Geometry
-    -> Simulation
-
-Mechanics
-    -> Optimization
-
-Solver
-    -> Analysis
-
-Analysis
-    -> Solver
-
-Optimization
-    -> Solver internals
-```
-
-Allowed dependency graph
-
-```Optimization
-        │
-        ▼
-Analysis
-        │
-        ▼
-Simulation
-        │
-        ▼
-Solver
-        │
-        ▼
-Mechanics
-        │
-        ▼
-Core
-```
-
-# 23. Public API
-
-Public interfaces shall be strongly typed.
-
-Forbidden
-```Callable
-Any
-dict
-```
-
-for public APIs where dedicated domain types exist.
-
-Preferred
-
-```MechanismSimulator
-CurveFitness
+SolverState
 Population
-ParameterSet
-SimulationResult
-TransferCurve
-```
+EvolutionEngine
+## Project Structure
+core/
+    point3d.py
+    vector3d.py
+    quaternion.py
 
-# 24. Testing Strategy
+model/
+    lever_definition.py
+    mechanism_definition.py
+    simulation_config.py
 
-Every production module shall have a corresponding test module.
+mechanics/
+    lever.py
+    rod.py
+    stage.py
+    mechanism.py
+    standard_mechanism_builder.py
+    csv_mechanism_builder.py
 
-Naming convention
+mechanism_io/
+    csv_reader.py
+    csv_writer.py
 
-```module.py
+solver/
+    angle_solver.py
+    stage_solver.py
+    solver_state.py
+    solver_result.py
 
-↓
+simulation/
+    motion_range.py
+    simulation_result.py
+    stage_simulator.py
+    mechanism_simulator.py
 
-test_module.py
-```
+analysis/
+    transfer_curve.py
+    target_curve.py
+    error_metric.py
+    curve_fitness.py
 
-Each public class requires tests for
+optimization/
+    parameter.py
+    parameter_set.py
+    evolution_engine.py
+    mechanism_optimizer.py
 
-- construction
-- invalid parameters
-- nominal behaviour
-- edge cases
-- regression tests
+examples/
 
-Whenever an interface changes, all dependent tests shall be updated in the same change set.
+tests/ ## Development Principles
 
-# 25. Development Workflow
+The project follows:
+
+Correctness before performance Performance before convenience Readability before cleverness
+
+Every public function shall provide:
+
+Type hints Docstring Unit tests Usage example
 
 Development proceeds in vertical slices.
 
-Each sprint shall
+Each sprint shall:
 
-- introduce one coherent feature,
--include complete unit tests,
-- keep the project fully executable,
-- avoid partially migrated APIs.
-
-API refactorings shall update
-
-- production code,
-- tests,
-- examples,
-- documentation
-
-within the same sprint.
+introduce one coherent feature
+include complete unit tests
+keep the project executable
+update documentation
+## Long-Term Roadmap
+Version	Goal
+0.1	Geometry library
+0.2	Spatial lever
+0.3	Single linkage stage
+0.4	Multi-stage mechanism
+0.5	**CSV** I/O
+0.6	**CSV** mechanism builder
+0.7	Visualization
+1.0	Stable simulation engine
+2.0	Evolutionary optimization
+3.0	Interactive **GUI**

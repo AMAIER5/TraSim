@@ -78,13 +78,10 @@ target_curve = TargetCurve.from_csv(
 motion = MotionRange(
     start_angle=math.radians(-50.0),
     max_angle=math.radians(100.0),
-    step=math.radians(10.0),
+    step=math.radians(0.1),
     direction=1,
 )
-
-simulator = MechanismSimulator(
-    motion=motion,
-)
+ 
 
 
 # -------------------------------------------------
@@ -193,7 +190,7 @@ print(
 engine = EvolutionEngine(
     population=population,
     evaluator=optimizer.evaluate,
-    selection_count=10,
+    selection_count=20,
     reproduction=Reproduction(
         mutation=ParameterMutation(
             strength=0.1,
@@ -236,7 +233,7 @@ for generation in range(4):
     )
 
     engine.step(
-        children_count=10,
+        children_count=50,
     )
 
 

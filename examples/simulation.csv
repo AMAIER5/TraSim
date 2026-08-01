@@ -1,0 +1,10 @@
+parameter,value
+population_size,200
+children_per_generation,50
+generations,500
+target_error,0.05
+mutation_rate,0.15
+elite_size,5
+motion_start,-50
+motion_end,50
+motion_step,1

@@ -56,19 +56,6 @@ class AngleSolver:
                 angle,
             )
 
-# DEBUG CODE BEGIN
-        for deg in range(-30, 31, 5):
-            angle = math.radians(deg)
-            print(
-                deg,
-                stage_error(
-                    stage,
-                    input_angle,
-                    angle,
-                ),
-            )
-# DEBUG CODE END
-
         bracket = RootSolver.find_bracket(
             function=residual,
             center=state.last_output_angle,
