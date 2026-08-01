@@ -195,13 +195,13 @@ def test_target_curve_from_csv(
     )
 
     assert math.isclose(
-        curve.evaluate(5.0),
-        10.0,
+        curve.evaluate(math.radians(5.0)),
+        math.radians(10.0),
     )
 
     assert math.isclose(
-        curve.evaluate(15.0),
-        30.0,
+        curve.evaluate(math.radians(15.0)),
+        math.radians(30.0),
     )
 
 
