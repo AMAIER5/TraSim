@@ -1,7 +1,10 @@
 """
 simulation/stage_simulator.py
 
-Simulates one mechanical stage over a motion range.
+Simulates one mechanical stage over a motion provider.
+
+Motion generation is delegated to MotionProvider.
+The simulator itself is independent of fixed or adaptive sampling.
 """
 
 from __future__ import annotations
@@ -9,12 +12,12 @@ from __future__ import annotations
 from typing import Protocol
 
 from mechanics.stage import Stage
-from simulation.motion_range import MotionRange
+from simulation.motion_provider import MotionProvider
 from simulation.simulation_result import SimulationResult
+from solver.objective import stage_error
 from solver.solver_result import SolverResult
 from solver.solver_state import SolverState
 from solver.stage_solver import StageSolver
-from solver.objective import stage_error
 
 
 class SolverProtocol(Protocol):
@@ -42,6 +45,7 @@ class StageSimulator:
     Stateless simulator for one mechanical stage.
 
     A new solver instance is created for every simulation run.
+    Motion generation is delegated to MotionProvider.
     """
 
     def __init__(
@@ -55,24 +59,12 @@ class StageSimulator:
         self,
         *,
         stage: Stage,
-        motion: MotionRange,
+        motion: MotionProvider,
     ) -> SimulationResult:
         """
-        Simulate a stage over the specified motion range.
+        Simulate a stage over the specified motion provider.
 
-        Parameters
-        ----------
-        stage:
-            Mechanical stage to simulate.
-
-        motion:
-            Sequence of input angles.
-
-        Returns
-        -------
-        SimulationResult
-            Simulation result containing input/output angles and
-            solver status.
+        The solver follows the physical motion branch using SolverState.
         """
 
         solver = self._solver_type(stage)
@@ -80,11 +72,13 @@ class StageSimulator:
         input_angles: list[float] = []
         output_angles: list[float] = []
 
-        state = SolverState(
-            last_input_angle=stage.input_angle,
-            last_output_angle=stage.output_angle,
+        state = SolverState.initial(
+            input_angle=stage.input_angle,
+            output_angle=stage.output_angle,
         )
-        
+
+        previous_output: float | None = None
+
         reference_error = abs(
             stage_error(
                 stage,
@@ -97,24 +91,8 @@ class StageSimulator:
             raise ValueError(
                 f"Invalid stage reference geometry: {reference_error}"
             )
-        angles = list(motion)
 
-        if not angles:
-            return SimulationResult(
-                input_angles=(),
-                output_angles=(),
-                success=True,
-            )
-
-        start_angle = stage.input_angle
-
-        if angles[0] != start_angle:
-            angles.insert(
-                0,
-                start_angle,
-            )
-
-        for input_angle in angles:
+        for input_angle in motion:
 
             result, state = solver.solve(
                 input_angle=input_angle,
@@ -129,8 +107,27 @@ class StageSimulator:
                     blocked_at=input_angle,
                 )
 
-            input_angles.append(input_angle)
-            output_angles.append(result.angle)
+            input_angles.append(
+                input_angle
+            )
+
+            output_angles.append(
+                result.angle
+            )
+
+            if previous_output is not None:
+
+                output_delta = (
+                    result.angle
+                    -
+                    previous_output
+                )
+
+                motion.feedback(
+                    output_delta=output_delta
+                )
+
+            previous_output = result.angle
 
         return SimulationResult(
             input_angles=tuple(input_angles),

@@ -4,7 +4,14 @@ solver/angle_solver.py
 Local numerical angle solver using Brent root finding.
 
 The solver preserves the physical motion branch by searching
-around the previous solution stored in SolverState.
+all possible roots around the predicted motion state and
+selecting the physically continuous branch.
+
+Branch selection considers:
+- prediction distance
+- output angle jump
+- velocity change
+- motion direction
 """
 
 from __future__ import annotations
@@ -22,22 +29,29 @@ class AngleSolver:
     """
     Solve output angle for a given input angle.
 
-    A local bracket is searched around the previous output angle.
-    The resulting interval is solved using Brent's method.
+    Multiple mathematical solutions may exist.
+
+    The solver keeps the physical motion branch by using
+    SolverState prediction and local kinematic continuity.
     """
 
     def __init__(
         self,
         *,
-        search_window: float = math.radians(45),
+        search_min: float = math.radians(-180),
+        search_max: float = math.radians(180),
         bracket_step: float = math.radians(1),
+        search_window: float = math.radians(30),
         tolerance: float = 1e-10,
         max_iterations: int = 40,
     ):
-        self.search_window = search_window
+        self.search_min = search_min
+        self.search_max = search_max
         self.bracket_step = bracket_step
+        self.search_window = search_window
         self.tolerance = tolerance
         self.max_iterations = max_iterations
+
 
     def solve(
         self,
@@ -45,25 +59,51 @@ class AngleSolver:
         input_angle: float,
         state: SolverState,
     ) -> SolverResult:
-        """
-        Find output angle for input angle.
-        """
 
         def residual(angle: float) -> float:
+
             return stage_error(
                 stage,
                 input_angle,
                 angle,
             )
 
-        bracket = RootSolver.find_bracket(
+
+        predicted = state.predict_output(
+            input_angle
+        )
+
+
+        if predicted is None:
+
+            predicted = state.last_output_angle
+
+
+
+        brackets = RootSolver.find_all_brackets_around(
             function=residual,
-            center=state.last_output_angle,
+            center=predicted,
             window=self.search_window,
             step=self.bracket_step,
         )
 
-        if bracket is None:
+
+        #
+        # Fallback:
+        # Search complete range if local search failed.
+        #
+
+        if not brackets:
+
+            brackets = RootSolver.find_all_brackets(
+                function=residual,
+                minimum=self.search_min,
+                maximum=self.search_max,
+                step=self.bracket_step,
+            )
+
+
+        if not brackets:
 
             return SolverResult(
                 success=False,
@@ -73,23 +113,17 @@ class AngleSolver:
                 reason="blocked",
             )
 
+
+        bracket = self._select_branch(
+            brackets,
+            reference_angle=predicted,
+            state=state,
+            input_angle=input_angle,
+        )
+
+
         left, right, bracket_iterations = bracket
 
-        #
-        # Exact solution already found
-        #
-
-        if left == right:
-
-            value = residual(left)
-
-            return SolverResult(
-                success=abs(value) <= self.tolerance,
-                angle=left,
-                residual=abs(value),
-                iterations=bracket_iterations,
-                reason=None,
-            )
 
         try:
 
@@ -103,6 +137,7 @@ class AngleSolver:
                 )
             )
 
+
         except ValueError:
 
             return SolverResult(
@@ -113,21 +148,162 @@ class AngleSolver:
                 reason="invalid_bracket",
             )
 
-        iterations = (
-            bracket_iterations
-            +
-            solver_iterations
-        )
+
 
         success = (
             abs(value)
             <= self.tolerance
         )
 
+
         return SolverResult(
             success=success,
             angle=angle if success else float("nan"),
             residual=abs(value),
-            iterations=iterations,
+            iterations=(
+                bracket_iterations
+                +
+                solver_iterations
+            ),
             reason=None if success else "blocked",
+        )
+
+
+
+    @staticmethod
+    def _select_branch(
+        brackets: list[tuple[float, float, int]],
+        reference_angle: float,
+        state: SolverState,
+        input_angle: float,
+    ) -> tuple[float, float, int]:
+        """
+        Select the physically continuous branch.
+
+        The scoring combines:
+
+        - distance from prediction
+        - output angle jump
+        - velocity change
+        - direction consistency
+        """
+
+
+        if state.direction not in (-1, 0, 1):
+
+            raise ValueError(
+                "direction must be either -1, 0 or 1"
+            )
+
+
+        def center(
+            bracket: tuple[float, float, int],
+        ) -> float:
+
+            left, right, _ = bracket
+
+            return (
+                left
+                +
+                right
+            ) / 2.0
+
+
+
+        def score(
+            bracket: tuple[float, float, int],
+        ) -> float:
+
+            candidate = center(bracket)
+
+
+            prediction_error = abs(
+                candidate
+                -
+                reference_angle
+            )
+
+
+            #
+            # No motion history:
+            # prediction is sufficient.
+            #
+
+            if state.direction == 0:
+
+                return prediction_error
+
+
+
+            output_change = abs(
+                candidate
+                -
+                state.last_output_angle
+            )
+
+
+            delta_input = (
+                input_angle
+                -
+                state.last_input_angle
+            )
+
+
+            if abs(delta_input) > 1e-12:
+
+                velocity = (
+                    candidate
+                    -
+                    state.last_output_angle
+                ) / delta_input
+
+
+                velocity_change = abs(
+                    velocity
+                    -
+                    state.output_velocity
+                )
+
+
+            else:
+
+                velocity_change = 0.0
+
+
+
+            if (
+                (
+                    candidate
+                    -
+                    state.last_output_angle
+                )
+                *
+                state.direction
+                >=
+                0
+            ):
+
+                direction_penalty = 0.0
+
+            else:
+
+                direction_penalty = 1.0
+
+
+
+            return (
+                prediction_error
+                +
+                5.0 * output_change
+                +
+                20.0 * velocity_change
+                +
+                direction_penalty
+            )
+
+
+
+        return min(
+            brackets,
+            key=score,
         )

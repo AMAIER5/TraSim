@@ -16,6 +16,7 @@ class RootSolver:
     Generic one-dimensional root finder.
     """
 
+
     @staticmethod
     def find_bracket(
         function: Callable[[float], float],
@@ -24,84 +25,268 @@ class RootSolver:
         step: float,
     ) -> tuple[float, float, int] | None:
         """
-        Find the nearest interval containing a sign change.
+        Find a root bracket around a center position.
 
-        The search expands symmetrically around the previous
-        solution to preserve the current motion branch.
+        Searches from center towards both limits:
 
-        Returns
-        -------
-        (left, right, evaluations)
+            center - window
+            center + window
 
-        or
-
-        None
+        The closest sign change is returned.
         """
 
         if window <= 0.0:
-            raise ValueError("window must be positive.")
+
+            raise ValueError(
+                "window must be positive."
+            )
 
         if step <= 0.0:
-            raise ValueError("step must be positive.")
 
-        evaluations = 1
+            raise ValueError(
+                "step must be positive."
+            )
+
+        evaluations = 0
 
         center_value = function(center)
 
+        evaluations += 1
+
+
         if center_value == 0.0:
-            return center, center, evaluations
 
-        max_index = int(math.ceil(window / step))
+            return (
+                center,
+                center,
+                evaluations,
+            )
+
+
+        max_steps = int(
+            math.ceil(
+                window / step
+            )
+        )
+
 
         #
-        # Positive direction
+        # Search positive direction
         #
 
         previous_angle = center
         previous_value = center_value
 
-        for index in range(1, max_index + 1):
 
-            angle = center + index * step
+        for i in range(1, max_steps + 1):
+
+            angle = center + i * step
+
             value = function(angle)
 
             evaluations += 1
 
+
             if previous_value * value <= 0.0:
+
                 return (
                     previous_angle,
                     angle,
                     evaluations,
                 )
 
+
             previous_angle = angle
             previous_value = value
 
+
+
         #
-        # Negative direction
+        # Search negative direction
         #
 
         previous_angle = center
         previous_value = center_value
 
-        for index in range(1, max_index + 1):
 
-            angle = center - index * step
+        for i in range(1, max_steps + 1):
+
+            angle = center - i * step
+
             value = function(angle)
 
             evaluations += 1
 
+
             if previous_value * value <= 0.0:
+
                 return (
                     angle,
                     previous_angle,
                     evaluations,
                 )
 
+
             previous_angle = angle
             previous_value = value
+
 
         return None
+
+
+
+    @staticmethod
+    def find_all_brackets(
+        function: Callable[[float], float],
+        minimum: float,
+        maximum: float,
+        step: float,
+    ) -> list[tuple[float, float, int]]:
+        """
+        Find all intervals containing a sign change.
+
+        The search scans the complete interval from minimum
+        to maximum with a fixed step size.
+
+        Returns:
+
+            (left, right, evaluations)
+
+        for every detected root bracket.
+        """
+
+        if minimum >= maximum:
+
+            raise ValueError(
+                "minimum must be smaller than maximum."
+            )
+
+        if step <= 0.0:
+
+            raise ValueError(
+                "step must be positive."
+            )
+
+
+        brackets: list[
+            tuple[float, float, int]
+        ] = []
+
+
+        evaluations = 0
+
+
+        left = minimum
+
+        left_value = function(left)
+
+        evaluations += 1
+
+
+
+        while left < maximum:
+
+
+            right = min(
+                left + step,
+                maximum,
+            )
+
+
+            right_value = function(right)
+
+            evaluations += 1
+
+
+
+            #
+            # Exact root at left boundary
+            #
+
+            if left_value == 0.0:
+
+                brackets.append(
+                    (
+                        left,
+                        left,
+                        evaluations,
+                    )
+                )
+
+
+            #
+            # Sign change
+            #
+
+            elif left_value * right_value < 0.0:
+
+                brackets.append(
+                    (
+                        left,
+                        right,
+                        evaluations,
+                    )
+                )
+
+
+            #
+            # Exact root at right boundary
+            #
+
+            if right_value == 0.0:
+
+                brackets.append(
+                    (
+                        right,
+                        right,
+                        evaluations,
+                    )
+                )
+
+
+            left = right
+
+            left_value = right_value
+
+
+        return brackets
+
+
+
+    @staticmethod
+    def find_all_brackets_around(
+        function: Callable[[float], float],
+        center: float,
+        window: float,
+        step: float,
+    ) -> list[tuple[float, float, int]]:
+        """
+        Find all root brackets around a predicted position.
+
+        Searches only within:
+
+            center - window
+            center + window
+
+        This keeps the solver local while preserving
+        multiple possible mathematical branches.
+        """
+
+        if window <= 0.0:
+
+            raise ValueError(
+                "window must be positive."
+            )
+
+
+        return RootSolver.find_all_brackets(
+            function=function,
+            minimum=center - window,
+            maximum=center + window,
+            step=step,
+        )
+
+
 
     @staticmethod
     def solve_brent(
@@ -117,31 +302,45 @@ class RootSolver:
         """
 
         fa = function(left)
+
         fb = function(right)
+
 
         iterations = 2
 
+
         if fa == 0.0:
+
             return left, fa, iterations
 
+
         if fb == 0.0:
+
             return right, fb, iterations
 
+
         if fa * fb > 0.0:
+
             raise ValueError(
                 "Interval does not bracket a root."
             )
+
 
         a = left
         b = right
         c = a
 
+
         fc = fa
+
 
         d = b - a
         e = d
-        
+
+
+
         while iterations < max_iterations:
+
 
             if abs(fc) < abs(fb):
 
@@ -157,33 +356,44 @@ class RootSolver:
                     fb,
                 )
 
+
             tolerance_step = (
                 2.0
                 * math.ulp(1.0)
                 * abs(b)
-                + tolerance
+                +
+                tolerance
             )
+
 
             midpoint = 0.5 * (c - b)
 
+
             if (
-                abs(midpoint) <= tolerance_step
+                abs(midpoint)
+                <= tolerance_step
                 or fb == 0.0
             ):
+
                 return (
                     b,
                     fb,
                     iterations,
                 )
 
+
+
             if (
                 abs(e) >= tolerance_step
                 and abs(fa) > abs(fb)
             ):
 
+
                 s = fb / fa
 
+
                 if a == c:
+
 
                     p = (
                         2.0
@@ -193,10 +403,14 @@ class RootSolver:
 
                     q = 1.0 - s
 
+
                 else:
 
+
                     q = fa / fc
+
                     r = fb / fc
+
 
                     p = (
                         s
@@ -211,16 +425,26 @@ class RootSolver:
                         )
                     )
 
+
                     q = (
                         (q - 1.0)
-                        * (r - 1.0)
-                        * (s - 1.0)
+                        *
+                        (r - 1.0)
+                        *
+                        (s - 1.0)
                     )
 
+
+
                 if p > 0.0:
+
                     q = -q
+
                 else:
+
                     p = -p
+
+
 
                 if (
                     q != 0.0
@@ -229,7 +453,8 @@ class RootSolver:
                     <
                     min(
                         3.0 * midpoint * q
-                        - abs(tolerance * q),
+                        -
+                        abs(tolerance * q),
                         abs(e * q),
                     )
                 ):
@@ -237,29 +462,44 @@ class RootSolver:
                     e = d
                     d = p / q
 
+
                 else:
 
                     d = midpoint
                     e = midpoint
+
+
 
             else:
 
                 d = midpoint
                 e = midpoint
 
+
+
             a = b
+
             fa = fb
 
+
+
             if abs(d) > tolerance_step:
+
                 b += d
+
             else:
+
                 b += math.copysign(
                     tolerance_step,
                     midpoint,
                 )
 
+
             fb = function(b)
+
             iterations += 1
+
+
 
             if (
                 (fb > 0.0 and fc > 0.0)
@@ -268,10 +508,14 @@ class RootSolver:
             ):
 
                 c = a
+
                 fc = fa
 
                 d = b - a
+
                 e = d
+
+
 
         return (
             b,

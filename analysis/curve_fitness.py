@@ -3,6 +3,7 @@ analysis/curve_fitness.py
 """
 
 from __future__ import annotations
+from unittest import result
 
 from analysis.error_metric import ErrorMetric
 from analysis.target_curve import TargetCurve
@@ -57,7 +58,21 @@ class CurveFitness(FitnessFunction):
         # Currently only first stage is optimized.
         result = simulation[0]
 
+        #   -------------------------------------------------
+        #  Temp change start
+        #   -------------------------------------------------
 
+        print(
+            "SIM:",
+            "success=", result.success,
+            "points=", len(result.input_angles),
+            "blocked=", result.blocked_at,
+        )
+
+        #   -------------------------------------------------
+        #  Temp change stop
+        #   -------------------------------------------------
+        
         # -------------------------------------------------
         # Invalid / blocked simulation
         # -------------------------------------------------
@@ -93,7 +108,7 @@ class CurveFitness(FitnessFunction):
                 +
                 blocked_penalty
                 +
-                missing_penalty
+                missing_penalty*10
             )
 
 

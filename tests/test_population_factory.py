@@ -13,9 +13,11 @@ import pytest
 from optimization.parameter import (
     Parameter,
 )
+
 from optimization.parameter_set import (
     ParameterSet,
 )
+
 from optimization.population_factory import (
     PopulationFactory,
 )
@@ -86,9 +88,13 @@ def test_factory_does_not_modify_template():
         size=5,
     )
 
-    assert template.get(
-        "length"
-    ).value == 50.0
+    assert (
+        template.get(
+            "length"
+        ).value
+        ==
+        50.0
+    )
 
 
 def test_factory_rejects_invalid_size():
@@ -103,3 +109,34 @@ def test_factory_rejects_invalid_size():
             create_template(),
             size=0,
         )
+
+
+def test_population_factory_keeps_candidates_near_template():
+
+    template = ParameterSet(
+        (
+            Parameter(
+                name="lever.1.length",
+                minimum=40,
+                maximum=100,
+                value=60,
+            ),
+        )
+    )
+
+    factory = PopulationFactory(
+        random_generator=random.Random(1),
+        initial_spread=0.1,
+    )
+
+    population = factory.create(
+        template,
+        size=50,
+    )
+
+    assert all(
+        54 <= candidate.get(
+            "lever.1.length"
+        ).value <= 66
+        for candidate in population
+    )

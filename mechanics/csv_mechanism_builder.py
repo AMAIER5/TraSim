@@ -6,6 +6,8 @@ Build a mechanical mechanism from a MechanismDefinition.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from mechanics.lever import Lever
 from mechanics.mechanism import Mechanism
 from mechanics.stage import Stage
@@ -33,25 +35,67 @@ class CsvMechanismBuilder(MechanismBuilder):
         parameters: ParameterSet,
     ) -> Mechanism:
         """
-        Build a mechanism.
+        Build a mechanism from the CSV definition.
 
-        Parameters are currently ignored. A later sprint
-        will map optimization parameters onto the
-        mechanism definition before constructing the
-        mechanism.
+        Optimization parameters are applied as an overlay
+        before creating the mechanical model.
         """
 
-        levers = self._create_levers(
+        definition = self._apply_parameters(
             self._definition,
+            parameters,
+        )
+
+        levers = self._create_levers(
+            definition,
         )
 
         stages = self._create_stages(
-            self._definition,
+            definition,
             levers,
         )
 
         return Mechanism(
             stages=tuple(stages),
+        )
+
+    def _apply_parameters(
+        self,
+        definition: MechanismDefinition,
+        parameters: ParameterSet,
+    ) -> MechanismDefinition:
+        """
+        Apply optimization parameters to a mechanism definition.
+
+        The original CSV definition remains unchanged.
+        """
+
+        values = parameters.values()
+
+        levers = []
+
+        for lever in definition.levers:
+
+            length = values.get(
+                f"lever.{lever.id}.length",
+                lever.length_start,
+            )
+
+            angle = values.get(
+                f"lever.{lever.id}.angle",
+                lever.angle_start,
+            )
+
+            levers.append(
+                replace(
+                    lever,
+                    length_start=length,
+                    angle_start=angle,
+                )
+            )
+
+        return MechanismDefinition(
+            levers=tuple(levers),
         )
 
     def _create_levers(
@@ -84,16 +128,30 @@ class CsvMechanismBuilder(MechanismBuilder):
 
         stages: list[Stage] = []
 
+        definitions = {
+            lever.id: lever
+            for lever in definition.levers
+        }
+
         for lever_definition in definition.levers:
+
             if lever_definition.driver is None:
                 continue
 
+            driver_definition = definitions[
+                lever_definition.driver
+            ]
+
             stages.append(
                 Stage.from_reference_position(
-                    input_lever=levers[lever_definition.driver],
-                    output_lever=levers[lever_definition.id],
-                    input_angle=0.0,
-                    output_angle=0.0,
+                    input_lever=levers[
+                        lever_definition.driver
+                    ],
+                    output_lever=levers[
+                        lever_definition.id
+                    ],
+                    input_angle=driver_definition.angle_start,
+                    output_angle=lever_definition.angle_start,
                 )
             )
 

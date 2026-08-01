@@ -22,31 +22,34 @@ from mechanics.csv_mechanism_builder import (
     CsvMechanismBuilder,
 )
 
+from optimization.csv_parameter_factory import (
+    CsvParameterFactory,
+)
+
 from optimization.evolution_engine import (
     EvolutionEngine,
 )
-from optimization.parameter import (
-    Parameter,
+
+from optimization.mechanism_optimizer import (
+    MechanismOptimizer,
 )
+
 from optimization.parameter_mutation import (
     ParameterMutation,
 )
-from optimization.parameter_set import (
-    ParameterSet,
+
+from optimization.population_factory import (
+    PopulationFactory,
 )
-from optimization.population import (
-    Population,
-)
+
 from optimization.reproduction import (
     Reproduction,
-)
-from optimization.mechanism_optimizer import (
-    MechanismOptimizer,
 )
 
 from simulation.mechanism_simulator import (
     MechanismSimulator,
 )
+
 from simulation.motion_range import (
     MotionRange,
 )
@@ -54,6 +57,7 @@ from simulation.motion_range import (
 from simulation.stage_simulator import (
     StageSimulator,
 )
+
 
 # -------------------------------------------------
 # Paths
@@ -88,6 +92,17 @@ builder = CsvMechanismBuilder(
 
 
 # -------------------------------------------------
+# Optimization parameters
+# -------------------------------------------------
+
+parameter_template = (
+    CsvParameterFactory.create(
+        definition
+    )
+)
+
+
+# -------------------------------------------------
 # Target curve
 # -------------------------------------------------
 
@@ -101,18 +116,17 @@ target_curve = TargetCurve.from_csv(
 # -------------------------------------------------
 
 motion = MotionRange(
-    start_angle=math.radians(-50.0),
+    start_angle=math.radians(0.0),
     max_angle=math.radians(100.0),
     step=math.radians(0.1),
-    direction=1,
+    direction=-1,
 )
-
-stage_simulator = StageSimulator()
 
 simulator = MechanismSimulator(
     motion=motion,
-    stage_simulator=stage_simulator,
+    stage_simulator=StageSimulator(),
 )
+
 
 # -------------------------------------------------
 # Fitness
@@ -135,77 +149,37 @@ optimizer = MechanismOptimizer(
 
 
 # -------------------------------------------------
-# Parameter generation
+# Initial population
 # -------------------------------------------------
 
 rng = random.Random(42)
 
-
-def random_parameter_set() -> ParameterSet:
-    return ParameterSet(
-        parameters=(
-            Parameter(
-                name="input_lever_length",
-                minimum=65.0,
-                maximum=75.0,
-                value=rng.uniform(
-                    65.0,
-                    75.0,
-                ),
-            ),
-            Parameter(
-                name="output_lever_length",
-                minimum=65.0,
-                maximum=75.0,
-                value=rng.uniform(
-                    65.0,
-                    75.0,
-                ),
-            ),
-            Parameter(
-                name="input_angle_offset",
-                minimum=-math.radians(45),
-                maximum=math.radians(45),
-                value=rng.uniform(
-                    -math.radians(45),
-                    math.radians(45),
-                ),
-            ),
-            Parameter(
-                name="output_angle_offset",
-                minimum=-math.radians(45),
-                maximum=math.radians(45),
-                value=rng.uniform(
-                    -math.radians(45),
-                    math.radians(45),
-                ),
-            ),
-        )
-    )
-
-
-# -------------------------------------------------
-# Initial population
-# -------------------------------------------------
-
-population = Population(
-    members=tuple(
-        random_parameter_set()
-        for _ in range(50)
-    )
+population_factory = PopulationFactory(
+    random_generator=rng,
 )
+
+population = population_factory.create(
+    parameter_template,
+    size=50,
+)
+
 
 valid = 0
 
 for candidate in population:
 
-    score = optimizer.evaluate(candidate)
+    score = optimizer.evaluate(
+        candidate
+    )
 
     if score < float("inf"):
+
         valid += 1
 
+
 print(
-    f"Valid candidates: {valid}/{len(population)}"
+    f"Valid candidates: "
+    f"{valid}/{len(population)}"
 )
 
 
@@ -231,10 +205,10 @@ engine = EvolutionEngine(
 # -------------------------------------------------
 
 best_score = float("inf")
-best_candidate: ParameterSet | None = None
+best_candidate = None
 
 
-for generation in range(4):
+for generation in range(20):
 
     scores = {
         candidate:
@@ -268,11 +242,18 @@ for generation in range(4):
 # -------------------------------------------------
 
 print()
-print("Best solution")
-print("=============")
 
 print(
-    f"Fitness: {best_score:.12f}"
+    "Best solution"
+)
+
+print(
+    "============="
+)
+
+print(
+    f"Fitness: "
+    f"{best_score:.12f}"
 )
 
 
@@ -282,15 +263,6 @@ if best_candidate is not None:
         best_candidate.values().items()
     ):
 
-        if "angle_offset" in name:
-
-            print(
-                f"{name}: "
-                f"{math.degrees(value):.3f} deg"
-            )
-
-        else:
-
-            print(
-                f"{name}: {value:.3f}"
-            )
+        print(
+            f"{name}: {value:.6f}"
+        )

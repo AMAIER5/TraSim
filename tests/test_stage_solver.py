@@ -122,7 +122,7 @@ def test_stage_solver_updates_state():
 # Failed solution
 # ---------------------------------------------------------------------------
 
-def test_stage_solver_keeps_state_on_failure():
+def test_stage_solver_keeps_state_on_failure(monkeypatch):
 
     stage = create_stage()
 
@@ -130,7 +130,24 @@ def test_stage_solver_keeps_state_on_failure():
 
     state = SolverState(
         last_input_angle=0.0,
-        last_output_angle=math.pi,
+        last_output_angle=0.0,
+    )
+
+    def fail_solve(*args, **kwargs):
+        from solver.solver_result import SolverResult
+
+        return SolverResult(
+            success=False,
+            angle=float("nan"),
+            residual=float("inf"),
+            iterations=0,
+            reason="blocked",
+        )
+
+    monkeypatch.setattr(
+        solver.angle_solver,
+        "solve",
+        fail_solve,
     )
 
     result, new_state = solver.solve(

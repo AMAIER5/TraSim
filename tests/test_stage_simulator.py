@@ -45,7 +45,40 @@ class DummySolver:
             state,
         )
 
+class StateCaptureSolver:
+    """
+    Solver that captures the initial SolverState.
+    """
 
+    captured_states: list[SolverState] = []
+
+    def __init__(
+        self,
+        stage: Stage,
+    ) -> None:
+
+        self.stage = stage
+
+
+    def solve(
+        self,
+        *,
+        input_angle: float,
+        state: SolverState,
+    ):
+
+        self.captured_states.append(state)
+
+        return (
+            SolverResult(
+                success=True,
+                angle=input_angle,
+                residual=0.0,
+                iterations=1,
+            ),
+            state,
+        )
+        
 class BlockingSolver:
     """
     Blocks during second solver call.
@@ -90,7 +123,31 @@ class BlockingSolver:
             state,
         )
 
+class FeedbackCaptureMotion:
+    """
+    Motion provider that captures feedback values.
+    """
 
+    def __init__(self) -> None:
+
+        self.feedbacks: list[float] = []
+
+    def __iter__(self):
+
+        yield 0.0
+        yield math.radians(5)
+        yield math.radians(10)
+
+    def feedback(
+        self,
+        *,
+        output_delta: float,
+    ) -> None:
+
+        self.feedbacks.append(
+            output_delta
+        )
+        
 def create_stage() -> Stage:
 
     input_lever = Lever(
@@ -196,4 +253,60 @@ def test_simulator_is_reusable():
     assert (
         first.output_angles
         == second.output_angles
+    )
+    
+def test_simulator_creates_initial_solver_state():
+
+    StateCaptureSolver.captured_states.clear()
+
+    simulator = StageSimulator(
+        solver_type=StateCaptureSolver,
+    )
+
+    simulator.run(
+        stage=create_stage(),
+        motion=create_motion(),
+    )
+
+
+    assert len(
+        StateCaptureSolver.captured_states
+    ) > 0
+
+
+    state = (
+        StateCaptureSolver
+        .captured_states[0]
+    )
+
+
+    assert state.last_input_angle == 0.0
+
+    assert state.last_output_angle == 0.0
+
+    assert state.direction == 0
+
+    assert state.output_velocity == 0.0
+    
+    
+def test_simulator_sends_motion_feedback():
+
+    motion = FeedbackCaptureMotion()
+
+    simulator = StageSimulator(
+        solver_type=DummySolver,
+    )
+
+    result = simulator.run(
+        stage=create_stage(),
+        motion=motion,
+    )
+
+    assert result.success
+
+    assert motion.feedbacks == (
+        [
+            math.radians(5),
+            math.radians(5),
+        ]
     )

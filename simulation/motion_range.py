@@ -6,6 +6,7 @@ Defines the input angle sequence for a simulation run.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from core.tolerance import ANGLE_TOLERANCE
@@ -17,21 +18,6 @@ class MotionRange:
     Defines a one-dimensional angular simulation range.
 
     Angles are stored internally in radians.
-
-    Parameters
-    ----------
-    start_angle:
-        Initial angle [rad].
-
-    max_angle:
-        Maximum absolute travel angle [rad].
-
-    step:
-        Angular increment [rad].
-
-    direction:
-        +1 increasing angle.
-        -1 decreasing angle.
     """
 
     start_angle: float
@@ -59,7 +45,10 @@ class MotionRange:
                 "max_angle must not be negative"
             )
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[float]:
+        """
+        Generate input angles.
+        """
 
         current = self.start_angle
 
@@ -71,7 +60,20 @@ class MotionRange:
 
             current += (
                 self.direction
-                * self.step
+                *
+                self.step
             )
 
             travelled += self.step
+
+    def feedback(
+        self,
+        *,
+        output_delta: float,
+    ) -> None:
+        """
+        Receive simulation feedback.
+
+        Fixed motion ranges do not adapt their step size.
+        """
+        pass

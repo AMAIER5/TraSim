@@ -107,3 +107,17 @@ def test_motion_range_stops_at_limit():
         angles[-1],
         0.9,
     )
+    
+def test_motion_range_feedback_is_ignored():
+
+    motion = MotionRange(
+        start_angle=0.0,
+        max_angle=1.0,
+        step=0.1,
+    )
+
+    motion.feedback(
+        output_delta=0.5,
+    )
+
+    assert list(motion)[1] == 0.1

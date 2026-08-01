@@ -23,12 +23,15 @@ class PopulationFactory:
         self,
         *,
         random_generator=None,
+        initial_spread: float = 0.1,
     ):
 
         self.random = (
             random_generator
             or random
         )
+
+        self.initial_spread = initial_spread
 
     def create(
         self,
@@ -37,7 +40,8 @@ class PopulationFactory:
         size: int,
     ) -> Population:
         """
-        Create random population.
+        Create initial population around
+        template values.
         """
 
         if size <= 0:
@@ -64,16 +68,41 @@ class PopulationFactory:
         template: ParameterSet,
     ) -> ParameterSet:
         """
-        Create one randomized candidate.
+        Create one randomized candidate
+        around the template value.
         """
 
         parameters = []
 
         for parameter in template.parameters:
 
-            value = self.random.uniform(
+            range_size = (
+                parameter.maximum
+                -
+                parameter.minimum
+            )
+
+            delta = (
+                self.random.uniform(
+                    -self.initial_spread,
+                    self.initial_spread,
+                )
+                *
+                range_size
+            )
+
+            value = (
+                parameter.value
+                +
+                delta
+            )
+
+            value = max(
                 parameter.minimum,
-                parameter.maximum,
+                min(
+                    parameter.maximum,
+                    value,
+                ),
             )
 
             parameters.append(

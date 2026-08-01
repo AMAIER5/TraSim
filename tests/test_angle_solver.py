@@ -8,16 +8,16 @@ from __future__ import annotations
 
 import math
 
-import pytest
-
 from core.point3d import Point3D
+from core.vector3d import Vector3D
 from mechanics.lever import Lever
 from mechanics.stage import Stage
 from solver.angle_solver import AngleSolver
 from solver.solver_state import SolverState
-from core.vector3d import Vector3D
+
 
 def create_test_stage() -> Stage:
+
     input_lever = Lever(
         pivot=Point3D(0, 0, 0),
         axis=Vector3D(0, 0, 1),
@@ -36,6 +36,11 @@ def create_test_stage() -> Stage:
         input_angle=0.0,
         output_angle=0.0,
     )
+
+
+# ---------------------------------------------------------------------------
+# Basic solving
+# ---------------------------------------------------------------------------
 
 
 def test_angle_solver_finds_solution():
@@ -63,6 +68,12 @@ def test_angle_solver_finds_solution():
     assert result.residual < 1e-10
 
 
+
+# ---------------------------------------------------------------------------
+# Branch continuity
+# ---------------------------------------------------------------------------
+
+
 def test_angle_solver_preserves_branch():
     """
     Consecutive solutions remain continuous.
@@ -71,7 +82,6 @@ def test_angle_solver_preserves_branch():
     stage = create_test_stage()
 
     solver = AngleSolver(
-        search_window=math.radians(20),
         bracket_step=math.radians(1),
     )
 
@@ -101,13 +111,125 @@ def test_angle_solver_preserves_branch():
             result.angle - previous
         ) < math.radians(20)
 
+        state = state.next(
+            input_angle=input_angle,
+            output_angle=result.angle,
+        )
+
         previous = result.angle
 
-        state = SolverState(
-            last_input_angle=input_angle,
-            last_output_angle=result.angle,
-            direction=state.direction,
-        )
+
+
+# ---------------------------------------------------------------------------
+# Kinematic branch selection
+# ---------------------------------------------------------------------------
+
+
+def test_angle_solver_prefers_continuous_velocity_branch():
+    """
+    Branch selection prefers kinematic continuity over
+    a closer prediction if the velocity jump becomes
+    unrealistic.
+    """
+
+    brackets = [
+        (
+            math.radians(-23),
+            math.radians(-21),
+            1,
+        ),
+        (
+            math.radians(-36),
+            math.radians(-34),
+            1,
+        ),
+    ]
+
+
+    state = SolverState(
+        last_input_angle=math.radians(10),
+        last_output_angle=math.radians(-10),
+        direction=-1,
+        output_velocity=-5.0,
+    )
+
+
+    selected = AngleSolver._select_branch(
+        brackets,
+        reference_angle=math.radians(-22),
+        state=state,
+        input_angle=math.radians(15),
+    )
+
+
+    left, right, _ = selected
+
+
+    selected_angle = (
+        left
+        +
+        right
+    ) / 2.0
+
+
+    assert math.isclose(
+        selected_angle,
+        math.radians(-35),
+        abs_tol=math.radians(1),
+    )
+
+
+
+def test_angle_solver_without_motion_history_uses_prediction():
+    """
+    Initial solver state behaves like the previous
+    prediction-based branch selection.
+    """
+
+    brackets = [
+        (
+            math.radians(-31),
+            math.radians(-29),
+            1,
+        ),
+        (
+            math.radians(20),
+            math.radians(22),
+            1,
+        ),
+    ]
+
+    state = SolverState(
+        last_input_angle=0.0,
+        last_output_angle=0.0,
+        direction=0,
+        output_velocity=0.0,
+    )
+
+    selected = AngleSolver._select_branch(
+        brackets,
+        reference_angle=math.radians(-30),
+        state=state,
+        input_angle=math.radians(5),
+    )
+
+    left, right, _ = selected
+
+    selected_angle = (
+        left + right
+    ) / 2.0
+
+    assert math.isclose(
+        selected_angle,
+        math.radians(-30),
+        abs_tol=math.radians(1),
+    )
+
+
+
+# ---------------------------------------------------------------------------
+# Performance
+# ---------------------------------------------------------------------------
 
 
 def test_angle_solver_iteration_limit():

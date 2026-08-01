@@ -72,3 +72,56 @@ def example_coupled_csv(tmp_path):
     )
 
     return path
+
+@pytest.fixture
+def simple_stage_csv(
+    tmp_path,
+):
+    """
+    Create a simple two lever mechanism.
+
+    Input lever:
+        20-40 mm
+
+    Output lever:
+        80-120 mm
+
+    The geometry is intentionally safe
+    to avoid blocking.
+    """
+
+    path = tmp_path / "simple_stage.csv"
+
+    path.write_text(
+        """id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,driver,coupled
+1,30,50,40,-60,60,0,0,0,0,0,0,1,,
+2,90,110,100,-60,60,0,50,-10,0,0,0,1,1,
+""",
+        encoding="utf-8",
+    )
+
+    return path
+
+
+@pytest.fixture
+def simple_target_csv(
+    tmp_path,
+):
+    """
+    Create a simple target transfer curve.
+    """
+
+    path = tmp_path / "target.csv"
+
+    path.write_text(
+        """input_angle,output_angle
+-40,-30
+-20,-15
+0,0
+20,15
+40,30
+""",
+        encoding="utf-8",
+    )
+
+    return path
