@@ -16,6 +16,9 @@ class TransferCurve:
 
     Input and output angles must be ordered
     and have equal length.
+
+    The input angles may be either ascending
+    or descending.
     """
 
     input_angles: tuple[float, ...]
@@ -51,20 +54,35 @@ class TransferCurve:
 
         The input range must be covered by
         the curve.
+
+        Supports both ascending and descending
+        input angle sequences.
         """
 
+        eps = 1e-12
+
+        minimum = min(
+            self.input_angles
+        )
+
+        maximum = max(
+            self.input_angles
+        )
+
         if (
-            input_angle
-            <
-            self.input_angles[0]
+            input_angle < minimum - eps
             or
-            input_angle
-            >
-            self.input_angles[-1]
+            input_angle > maximum + eps
         ):
+
             raise ValueError(
                 "input angle outside curve range"
             )
+
+        input_angle = min(
+            max(input_angle, minimum),
+            maximum,
+        )
 
         for index in range(
             len(self.input_angles) - 1
@@ -74,7 +92,17 @@ class TransferCurve:
 
             x1 = self.input_angles[index + 1]
 
-            if x0 <= input_angle <= x1:
+            lower = min(
+                x0,
+                x1,
+            )
+
+            upper = max(
+                x0,
+                x1,
+            )
+
+            if lower <= input_angle <= upper:
 
                 y0 = self.output_angles[index]
 
@@ -91,7 +119,11 @@ class TransferCurve:
                     +
                     factor
                     *
-                    (y1 - y0)
+                    (
+                        y1
+                        -
+                        y0
+                    )
                 )
 
         raise RuntimeError(

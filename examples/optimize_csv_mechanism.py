@@ -110,6 +110,7 @@ target_curve = TargetCurve.from_csv(
     TARGET_FILE
 )
 
+print(target_curve)
 
 # -------------------------------------------------
 # Simulation setup
@@ -122,11 +123,12 @@ motion = MotionRange(
     direction=-1,
 )
 
+stage_simulator = StageSimulator()
+
 simulator = MechanismSimulator(
     motion=motion,
-    stage_simulator=StageSimulator(),
+    stage_simulator=stage_simulator,
 )
-
 
 # -------------------------------------------------
 # Fitness
@@ -208,7 +210,7 @@ best_score = float("inf")
 best_candidate = None
 
 
-for generation in range(20):
+for generation in range(5):
 
     scores = {
         candidate:
@@ -257,12 +259,115 @@ print(
 )
 
 
+# -------------------------------------------------
+# Construction data
+# -------------------------------------------------
+
 if best_candidate is not None:
 
-    for name, value in (
-        best_candidate.values().items()
+    mechanism = builder.build(
+        best_candidate
+    )
+
+    print()
+
+    print(
+        "Construction data"
+    )
+
+    print(
+        "-----------------"
+    )
+
+    for index, stage in enumerate(
+        mechanism.stages,
+        start=1,
     ):
 
+        print()
+
         print(
-            f"{name}: {value:.6f}"
+            f"Stage {index}"
         )
+
+        print(
+            f"  Input lever length: "
+            f"{stage.input_lever.length:.6f} mm"
+        )
+
+        print(
+            f"  Input angle: "
+            f"{math.degrees(stage.input_angle):.6f} deg"
+        )
+
+        print(
+            f"  Input angle offset: "
+            f"{math.degrees(stage.input_angle_offset):.6f} deg"
+        )
+
+        print()
+
+        print(
+            f"  Output lever length: "
+            f"{stage.output_lever.length:.6f} mm"
+        )
+
+        print(
+            f"  Output angle: "
+            f"{math.degrees(stage.output_angle):.6f} deg"
+        )
+
+        print(
+            f"  Output angle offset: "
+            f"{math.degrees(stage.output_angle_offset):.6f} deg"
+        )
+
+        print()
+
+        print(
+            f"  Rod length: "
+            f"{stage.rod_length:.6f} mm"
+        )
+        
+# -------------------------------------------------
+# Solver statistics
+# -------------------------------------------------
+
+print()
+
+print(
+    "Solver statistics"
+)
+
+print(
+    "================="
+)
+
+total_stats: dict[str, int] = {}
+
+for solver in stage_simulator.solvers:
+
+    if not hasattr(solver, "get_stats"):
+        continue
+
+    for key, value in solver.get_stats().items():
+
+        total_stats[key] = (
+            total_stats.get(key, 0)
+            +
+            value
+        )
+
+if total_stats:
+
+    for key, value in total_stats.items():
+
+        print(
+            f"{key}: {value}"
+        )
+
+else:
+
+    print(
+        "No statistics available."
+    )

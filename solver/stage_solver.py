@@ -68,3 +68,19 @@ class StageSolver:
         )
 
         return result, new_state
+
+    def get_stats(self) -> dict[str, int]:
+        """
+        Return performance statistics collected by
+        the underlying AngleSolver.
+        """
+
+        return self.angle_solver.get_stats()
+
+    def reset_stats(self) -> None:
+        """
+        Reset performance statistics collected by
+        the underlying AngleSolver.
+        """
+
+        self.angle_solver.reset_stats()

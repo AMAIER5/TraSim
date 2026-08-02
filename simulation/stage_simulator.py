@@ -21,9 +21,6 @@ from solver.stage_solver import StageSolver
 
 
 class SolverProtocol(Protocol):
-    """
-    Protocol implemented by stage solvers.
-    """
 
     def __init__(
         self,
@@ -37,6 +34,12 @@ class SolverProtocol(Protocol):
         input_angle: float,
         state: SolverState,
     ) -> tuple[SolverResult, SolverState]:
+        ...
+
+    def get_stats(self) -> dict[str, int]:
+        ...
+
+    def reset_stats(self) -> None:
         ...
 
 
@@ -54,6 +57,17 @@ class StageSimulator:
         solver_type: type[SolverProtocol] = StageSolver,
     ) -> None:
         self._solver_type = solver_type
+        self._solvers: list[SolverProtocol] = []
+
+    @property
+    def solvers(self) -> tuple[SolverProtocol, ...]:
+        """
+        Return all solver instances created so far.
+
+        Used for diagnostics and performance statistics.
+        """
+
+        return tuple(self._solvers)
 
     def run(
         self,
@@ -68,6 +82,10 @@ class StageSimulator:
         """
 
         solver = self._solver_type(stage)
+
+        self._solvers.append(
+            solver
+        )
 
         input_angles: list[float] = []
         output_angles: list[float] = []

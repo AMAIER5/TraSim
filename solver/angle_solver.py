@@ -7,6 +7,11 @@ The solver preserves the physical motion branch by searching
 all possible roots around the predicted motion state and
 selecting the physically continuous branch.
 
+Performance optimization:
+- adaptive local bracket reuse
+- dynamic search window based on previous root movement
+- single bracket fast path
+
 Branch selection considers:
 - prediction distance
 - output angle jump
@@ -42,15 +47,48 @@ class AngleSolver:
         search_max: float = math.radians(180),
         bracket_step: float = math.radians(1),
         search_window: float = math.radians(30),
+        reuse_factor: float = 3.0,
+        reuse_min_window: float = math.radians(2),
+        reuse_max_window: float = math.radians(15),
         tolerance: float = 1e-10,
         max_iterations: int = 40,
-    ):
+    ) -> None:
+
         self.search_min = search_min
         self.search_max = search_max
         self.bracket_step = bracket_step
         self.search_window = search_window
+
+        self.reuse_factor = reuse_factor
+        self.reuse_min_window = reuse_min_window
+        self.reuse_max_window = reuse_max_window
+
         self.tolerance = tolerance
         self.max_iterations = max_iterations
+
+        #
+        # Adaptive bracket cache
+        #
+
+        self._last_root: float | None = None
+        self._last_bracket_width = bracket_step
+
+        #
+        # Performance statistics
+        #
+
+        self.stats = {
+            "adaptive_attempts": 0,
+            "adaptive_success": 0,
+            "adaptive_failure": 0,
+            "local_searches": 0,
+            "fallback_searches": 0,
+            "brackets_found": 0,
+            "single_bracket_fast_path": 0,
+            "multi_bracket_selection": 0,
+            "solved": 0,
+            "blocked": 0,
+        }
 
 
     def solve(
@@ -61,7 +99,6 @@ class AngleSolver:
     ) -> SolverResult:
 
         def residual(angle: float) -> float:
-
             return stage_error(
                 stage,
                 input_angle,
@@ -75,25 +112,67 @@ class AngleSolver:
 
 
         if predicted is None:
-
             predicted = state.last_output_angle
 
 
+        #
+        # Adaptive local bracket reuse
+        #
 
-        brackets = RootSolver.find_all_brackets_around(
-            function=residual,
-            center=predicted,
-            window=self.search_window,
-            step=self.bracket_step,
-        )
+        brackets = []
+
+        if self._last_root is not None:
+
+            self.stats["adaptive_attempts"] += 1
+
+            window = min(
+                max(
+                    self._last_bracket_width
+                    *
+                    self.reuse_factor,
+                    self.reuse_min_window,
+                ),
+                self.reuse_max_window,
+            )
+
+
+            brackets = RootSolver.find_all_brackets_around(
+                function=residual,
+                center=predicted,
+                window=window,
+                step=self.bracket_step,
+            )
+
+
+            if brackets:
+                self.stats["adaptive_success"] += 1
+            else:
+                self.stats["adaptive_failure"] += 1
 
 
         #
-        # Fallback:
-        # Search complete range if local search failed.
+        # Normal local search
         #
 
         if not brackets:
+
+            self.stats["local_searches"] += 1
+
+            brackets = RootSolver.find_all_brackets_around(
+                function=residual,
+                center=predicted,
+                window=self.search_window,
+                step=self.bracket_step,
+            )
+
+
+        #
+        # Complete search fallback
+        #
+
+        if not brackets:
+
+            self.stats["fallback_searches"] += 1
 
             brackets = RootSolver.find_all_brackets(
                 function=residual,
@@ -103,7 +182,12 @@ class AngleSolver:
             )
 
 
+        self.stats["brackets_found"] += len(brackets)
+
+
         if not brackets:
+
+            self.stats["blocked"] += 1
 
             return SolverResult(
                 success=False,
@@ -114,12 +198,29 @@ class AngleSolver:
             )
 
 
-        bracket = self._select_branch(
-            brackets,
-            reference_angle=predicted,
-            state=state,
-            input_angle=input_angle,
-        )
+        #
+        # Single bracket fast path
+        #
+        # A single mathematical root has no ambiguity.
+        # Avoid expensive physical branch scoring.
+        #
+
+        if len(brackets) == 1:
+
+            self.stats["single_bracket_fast_path"] += 1
+
+            bracket = brackets[0]
+
+        else:
+
+            self.stats["multi_bracket_selection"] += 1
+
+            bracket = self._select_branch(
+                brackets,
+                reference_angle=predicted,
+                state=state,
+                input_angle=input_angle,
+            )
 
 
         left, right, bracket_iterations = bracket
@@ -140,6 +241,8 @@ class AngleSolver:
 
         except ValueError:
 
+            self.stats["blocked"] += 1
+
             return SolverResult(
                 success=False,
                 angle=float("nan"),
@@ -149,11 +252,29 @@ class AngleSolver:
             )
 
 
-
         success = (
             abs(value)
             <= self.tolerance
         )
+
+
+        if success:
+
+            self.stats["solved"] += 1
+
+            #
+            # Update adaptive cache
+            #
+
+            self._last_root = angle
+
+            self._last_bracket_width = abs(
+                right - left
+            )
+
+        else:
+
+            self.stats["blocked"] += 1
 
 
         return SolverResult(
@@ -169,6 +290,28 @@ class AngleSolver:
         )
 
 
+    def get_stats(self) -> dict[str, int]:
+
+        """
+        Return solver performance statistics.
+        """
+
+        return self.stats.copy()
+
+
+    def reset_stats(self) -> None:
+
+        """
+        Reset solver performance statistics.
+        """
+
+        for key in self.stats:
+            self.stats[key] = 0
+
+
+        self._last_root = None
+        self._last_bracket_width = self.bracket_step
+
 
     @staticmethod
     def _select_branch(
@@ -177,17 +320,10 @@ class AngleSolver:
         state: SolverState,
         input_angle: float,
     ) -> tuple[float, float, int]:
+
         """
         Select the physically continuous branch.
-
-        The scoring combines:
-
-        - distance from prediction
-        - output angle jump
-        - velocity change
-        - direction consistency
         """
-
 
         if state.direction not in (-1, 0, 1):
 
@@ -203,11 +339,8 @@ class AngleSolver:
             left, right, _ = bracket
 
             return (
-                left
-                +
-                right
+                left + right
             ) / 2.0
-
 
 
         def score(
@@ -224,15 +357,9 @@ class AngleSolver:
             )
 
 
-            #
-            # No motion history:
-            # prediction is sufficient.
-            #
-
             if state.direction == 0:
 
                 return prediction_error
-
 
 
             output_change = abs(
@@ -264,11 +391,9 @@ class AngleSolver:
                     state.output_velocity
                 )
 
-
             else:
 
                 velocity_change = 0.0
-
 
 
             if (
@@ -279,8 +404,7 @@ class AngleSolver:
                 )
                 *
                 state.direction
-                >=
-                0
+                >= 0
             ):
 
                 direction_penalty = 0.0
@@ -288,7 +412,6 @@ class AngleSolver:
             else:
 
                 direction_penalty = 1.0
-
 
 
             return (
@@ -300,7 +423,6 @@ class AngleSolver:
                 +
                 direction_penalty
             )
-
 
 
         return min(
