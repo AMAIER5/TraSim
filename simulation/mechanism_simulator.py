@@ -19,6 +19,8 @@ class MechanismSimulator:
     The simulator is configured with a motion range and can
     repeatedly evaluate different mechanisms using identical
     simulation settings.
+
+    Optionally, simulation can be limited to the first N stages.
     """
 
     def __init__(
@@ -26,27 +28,54 @@ class MechanismSimulator:
         *,
         motion: MotionRange,
         stage_simulator: StageSimulator | None = None,
+        stage_limit: int | None = None,
     ) -> None:
+
+        if (
+            stage_limit is not None
+            and stage_limit < 1
+        ):
+            raise ValueError(
+                "stage_limit must be greater than zero"
+            )
+
         self._motion = motion
+
         self._stage_simulator = (
             stage_simulator
             if stage_simulator is not None
             else StageSimulator()
         )
 
+        self._stage_limit = stage_limit
+
+
     @property
     def motion(self) -> MotionRange:
         """
         Motion range used for all simulations.
         """
+
         return self._motion
+
+
+    @property
+    def stage_limit(self) -> int | None:
+        """
+        Maximum number of simulated stages.
+
+        None means all stages are simulated.
+        """
+
+        return self._stage_limit
+
 
     def simulate(
         self,
         mechanism: Mechanism,
     ) -> tuple[SimulationResult, ...]:
         """
-        Simulate every stage of a mechanism.
+        Simulate stages of a mechanism.
 
         Parameters
         ----------
@@ -56,13 +85,20 @@ class MechanismSimulator:
         Returns
         -------
         tuple[SimulationResult, ...]
-            One SimulationResult per stage.
+            One SimulationResult per simulated stage.
         """
+
+        stages = mechanism.stages
+
+        if self._stage_limit is not None:
+
+            stages = stages[:self._stage_limit]
+
 
         return tuple(
             self._stage_simulator.run(
                 stage=stage,
                 motion=self._motion,
             )
-            for stage in mechanism.stages
+            for stage in stages
         )

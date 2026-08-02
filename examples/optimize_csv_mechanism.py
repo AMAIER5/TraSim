@@ -128,6 +128,7 @@ stage_simulator = StageSimulator()
 simulator = MechanismSimulator(
     motion=motion,
     stage_simulator=stage_simulator,
+    stage_limit=1,
 )
 
 # -------------------------------------------------
@@ -166,25 +167,6 @@ population = population_factory.create(
 )
 
 
-valid = 0
-
-for candidate in population:
-
-    score = optimizer.evaluate(
-        candidate
-    )
-
-    if score < float("inf"):
-
-        valid += 1
-
-
-print(
-    f"Valid candidates: "
-    f"{valid}/{len(population)}"
-)
-
-
 # -------------------------------------------------
 # Evolution engine
 # -------------------------------------------------
@@ -199,6 +181,34 @@ engine = EvolutionEngine(
             random_generator=rng,
         ),
     ),
+    target_fitness=0.1394,
+    max_generations=50,
+    stagnation_limit=15,
+    stagnation_tolerance=1e-6,
+)
+
+
+# -------------------------------------------------
+# Initial validation
+# -------------------------------------------------
+
+initial_scores = {
+    candidate:
+        optimizer.evaluate(candidate)
+    for candidate
+    in engine.population
+}
+
+engine.evaluate_population()
+
+valid = sum(
+    score < float("inf")
+    for score in engine.scores.values()
+)
+
+print(
+    f"Valid candidates: "
+    f"{valid}/{len(engine.population)}"
 )
 
 
@@ -206,42 +216,42 @@ engine = EvolutionEngine(
 # Evolution loop
 # -------------------------------------------------
 
-best_score = float("inf")
-best_candidate = None
-
-
-for generation in range(5):
-
-    scores = {
-        candidate:
-            optimizer.evaluate(candidate)
-        for candidate
-        in engine.population
-    }
-
-    candidate, score = min(
-        scores.items(),
-        key=lambda item: item[1],
-    )
-
-    if score < best_score:
-
-        best_score = score
-        best_candidate = candidate
+for generation in engine.run(
+    children_count=50,
+):
 
     print(
         f"Generation {generation:3d}: "
-        f"{score:.8f}"
+        f"{engine.best_score:.8f}"
     )
 
-    engine.step(
-        children_count=50,
-    )
+    # print(optimizer.get_cache_stats())
 
 
+if engine.best_candidate is not None:
+
+    best_candidate = engine.best_candidate
+
+    best_score = engine.best_score
+
+else:
+
+    best_candidate = None
+
+    best_score = float("inf")
+    
 # -------------------------------------------------
 # Result
 # -------------------------------------------------
+print()
+
+print(
+    "Evolution finished."
+)
+
+print(
+    f"Reason: {engine.stop_reason}"
+)
 
 print()
 

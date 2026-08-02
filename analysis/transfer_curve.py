@@ -6,7 +6,8 @@ Representation of an input/output angle relationship.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from bisect import bisect_left
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +26,32 @@ class TransferCurve:
 
     output_angles: tuple[float, ...]
 
+    _ascending: bool = field(
+        init=False,
+        repr=False,
+    )
+
+    _minimum: float = field(
+        init=False,
+        repr=False,
+    )
+
+    _maximum: float = field(
+        init=False,
+        repr=False,
+    )
+
+    _lookup_inputs: tuple[float, ...] = field(
+        init=False,
+        repr=False,
+    )
+
+    _lookup_outputs: tuple[float, ...] = field(
+        init=False,
+        repr=False,
+    )
+
+
     def __post_init__(self) -> None:
 
         if len(
@@ -32,7 +59,6 @@ class TransferCurve:
         ) != len(
             self.output_angles
         ):
-
             raise ValueError(
                 "input and output length mismatch"
             )
@@ -40,10 +66,73 @@ class TransferCurve:
         if len(
             self.input_angles
         ) < 2:
-
             raise ValueError(
                 "at least two points required"
             )
+
+
+        ascending = (
+            self.input_angles[0]
+            <
+            self.input_angles[-1]
+        )
+
+        object.__setattr__(
+            self,
+            "_ascending",
+            ascending,
+        )
+
+
+        object.__setattr__(
+            self,
+            "_minimum",
+            min(self.input_angles),
+        )
+
+        object.__setattr__(
+            self,
+            "_maximum",
+            max(self.input_angles),
+        )
+
+
+        if ascending:
+
+            object.__setattr__(
+                self,
+                "_lookup_inputs",
+                self.input_angles,
+            )
+
+            object.__setattr__(
+                self,
+                "_lookup_outputs",
+                self.output_angles,
+            )
+
+        else:
+
+            object.__setattr__(
+                self,
+                "_lookup_inputs",
+                tuple(
+                    reversed(
+                        self.input_angles
+                    )
+                ),
+            )
+
+            object.__setattr__(
+                self,
+                "_lookup_outputs",
+                tuple(
+                    reversed(
+                        self.output_angles
+                    )
+                ),
+            )
+
 
     def output_at(
         self,
@@ -61,71 +150,78 @@ class TransferCurve:
 
         eps = 1e-12
 
-        minimum = min(
-            self.input_angles
-        )
-
-        maximum = max(
-            self.input_angles
-        )
-
         if (
-            input_angle < minimum - eps
+            input_angle
+            <
+            self._minimum - eps
             or
-            input_angle > maximum + eps
+            input_angle
+            >
+            self._maximum + eps
         ):
-
             raise ValueError(
                 "input angle outside curve range"
             )
 
+
         input_angle = min(
-            max(input_angle, minimum),
-            maximum,
+            max(
+                input_angle,
+                self._minimum,
+            ),
+            self._maximum,
         )
 
-        for index in range(
-            len(self.input_angles) - 1
+
+        index = bisect_left(
+            self._lookup_inputs,
+            input_angle,
+        )
+
+
+        if index == 0:
+
+            return self._lookup_outputs[0]
+
+
+        if index >= len(
+            self._lookup_inputs
         ):
 
-            x0 = self.input_angles[index]
+            return self._lookup_outputs[-1]
 
-            x1 = self.input_angles[index + 1]
 
-            lower = min(
-                x0,
-                x1,
+        x0 = self._lookup_inputs[
+            index - 1
+        ]
+
+        x1 = self._lookup_inputs[
+            index
+        ]
+
+        y0 = self._lookup_outputs[
+            index - 1
+        ]
+
+        y1 = self._lookup_outputs[
+            index
+        ]
+
+
+        factor = (
+            input_angle - x0
+        ) / (
+            x1 - x0
+        )
+
+        return (
+            y0
+            +
+            factor
+            *
+            (
+                y1
+                -
+                y0
             )
-
-            upper = max(
-                x0,
-                x1,
-            )
-
-            if lower <= input_angle <= upper:
-
-                y0 = self.output_angles[index]
-
-                y1 = self.output_angles[index + 1]
-
-                factor = (
-                    input_angle - x0
-                ) / (
-                    x1 - x0
-                )
-
-                return (
-                    y0
-                    +
-                    factor
-                    *
-                    (
-                        y1
-                        -
-                        y0
-                    )
-                )
-
-        raise RuntimeError(
-            "interpolation failed"
         )

@@ -12,15 +12,19 @@ A lever consists of:
 The current position is calculated from the supplied angle.
 The lever itself does not store a dynamic state.
 
+Performance optimization:
+- cached normalized rotation axis
+- direct Rodrigues rotation instead of quaternion creation
+
 This keeps kinematic solving separate from component definition.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from math import cos, sin
 
 from core.point3d import Point3D
-from core.quaternion import Quaternion
 from core.vector3d import Vector3D
 
 
@@ -45,9 +49,19 @@ class Lever:
     axis: Vector3D
     length: float
 
-    def __post_init__(self):
+    #
+    # Cached normalized axis
+    #
+
+    _normalized_axis: Vector3D = field(
+        init=False,
+        repr=False,
+    )
+
+
+    def __post_init__(self) -> None:
         """
-        Validate input data.
+        Validate input data and cache normalized axis.
         """
 
         if self.length <= 0:
@@ -59,6 +73,13 @@ class Lever:
             raise ValueError(
                 "Rotation axis cannot be zero."
             )
+
+        object.__setattr__(
+            self,
+            "_normalized_axis",
+            self.axis.normalized(),
+        )
+
 
     # ------------------------------------------------------------------
     # Geometry
@@ -73,19 +94,54 @@ class Lever:
 
         The initial lever direction is defined along global X-axis.
 
-        Rotation:
+        Uses Rodrigues rotation formula:
 
-            direction = q * x_axis * q^-1
+            v' =
+                v*cos(theta)
+                +
+                (k x v)*sin(theta)
+                +
+                k*(k dot v)*(1-cos(theta))
+
+        where:
+
+            v = (1,0,0)
+
+            k = normalized rotation axis
         """
 
-        rotation = Quaternion.from_axis_angle(
-            self.axis,
-            angle_rad,
+        axis = self._normalized_axis
+
+        c = cos(angle_rad)
+        s = sin(angle_rad)
+
+        #
+        # Initial direction vector:
+        #
+        # v = (1,0,0)
+        #
+
+        cross_x = 0.0
+        cross_y = axis.z
+        cross_z = -axis.y
+
+        dot = axis.x
+
+
+        return Vector3D(
+            c
+            +
+            axis.x * dot * (1.0 - c),
+
+            cross_y * s
+            +
+            axis.y * dot * (1.0 - c),
+
+            cross_z * s
+            +
+            axis.z * dot * (1.0 - c),
         )
 
-        return rotation.rotate_vector(
-            Vector3D(1, 0, 0)
-        )
 
     def end_position(
         self,
@@ -101,7 +157,8 @@ class Lever:
 
         end_vector = (
             self.direction(angle_rad)
-            * self.length
+            *
+            self.length
         )
 
         return self.pivot + end_vector

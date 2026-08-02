@@ -11,6 +11,7 @@ Performance optimization:
 - adaptive local bracket reuse
 - dynamic search window based on previous root movement
 - single bracket fast path
+- cached input objective evaluation
 
 Branch selection considers:
 - prediction distance
@@ -24,7 +25,7 @@ from __future__ import annotations
 import math
 
 from mechanics.stage import Stage
-from solver.objective import stage_error
+from solver.objective import create_stage_objective
 from solver.root_solver import RootSolver
 from solver.solver_result import SolverResult
 from solver.solver_state import SolverState
@@ -66,16 +67,8 @@ class AngleSolver:
         self.tolerance = tolerance
         self.max_iterations = max_iterations
 
-        #
-        # Adaptive bracket cache
-        #
-
         self._last_root: float | None = None
         self._last_bracket_width = bracket_step
-
-        #
-        # Performance statistics
-        #
 
         self.stats = {
             "adaptive_attempts": 0,
@@ -98,12 +91,15 @@ class AngleSolver:
         state: SolverState,
     ) -> SolverResult:
 
-        def residual(angle: float) -> float:
-            return stage_error(
-                stage,
-                input_angle,
-                angle,
-            )
+        #
+        # Input position is constant during this solve.
+        # Create reusable residual function once.
+        #
+
+        residual = create_stage_objective(
+            stage,
+            input_angle,
+        )
 
 
         predicted = state.predict_output(
@@ -115,15 +111,13 @@ class AngleSolver:
             predicted = state.last_output_angle
 
 
-        #
-        # Adaptive local bracket reuse
-        #
-
         brackets = []
 
         if self._last_root is not None:
 
-            self.stats["adaptive_attempts"] += 1
+            self.stats[
+                "adaptive_attempts"
+            ] += 1
 
             window = min(
                 max(
@@ -135,7 +129,6 @@ class AngleSolver:
                 self.reuse_max_window,
             )
 
-
             brackets = RootSolver.find_all_brackets_around(
                 function=residual,
                 center=predicted,
@@ -143,20 +136,21 @@ class AngleSolver:
                 step=self.bracket_step,
             )
 
-
             if brackets:
-                self.stats["adaptive_success"] += 1
+                self.stats[
+                    "adaptive_success"
+                ] += 1
             else:
-                self.stats["adaptive_failure"] += 1
+                self.stats[
+                    "adaptive_failure"
+                ] += 1
 
-
-        #
-        # Normal local search
-        #
 
         if not brackets:
 
-            self.stats["local_searches"] += 1
+            self.stats[
+                "local_searches"
+            ] += 1
 
             brackets = RootSolver.find_all_brackets_around(
                 function=residual,
@@ -166,13 +160,11 @@ class AngleSolver:
             )
 
 
-        #
-        # Complete search fallback
-        #
-
         if not brackets:
 
-            self.stats["fallback_searches"] += 1
+            self.stats[
+                "fallback_searches"
+            ] += 1
 
             brackets = RootSolver.find_all_brackets(
                 function=residual,
@@ -182,7 +174,9 @@ class AngleSolver:
             )
 
 
-        self.stats["brackets_found"] += len(brackets)
+        self.stats[
+            "brackets_found"
+        ] += len(brackets)
 
 
         if not brackets:
@@ -198,22 +192,15 @@ class AngleSolver:
             )
 
 
-        #
-        # Single bracket fast path
-        #
-        # A single mathematical root has no ambiguity.
-        # Avoid expensive physical branch scoring.
-        #
-
         if len(brackets) == 1:
-
-            self.stats["single_bracket_fast_path"] += 1
 
             bracket = brackets[0]
 
-        else:
+            self.stats[
+                "single_bracket_fast_path"
+            ] += 1
 
-            self.stats["multi_bracket_selection"] += 1
+        else:
 
             bracket = self._select_branch(
                 brackets,
@@ -221,6 +208,10 @@ class AngleSolver:
                 state=state,
                 input_angle=input_angle,
             )
+
+            self.stats[
+                "multi_bracket_selection"
+            ] += 1
 
 
         left, right, bracket_iterations = bracket
@@ -237,7 +228,6 @@ class AngleSolver:
                     max_iterations=self.max_iterations,
                 )
             )
-
 
         except ValueError:
 
@@ -261,10 +251,6 @@ class AngleSolver:
         if success:
 
             self.stats["solved"] += 1
-
-            #
-            # Update adaptive cache
-            #
 
             self._last_root = angle
 
@@ -291,7 +277,6 @@ class AngleSolver:
 
 
     def get_stats(self) -> dict[str, int]:
-
         """
         Return solver performance statistics.
         """
@@ -300,14 +285,12 @@ class AngleSolver:
 
 
     def reset_stats(self) -> None:
-
         """
         Reset solver performance statistics.
         """
 
         for key in self.stats:
             self.stats[key] = 0
-
 
         self._last_root = None
         self._last_bracket_width = self.bracket_step
@@ -349,16 +332,13 @@ class AngleSolver:
 
             candidate = center(bracket)
 
-
             prediction_error = abs(
                 candidate
                 -
                 reference_angle
             )
 
-
             if state.direction == 0:
-
                 return prediction_error
 
 
@@ -384,7 +364,6 @@ class AngleSolver:
                     state.last_output_angle
                 ) / delta_input
 
-
                 velocity_change = abs(
                     velocity
                     -
@@ -396,6 +375,8 @@ class AngleSolver:
                 velocity_change = 0.0
 
 
+            direction_penalty = 0.0
+
             if (
                 (
                     candidate
@@ -404,13 +385,8 @@ class AngleSolver:
                 )
                 *
                 state.direction
-                >= 0
+                < 0
             ):
-
-                direction_penalty = 0.0
-
-            else:
-
                 direction_penalty = 1.0
 
 

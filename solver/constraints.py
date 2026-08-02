@@ -9,6 +9,8 @@ no solver logic.
 
 from __future__ import annotations
 
+from math import sqrt
+
 from core.point3d import Point3D
 
 
@@ -22,10 +24,36 @@ def distance(
     Formula
     -------
     distance =
-        norm(point_b - point_a)
+        sqrt(
+            dx² + dy² + dz²
+        )
     """
 
-    return (point_b - point_a).norm()
+    dx = (
+        point_b.x
+        -
+        point_a.x
+    )
+
+    dy = (
+        point_b.y
+        -
+        point_a.y
+    )
+
+    dz = (
+        point_b.z
+        -
+        point_a.z
+    )
+
+    return sqrt(
+        dx * dx
+        +
+        dy * dy
+        +
+        dz * dz
+    )
 
 
 def rod_length_error(
@@ -51,10 +79,34 @@ def rod_length_error(
         current_length - rod_length
     """
 
+    dx = (
+        point_b.x
+        -
+        point_a.x
+    )
+
+    dy = (
+        point_b.y
+        -
+        point_a.y
+    )
+
+    dz = (
+        point_b.z
+        -
+        point_a.z
+    )
+
+    current_length = sqrt(
+        dx * dx
+        +
+        dy * dy
+        +
+        dz * dz
+    )
+
     return (
-        distance(
-            point_a,
-            point_b,
-        )
-        - rod_length
+        current_length
+        -
+        rod_length
     )

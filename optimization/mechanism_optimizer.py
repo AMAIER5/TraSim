@@ -22,7 +22,10 @@ from simulation.mechanism_simulator import (
 class MechanismOptimizer:
     """
     Evaluates mechanism candidates.
+
+    Fitness results are cached for identical parameter sets.
     """
+
 
     def __init__(
         self,
@@ -36,19 +39,84 @@ class MechanismOptimizer:
         self._simulator = simulator
         self._fitness = fitness
 
+        self._cache: dict[
+            ParameterSet,
+            float,
+        ] = {}
+
+        self._cache_hits = 0
+        self._cache_misses = 0
+
+
     def evaluate(
         self,
         parameters: ParameterSet,
     ) -> float:
+        """
+        Evaluate a mechanism candidate.
+
+        Results are cached by parameter set.
+        """
+
+        cached = self._cache.get(
+            parameters
+        )
+
+        if cached is not None:
+
+            self._cache_hits += 1
+
+            return cached
+
+
+        self._cache_misses += 1
+
 
         mechanism = self._builder.build(
             parameters
         )
 
+
         simulation = self._simulator.simulate(
             mechanism
         )
 
-        return self._fitness.evaluate(
+
+        result = self._fitness.evaluate(
             simulation
         )
+
+
+        self._cache[
+            parameters
+        ] = result
+
+
+        return result
+
+
+    def clear_cache(
+        self,
+    ) -> None:
+        """
+        Remove all cached evaluations.
+        """
+
+        self._cache.clear()
+
+        self._cache_hits = 0
+        self._cache_misses = 0
+
+
+    def get_cache_stats(
+        self,
+    ) -> dict[str, int]:
+        """
+        Return cache statistics.
+        """
+
+        return {
+            "cache_size": len(self._cache),
+            "cache_hits": self._cache_hits,
+            "cache_misses": self._cache_misses,
+        }
