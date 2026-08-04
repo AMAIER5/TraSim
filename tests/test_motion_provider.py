@@ -16,8 +16,8 @@ from simulation.adaptive_motion_range import AdaptiveMotionRange
 from simulation.motion_provider import MotionProvider
 from simulation.motion_range import MotionRange
 from simulation.stage_simulator import StageSimulator
+from solver.solver_precision import SolverPrecision
 from solver.solver_result import SolverResult
-from solver.solver_state import SolverState
 
 
 class DummySolver:
@@ -28,26 +28,24 @@ class DummySolver:
     def __init__(
         self,
         stage: Stage,
+        *,
+        precision: SolverPrecision | None = None,
     ) -> None:
 
         self.stage = stage
-
+        self.precision = precision
 
     def solve(
         self,
         *,
         input_angle: float,
-        state: SolverState,
-    ):
+    ) -> SolverResult:
 
-        return (
-            SolverResult(
-                success=True,
-                angle=input_angle,
-                residual=0.0,
-                iterations=1,
-            ),
-            state,
+        return SolverResult(
+            success=True,
+            angle=input_angle,
+            residual=0.0,
+            iterations=1,
         )
 
 

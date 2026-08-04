@@ -15,16 +15,21 @@ from mechanics.stage import Stage
 from simulation.motion_provider import MotionProvider
 from simulation.simulation_result import SimulationResult
 from solver.objective import stage_error
+from solver.solver_precision import SolverPrecision
 from solver.solver_result import SolverResult
-from solver.solver_state import SolverState
 from solver.stage_solver import StageSolver
 
 
 class SolverProtocol(Protocol):
+    """
+    Runtime interface required from a stage solver.
+    """
 
     def __init__(
         self,
         stage: Stage,
+        *,
+        precision: SolverPrecision | None = None,
     ) -> None:
         ...
 
@@ -32,8 +37,7 @@ class SolverProtocol(Protocol):
         self,
         *,
         input_angle: float,
-        state: SolverState,
-    ) -> tuple[SolverResult, SolverState]:
+    ) -> SolverResult:
         ...
 
     def get_stats(self) -> dict[str, int]:
@@ -55,8 +59,11 @@ class StageSimulator:
         self,
         *,
         solver_type: type[SolverProtocol] = StageSolver,
+        precision: SolverPrecision | None = None,
     ) -> None:
+
         self._solver_type = solver_type
+        self._precision = precision
         self._solvers: list[SolverProtocol] = []
 
     @property
@@ -77,23 +84,17 @@ class StageSimulator:
     ) -> SimulationResult:
         """
         Simulate a stage over the specified motion provider.
-
-        The solver follows the physical motion branch using SolverState.
         """
 
-        solver = self._solver_type(stage)
-
-        self._solvers.append(
-            solver
+        solver = self._solver_type(
+            stage,
+            precision=self._precision,
         )
+
+        self._solvers.append(solver)
 
         input_angles: list[float] = []
         output_angles: list[float] = []
-
-        state = SolverState.initial(
-            input_angle=stage.input_angle,
-            output_angle=stage.output_angle,
-        )
 
         previous_output: float | None = None
 
@@ -112,9 +113,8 @@ class StageSimulator:
 
         for input_angle in motion:
 
-            result, state = solver.solve(
+            result = solver.solve(
                 input_angle=input_angle,
-                state=state,
             )
 
             if not result.success:
@@ -125,24 +125,12 @@ class StageSimulator:
                     blocked_at=input_angle,
                 )
 
-            input_angles.append(
-                input_angle
-            )
-
-            output_angles.append(
-                result.angle
-            )
+            input_angles.append(input_angle)
+            output_angles.append(result.angle)
 
             if previous_output is not None:
-
-                output_delta = (
-                    result.angle
-                    -
-                    previous_output
-                )
-
                 motion.feedback(
-                    output_delta=output_delta
+                    output_delta=result.angle - previous_output,
                 )
 
             previous_output = result.angle

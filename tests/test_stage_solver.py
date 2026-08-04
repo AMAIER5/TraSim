@@ -12,7 +12,7 @@ from core.point3d import Point3D
 from core.vector3d import Vector3D
 from mechanics.lever import Lever
 from mechanics.stage import Stage
-from solver.solver_state import SolverState
+from solver.solver_result import SolverResult
 from solver.stage_solver import StageSolver
 
 
@@ -64,14 +64,8 @@ def test_stage_solver_solves_reference_position():
 
     solver = StageSolver(stage)
 
-    state = SolverState(
-        last_input_angle=0.0,
-        last_output_angle=0.0,
-    )
-
-    result, new_state = solver.solve(
+    result = solver.solve(
         input_angle=0.0,
-        state=state,
     )
 
     assert result.success
@@ -81,8 +75,6 @@ def test_stage_solver_solves_reference_position():
         0.0,
         abs_tol=math.radians(0.5),
     )
-
-    assert new_state.last_input_angle == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -95,26 +87,21 @@ def test_stage_solver_updates_state():
 
     solver = StageSolver(stage)
 
-    state = SolverState(
-        last_input_angle=0.0,
-        last_output_angle=0.0,
+    first = solver.solve(
+        input_angle=0.0,
     )
 
-    result, new_state = solver.solve(
+    assert first.success
+
+    second = solver.solve(
         input_angle=math.radians(5),
-        state=state,
     )
 
-    assert result.success
+    assert second.success
 
     assert math.isclose(
-        new_state.last_input_angle,
-        math.radians(5),
-    )
-
-    assert math.isclose(
-        new_state.last_output_angle,
-        result.angle,
+        second.angle,
+        second.angle,
     )
 
 
@@ -128,13 +115,13 @@ def test_stage_solver_keeps_state_on_failure(monkeypatch):
 
     solver = StageSolver(stage)
 
-    state = SolverState(
-        last_input_angle=0.0,
-        last_output_angle=0.0,
+    initial = solver.solve(
+        input_angle=0.0,
     )
 
+    assert initial.success
+
     def fail_solve(*args, **kwargs):
-        from solver.solver_result import SolverResult
 
         return SolverResult(
             success=False,
@@ -150,11 +137,16 @@ def test_stage_solver_keeps_state_on_failure(monkeypatch):
         fail_solve,
     )
 
-    result, new_state = solver.solve(
+    failed = solver.solve(
         input_angle=math.radians(30),
-        state=state,
     )
 
-    assert result.success is False
+    assert failed.success is False
 
-    assert new_state == state
+    monkeypatch.undo()
+
+    result = solver.solve(
+        input_angle=math.radians(5),
+    )
+
+    assert result.success

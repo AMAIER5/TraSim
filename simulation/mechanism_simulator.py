@@ -10,6 +10,7 @@ from mechanics.mechanism import Mechanism
 from simulation.motion_range import MotionRange
 from simulation.simulation_result import SimulationResult
 from simulation.stage_simulator import StageSimulator
+from solver.solver_precision import SolverPrecision
 
 
 class MechanismSimulator:
@@ -29,6 +30,7 @@ class MechanismSimulator:
         motion: MotionRange,
         stage_simulator: StageSimulator | None = None,
         stage_limit: int | None = None,
+        precision: SolverPrecision | None = None,
     ) -> None:
 
         if (
@@ -41,12 +43,17 @@ class MechanismSimulator:
 
         self._motion = motion
 
+        self._precision = precision
+
+        # Existing stage simulator owns its solver configuration.
         self._stage_simulator = (
             stage_simulator
             if stage_simulator is not None
-            else StageSimulator()
+            else StageSimulator(
+                precision=precision,
+            )
         )
-
+        
         self._stage_limit = stage_limit
 
 
@@ -58,6 +65,16 @@ class MechanismSimulator:
 
         return self._motion
 
+    @property
+    def precision(self) -> SolverPrecision | None:
+        """
+        Solver precision configuration.
+
+        None means that the default precision
+        configuration is used by the stage solver.
+        """
+
+        return self._precision
 
     @property
     def stage_limit(self) -> int | None:
@@ -102,3 +119,4 @@ class MechanismSimulator:
             )
             for stage in stages
         )
+        

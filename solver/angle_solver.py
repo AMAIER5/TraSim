@@ -29,7 +29,7 @@ from solver.objective import create_stage_objective
 from solver.root_solver import RootSolver
 from solver.solver_result import SolverResult
 from solver.solver_state import SolverState
-
+from solver.solver_precision import SolverPrecision
 
 class AngleSolver:
     """
@@ -43,33 +43,66 @@ class AngleSolver:
 
     def __init__(
         self,
+        stage: Stage,
         *,
+        precision: SolverPrecision | None = None,
         search_min: float = math.radians(-180),
         search_max: float = math.radians(180),
-        bracket_step: float = math.radians(1),
-        search_window: float = math.radians(30),
+        bracket_step: float | None = None,
+        search_window: float | None = None,
+        tolerance: float | None = None,
+        max_iterations: int | None = None,
         reuse_factor: float = 3.0,
         reuse_min_window: float = math.radians(2),
         reuse_max_window: float = math.radians(15),
-        tolerance: float = 1e-10,
-        max_iterations: int = 40,
     ) -> None:
 
+        self.stage = stage
+
+        if precision is None:
+            precision = SolverPrecision()
+
+        if (
+            bracket_step is not None
+            or search_window is not None
+            or tolerance is not None
+            or max_iterations is not None
+        ):
+
+            precision = SolverPrecision(
+                tolerance=(
+                    tolerance
+                    if tolerance is not None
+                    else precision.tolerance
+                ),
+                max_iterations=(
+                    max_iterations
+                    if max_iterations is not None
+                    else precision.max_iterations
+                ),
+                bracket_step=(
+                    bracket_step
+                    if bracket_step is not None
+                    else precision.bracket_step
+                ),
+                search_window=(
+                    search_window
+                    if search_window is not None
+                    else precision.search_window
+                ),
+            )
+
+        self.precision = precision
         self.search_min = search_min
         self.search_max = search_max
-        self.bracket_step = bracket_step
-        self.search_window = search_window
-
+        
         self.reuse_factor = reuse_factor
         self.reuse_min_window = reuse_min_window
         self.reuse_max_window = reuse_max_window
 
-        self.tolerance = tolerance
-        self.max_iterations = max_iterations
-
         self._last_root: float | None = None
-        self._last_bracket_width = bracket_step
-
+        self._last_bracket_width: float = self.precision.bracket_step
+        
         self.stats = {
             "adaptive_attempts": 0,
             "adaptive_success": 0,
@@ -81,23 +114,18 @@ class AngleSolver:
             "multi_bracket_selection": 0,
             "solved": 0,
             "blocked": 0,
+            "brent_iterations": 0,
         }
 
 
     def solve(
         self,
-        stage: Stage,
         input_angle: float,
         state: SolverState,
     ) -> SolverResult:
 
-        #
-        # Input position is constant during this solve.
-        # Create reusable residual function once.
-        #
-
         residual = create_stage_objective(
-            stage,
+            self.stage,
             input_angle,
         )
 
@@ -133,7 +161,7 @@ class AngleSolver:
                 function=residual,
                 center=predicted,
                 window=window,
-                step=self.bracket_step,
+                step=self.precision.bracket_step,
             )
 
             if brackets:
@@ -155,8 +183,8 @@ class AngleSolver:
             brackets = RootSolver.find_all_brackets_around(
                 function=residual,
                 center=predicted,
-                window=self.search_window,
-                step=self.bracket_step,
+                window=self.precision.search_window,
+                step=self.precision.bracket_step,
             )
 
 
@@ -170,7 +198,7 @@ class AngleSolver:
                 function=residual,
                 minimum=self.search_min,
                 maximum=self.search_max,
-                step=self.bracket_step,
+                step=self.precision.bracket_step,
             )
 
 
@@ -224,11 +252,14 @@ class AngleSolver:
                     function=residual,
                     left=left,
                     right=right,
-                    tolerance=self.tolerance,
-                    max_iterations=self.max_iterations,
+                    tolerance=self.precision.tolerance,
+                    max_iterations=self.precision.max_iterations,
                 )
             )
-
+            self.stats[
+                "brent_iterations"
+            ] += solver_iterations
+            
         except ValueError:
 
             self.stats["blocked"] += 1
@@ -244,7 +275,7 @@ class AngleSolver:
 
         success = (
             abs(value)
-            <= self.tolerance
+            <= self.precision.tolerance
         )
 
 
@@ -293,7 +324,7 @@ class AngleSolver:
             self.stats[key] = 0
 
         self._last_root = None
-        self._last_bracket_width = self.bracket_step
+        self._last_bracket_width = self.precision.bracket_step
 
 
     @staticmethod

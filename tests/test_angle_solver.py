@@ -50,7 +50,9 @@ def test_angle_solver_finds_solution():
 
     stage = create_test_stage()
 
-    solver = AngleSolver()
+    solver = AngleSolver(
+        stage,
+    )
 
     state = SolverState(
         last_input_angle=0.0,
@@ -58,7 +60,6 @@ def test_angle_solver_finds_solution():
     )
 
     result = solver.solve(
-        stage=stage,
         input_angle=0.0,
         state=state,
     )
@@ -66,7 +67,6 @@ def test_angle_solver_finds_solution():
     assert result.success is True
 
     assert result.residual < 1e-10
-
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ def test_angle_solver_preserves_branch():
     stage = create_test_stage()
 
     solver = AngleSolver(
-        bracket_step=math.radians(1),
+        stage,
     )
 
     state = SolverState(
@@ -100,7 +100,6 @@ def test_angle_solver_preserves_branch():
     ):
 
         result = solver.solve(
-            stage=stage,
             input_angle=input_angle,
             state=state,
         )
@@ -117,7 +116,6 @@ def test_angle_solver_preserves_branch():
         )
 
         previous = result.angle
-
 
 
 # ---------------------------------------------------------------------------
@@ -145,14 +143,12 @@ def test_angle_solver_prefers_continuous_velocity_branch():
         ),
     ]
 
-
     state = SolverState(
         last_input_angle=math.radians(10),
         last_output_angle=math.radians(-10),
         direction=-1,
         output_velocity=-5.0,
     )
-
 
     selected = AngleSolver._select_branch(
         brackets,
@@ -161,23 +157,17 @@ def test_angle_solver_prefers_continuous_velocity_branch():
         input_angle=math.radians(15),
     )
 
-
     left, right, _ = selected
 
-
     selected_angle = (
-        left
-        +
-        right
+        left + right
     ) / 2.0
-
 
     assert math.isclose(
         selected_angle,
         math.radians(-35),
         abs_tol=math.radians(1),
     )
-
 
 
 def test_angle_solver_without_motion_history_uses_prediction():
@@ -226,7 +216,6 @@ def test_angle_solver_without_motion_history_uses_prediction():
     )
 
 
-
 # ---------------------------------------------------------------------------
 # Performance
 # ---------------------------------------------------------------------------
@@ -239,7 +228,9 @@ def test_angle_solver_iteration_limit():
 
     stage = create_test_stage()
 
-    solver = AngleSolver()
+    solver = AngleSolver(
+        stage,
+    )
 
     state = SolverState(
         last_input_angle=0.0,
@@ -247,7 +238,6 @@ def test_angle_solver_iteration_limit():
     )
 
     result = solver.solve(
-        stage=stage,
         input_angle=0.0,
         state=state,
     )

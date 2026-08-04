@@ -12,7 +12,6 @@ from core.point3d import Point3D
 from core.vector3d import Vector3D
 from mechanics.lever import Lever
 from mechanics.stage import Stage
-from solver.solver_state import SolverState
 from solver.stage_solver import StageSolver
 
 
@@ -51,11 +50,6 @@ def test_single_stage_simulation():
 
     solver = StageSolver(stage)
 
-    state = SolverState(
-        last_input_angle=0.0,
-        last_output_angle=0.0,
-    )
-
     input_angles = [
         math.radians(angle)
         for angle in range(0, 31, 5)
@@ -65,9 +59,8 @@ def test_single_stage_simulation():
 
     for input_angle in input_angles:
 
-        result, state = solver.solve(
+        result = solver.solve(
             input_angle=input_angle,
-            state=state,
         )
 
         assert result.success
@@ -89,18 +82,12 @@ def test_single_stage_motion_is_continuous():
 
     solver = StageSolver(stage)
 
-    state = SolverState(
-        last_input_angle=0.0,
-        last_output_angle=0.0,
-    )
-
     previous_angle = None
 
     for input_deg in range(0, 31, 2):
 
-        result, state = solver.solve(
+        result = solver.solve(
             input_angle=math.radians(input_deg),
-            state=state,
         )
 
         assert result.success
@@ -114,36 +101,3 @@ def test_single_stage_motion_is_continuous():
             assert delta < math.radians(20)
 
         previous_angle = result.angle
-
-
-# ---------------------------------------------------------------------------
-# State follows simulation
-# ---------------------------------------------------------------------------
-
-def test_simulation_state_matches_last_result():
-
-    stage = create_stage()
-
-    solver = StageSolver(stage)
-
-    state = SolverState(
-        last_input_angle=0.0,
-        last_output_angle=0.0,
-    )
-
-    result, state = solver.solve(
-        input_angle=math.radians(10),
-        state=state,
-    )
-
-    assert result.success
-
-    assert math.isclose(
-        state.last_input_angle,
-        math.radians(10),
-    )
-
-    assert math.isclose(
-        state.last_output_angle,
-        result.angle,
-    )
