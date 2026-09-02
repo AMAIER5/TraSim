@@ -2,6 +2,18 @@
 tests/test_full_chain.py
 
 Integration test for the complete kinematic chain.
+
+Issue #12: Count expectations are now documented with
+explicit comments.  The motion range semantics are:
+
+    max_angle=radians(20), step=radians(5)
+    → angles: 0°, 5°, 10°, 15°, 20° = 5 points
+
+    max_angle=radians(10), step=radians(5)
+    → angles: 0°, 5°, 10° = 3 points
+
+These counts are verified by MotionRange.count and
+covered in test_motion_range.py.
 """
 
 from __future__ import annotations
@@ -78,6 +90,10 @@ def create_two_stage_mechanism() -> Mechanism:
 
 
 def test_complete_chain_simulation():
+    """
+    Two-stage mechanism with 5 input angles (0° to 20°
+    in 5° steps) produces 5 output points.
+    """
 
     mechanism = create_two_stage_mechanism()
 
@@ -91,6 +107,9 @@ def test_complete_chain_simulation():
         step=math.radians(5),
     )
 
+    # 0°, 5°, 10°, 15°, 20° → 5 angles
+    assert motion.count == 5
+
     result = simulator.run(
         motion
     )
@@ -103,6 +122,11 @@ def test_complete_chain_simulation():
 
 
 def test_all_stage_outputs_are_available():
+    """
+    Two-stage mechanism with 3 input angles (0° to 10°
+    in 5° steps) produces 3 output steps, each containing
+    2 stage outputs.
+    """
 
     mechanism = create_two_stage_mechanism()
 
@@ -110,12 +134,17 @@ def test_all_stage_outputs_are_available():
         mechanism
     )
 
+    motion = MotionRange(
+        start_angle=0.0,
+        max_angle=math.radians(10),
+        step=math.radians(5),
+    )
+
+    # 0°, 5°, 10° → 3 angles
+    assert motion.count == 3
+
     result = simulator.run(
-        MotionRange(
-            start_angle=0.0,
-            max_angle=math.radians(10),
-            step=math.radians(5),
-        )
+        motion
     )
 
     assert len(
@@ -128,6 +157,10 @@ def test_all_stage_outputs_are_available():
 
 
 def test_input_angle_progression():
+    """
+    First input angle is start_angle, last is
+    start_angle + max_angle.
+    """
 
     mechanism = create_two_stage_mechanism()
 
@@ -152,3 +185,35 @@ def test_input_angle_progression():
         result.input_angles[-1],
         math.radians(10),
     )
+
+
+def test_single_point_motion():
+    """
+    Issue #12: max_angle=0 yields exactly one point.
+    """
+
+    mechanism = create_two_stage_mechanism()
+
+    simulator = MechanismMotionSimulator(
+        mechanism
+    )
+
+    motion = MotionRange(
+        start_angle=0.0,
+        max_angle=0.0,
+        step=math.radians(5),
+    )
+
+    assert motion.count == 1
+
+    result = simulator.run(
+        motion
+    )
+
+    assert result.success
+
+    assert len(result.input_angles) == 1
+
+    assert len(result.stage_outputs) == 1
+
+    assert len(result.stage_outputs[0]) == 2
