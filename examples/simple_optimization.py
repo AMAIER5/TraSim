@@ -4,6 +4,13 @@ examples/simple_optimization.py
 End-to-end evolutionary optimization test.
 
 Optimizes a single-stage mechanism against target_curve2.csv.
+
+Issue #11: The original code referenced ``simulator`` in
+the ``MechanismOptimizer`` constructor, but the variable
+was never defined — only ``motion`` (a ``MotionRange``)
+was created.  This would crash with a ``NameError`` at
+runtime.  The fix constructs a ``MechanismSimulator``
+from the ``motion`` before passing it to the optimizer.
 """
 
 from __future__ import annotations
@@ -81,7 +88,13 @@ motion = MotionRange(
     step=math.radians(0.1),
     direction=1,
 )
- 
+
+# Issue #11: Construct the simulator from the motion
+# range.  The original code passed an undefined
+# ``simulator`` variable to MechanismOptimizer.
+simulator = MechanismSimulator(
+    motion=motion,
+)
 
 
 # -------------------------------------------------
@@ -109,7 +122,6 @@ optimizer = MechanismOptimizer(
 # -------------------------------------------------
 
 rng = random.Random(42)
-
 
 def random_parameter_set() -> ParameterSet:
 
@@ -207,7 +219,6 @@ engine = EvolutionEngine(
 best_score = float("inf")
 best_candidate: ParameterSet | None = None
 
-
 for generation in range(4):
 
     scores = {
@@ -223,7 +234,6 @@ for generation in range(4):
     )
 
     if score < best_score:
-
         best_score = score
         best_candidate = candidate
 
@@ -255,7 +265,6 @@ if best_candidate is not None:
     for name, value in (
         best_candidate.values().items()
     ):
-
         if "angle_offset" in name:
 
             print(

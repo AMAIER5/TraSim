@@ -46,6 +46,7 @@ def create_test_stage(
         input_angle_max=input_angle_max,
         output_angle_min=output_angle_min,
         output_angle_max=output_angle_max,
+        validate_reference=False,
     )
 
 

@@ -20,7 +20,8 @@ from typing import overload
 
 import numpy as np
 
-from .vector3d import Vector3D
+from core.tolerance import LENGTH_TOLERANCE
+from core.vector3d import Vector3D
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,9 +156,6 @@ class Point3D:
     # Utility
     # ------------------------------------------------------------------
 
-    from core.tolerance import LENGTH_TOLERANCE
-    from core.vector3d import Vector3D
-
     def almost_equal(
         self,
         other: Point3D,
@@ -169,7 +167,7 @@ class Point3D:
 
         difference: Vector3D = self - other
 
-        return difference.norm() < tolerance    
+        return difference.norm() < tolerance
 
 
     def as_numpy(self) -> np.ndarray:

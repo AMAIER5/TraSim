@@ -3,14 +3,23 @@ simulation/motion_range.py
 
 Defines the input angle sequence for a simulation run.
 
-Issue #12: The original __iter__ accumulated
-``travelled += self.step`` in a while loop.  This is
-FP-sensitive: for large iteration counts the accumulated
-float drift could cause an off-by-one in the number of
-yielded angles.  The iteration count is now computed
-deterministically via integer arithmetic, and each angle
-is derived from ``start_angle + i * step * direction``
+Issue #8 (and #12): The original ``__iter__`` accumulated
+``travelled += self.step`` in a while loop, comparing the
+float sum against ``max_angle + ANGLE_TOLERANCE``.  While
+this works for moderate iteration counts, it is
+FP-sensitive for very large counts and conceptually
+confusing: ``travelled`` tracks the *distance* moved,
+not the *actual angle*.
+
+The fix replaces the accumulation with integer-counted
+iteration: the number of steps is computed once via
+``count`` (integer arithmetic), and each yielded angle
+is derived from ``start_angle + direction * i * step``
 instead of accumulating ``current``.
+
+This also documents that ``max_angle == 0.0`` yields
+exactly one point (``start_angle``) — intentional, used
+by tests that need a single-point simulation.
 """
 
 from __future__ import annotations
@@ -97,13 +106,14 @@ class MotionRange:
         """
         Generate input angles.
 
-        The angle at position *i* is::
+        Issue #8: The angle at position *i* is::
 
             start_angle + direction * i * step
 
         Using ``i * step`` instead of accumulating
         ``current += step`` avoids floating-point drift
-        for large iteration counts.
+        for large iteration counts and eliminates the
+        confusing ``travelled`` accumulator entirely.
         """
 
         for i in range(self.count):

@@ -1,3 +1,15 @@
+"""
+tests/test_csv_mechanism_motion_validation.py
+
+Issue #16: test_build_diagnosis ended with ``assert False``
+and was a diagnostic script masquerading as a test.  It is
+now marked ``@pytest.mark.skip`` with a clear reason.
+test_stage1_residual_scan is also a diagnostic print script
+with no assertions — it is also marked skip.
+"""
+
+import pytest
+
 from mechanics.csv_mechanism_builder import CsvMechanismBuilder
 from mechanism_io.csv_reader import CsvReader
 from optimization.parameter_set import ParameterSet
@@ -5,6 +17,14 @@ from tests.conftest import example_mechanism_csv
 from validation.stage_motion_validator import StageMotionValidator
 
 
+@pytest.mark.skip(
+    reason=(
+        "Issue #16: This is a diagnostic script that ends "
+        "with assert False.  It prints mechanism validation "
+        "diagnostics and is not a real test.  Move to "
+        "examples/ or run manually if needed."
+    ),
+)
 def test_build_diagnosis(example_mechanism_csv):
     definition = CsvReader.read_mechanism(
         example_mechanism_csv
@@ -43,8 +63,14 @@ reason={result.reason}
         )
 
     assert False, "\n".join(diagnostics)
-    
 
+
+@pytest.mark.skip(
+    reason=(
+        "Issue #16: This is a diagnostic print script with "
+        "no assertions.  Run manually if needed."
+    ),
+)
 def test_stage1_residual_scan(example_mechanism_csv):
 
     import math

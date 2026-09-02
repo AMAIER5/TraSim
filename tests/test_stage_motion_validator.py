@@ -2,6 +2,11 @@
 tests/test_stage_motion_validator.py
 
 Tests for StageMotionValidator.
+
+Issue #7: The create_test_stage helper now passes
+validate_reference=False so that intentionally impossible
+stages (with output_angle=0 outside the declared output
+range) can be constructed for validator testing.
 """
 
 from __future__ import annotations
@@ -46,13 +51,13 @@ def create_test_stage(
         input_angle_max=input_angle_max,
         output_angle_min=output_angle_min,
         output_angle_max=output_angle_max,
+        validate_reference=False,
     )
 
 
 # ---------------------------------------------------------------------------
 # Valid stage
 # ---------------------------------------------------------------------------
-
 
 def test_stage_motion_validator_accepts_valid_motion_range():
     """
@@ -81,7 +86,6 @@ def test_stage_motion_validator_accepts_valid_motion_range():
 # ---------------------------------------------------------------------------
 # Invalid input range
 # ---------------------------------------------------------------------------
-
 
 def test_stage_motion_validator_requires_finite_input_range():
     """
@@ -113,7 +117,6 @@ def test_stage_motion_validator_requires_finite_input_range():
 # Diagnostic information
 # ---------------------------------------------------------------------------
 
-
 def test_stage_motion_validator_returns_failure_position():
     """
     Validator returns the first input position where
@@ -143,11 +146,10 @@ def test_stage_motion_validator_returns_failure_position():
     assert result.reason is not None
 
     assert result.checked_steps >= 1
-    
+
 # ---------------------------------------------------------------------------
 # Validation of externally supplied motion
 # ---------------------------------------------------------------------------
-
 
 def test_stage_motion_validator_accepts_given_motion():
     """
@@ -176,7 +178,6 @@ def test_stage_motion_validator_accepts_given_motion():
     assert result.checked_steps == len(motion)
 
     assert result.failed_at_input_angle is None
-
 
 def test_stage_motion_validator_reports_first_invalid_motion_position():
     """
@@ -209,11 +210,10 @@ def test_stage_motion_validator_reports_first_invalid_motion_position():
     assert result.failed_at_input_angle == motion[0]
 
     assert result.reason is not None
-    
+
 # ---------------------------------------------------------------------------
 # Output angle limits
 # ---------------------------------------------------------------------------
-
 
 def test_stage_motion_validator_rejects_solution_outside_output_range():
     """
@@ -241,7 +241,6 @@ def test_stage_motion_validator_rejects_solution_outside_output_range():
         "blocked",
         "output_angle_limit",
     )
-    
 
 def test_stage_motion_validator_keeps_solver_failure_diagnostic():
     """

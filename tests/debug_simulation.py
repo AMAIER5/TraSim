@@ -1,160 +1,41 @@
-import math
-import random
+"""
+tests/debug_simulation.py
 
-from mechanism_io.csv_reader import CsvReader
-from mechanics.csv_mechanism_builder import CsvMechanismBuilder
+Issue #16: This file was a diagnostic script masquerading
+as a test — ``test_debug_simulation`` contained only
+``print()`` statements and no assertions.  It would
+always be picked up by pytest and, depending on
+fixtures, could fail or produce confusing output.
 
-from optimization.parameter import Parameter
-from optimization.parameter_set import ParameterSet
-from optimization.population_factory import PopulationFactory
+The diagnostic logic has been moved to
+``examples/debug_simulation.py`` (function renamed to
+``run_debug_simulation``).
 
-from simulation.mechanism_simulator import MechanismSimulator
-from simulation.motion_range import MotionRange
+This file now keeps the test name for backward
+compatibility but marks it ``@pytest.mark.skip`` with a
+clear reason, redirecting users to the examples module.
+"""
 
-from solver.objective import stage_error
+import pytest
 
-
-def create_parameter_template():
-
-    return ParameterSet(
-        (
-            Parameter(
-                name="lever.1.length",
-                minimum=20,
-                maximum=40,
-                value=30,
-            ),
-            Parameter(
-                name="lever.2.length",
-                minimum=80,
-                maximum=120,
-                value=100,
-            ),
-        )
-    )
+from examples.debug_simulation import run_debug_simulation
 
 
+@pytest.mark.skip(
+    reason=(
+        "Issue #16: This diagnostic script has been moved "
+        "to examples/debug_simulation.py.  Run it directly "
+        "or use: python -m examples.debug_simulation <csv>"
+    ),
+)
 def test_debug_simulation(
     simple_stage_csv,
 ):
+    """
+    Diagnostic script — skipped.
 
-    print("Loading mechanism...")
+    See ``examples/debug_simulation.py`` for the active
+    version of this debugging aid.
+    """
 
-    definition = CsvReader.read_mechanism(
-        simple_stage_csv,
-    )
-
-    print(definition)
-
-    builder = CsvMechanismBuilder(
-        definition,
-    )
-
-    rng = random.Random(42)
-
-    population = PopulationFactory(
-        random_generator=rng,
-    ).create(
-        create_parameter_template(),
-        size=1,
-    )
-
-    mechanism = builder.build(
-        population[0],
-    )
-
-    stage = mechanism.stages[0]
-
-    print()
-    print("Built mechanism")
-    print("================")
-    print(stage)
-
-    print()
-    print("Residual around reference")
-    print("=========================")
-
-    for angle in range(-180, 181, 30):
-
-        value = stage_error(
-            stage,
-            math.radians(-30),
-            math.radians(angle),
-        )
-
-        print(
-            f"{angle:6.0f}° : {value: .6f}"
-        )
-
-    print()
-    print("Starting simulation...")
-
-    simulator = MechanismSimulator(
-        motion=MotionRange(
-            start_angle=math.radians(-30),
-            max_angle=math.radians(60),
-            step=math.radians(5),
-        )
-    )
-
-    results = simulator.simulate(
-        mechanism,
-    )
-
-    print()
-    print("Returned")
-    print("========")
-
-    print(type(results))
-    print("count:", len(results))
-
-    for index, result in enumerate(results):
-
-        print()
-        print(f"Simulation {index}")
-        print("================")
-
-        print("success:", result.success)
-        print("samples:", len(result.input_angles))
-        print(
-            "blocked_at:",
-            None
-            if result.blocked_at is None
-            else math.degrees(result.blocked_at),
-        )
-
-        print()
-        print("Curve")
-        print("-----")
-
-        previous = None
-
-        for input_angle, output_angle in zip(
-            result.input_angles,
-            result.output_angles,
-        ):
-
-            output_deg = math.degrees(output_angle)
-
-            if previous is None:
-
-                print(
-                    f"{math.degrees(input_angle):7.2f}°"
-                    f" -> "
-                    f"{output_deg:8.2f}°"
-                )
-
-            else:
-
-                delta = abs(
-                    output_deg - previous
-                )
-
-                print(
-                    f"{math.degrees(input_angle):7.2f}°"
-                    f" -> "
-                    f"{output_deg:8.2f}°"
-                    f"   delta={delta:7.2f}°"
-                )
-
-            previous = output_deg
+    run_debug_simulation(simple_stage_csv)

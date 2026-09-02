@@ -93,7 +93,7 @@ class EvolutionEngine:
         self.stagnation_tolerance = (
             stagnation_tolerance
         )
-   
+
         # state
 
         self.scores: dict[
@@ -109,7 +109,6 @@ class EvolutionEngine:
 
         self.stop_reason: str | None = None
 
-
     def evaluate_population(
         self,
     ) -> None:
@@ -124,14 +123,17 @@ class EvolutionEngine:
             in self.population
         }
 
-
     def update_best(
         self,
     ) -> None:
         """
         Update best known solution.
 
-        Returns True if improvement occurred.
+        Issue #5: The previous docstring said "Returns True"
+        but the method returned ``None``.  The docstring is
+        now corrected.  The method still mutates
+        ``self.best_candidate`` and ``self.best_score`` and
+        manages the stagnation counter as a side effect.
         """
 
         candidate, score = min(
@@ -146,7 +148,6 @@ class EvolutionEngine:
         )
 
         if improvement >= self.stagnation_tolerance:
-
             self.best_score = score
             self.best_candidate = candidate
 
@@ -155,7 +156,6 @@ class EvolutionEngine:
         else:
 
             self._stagnation_counter += 1
-            
 
     def should_stop(self) -> bool:
         """
@@ -183,7 +183,6 @@ class EvolutionEngine:
                 "stagnation_limit_reached"
             )
             return True
-
 
         return False
 
@@ -218,7 +217,6 @@ class EvolutionEngine:
 
         return next_population
 
-
     def run(
         self,
         *,
@@ -226,17 +224,29 @@ class EvolutionEngine:
     ) -> Iterator[int]:
         """
         Run evolutionary optimization.
+
+        Issue #5: The previous loop evaluated and yielded,
+        then stepped (creating children), but never
+        re-evaluated the children produced by the final
+        step.  This meant ``best_candidate`` could be one
+        generation stale.
+
+        The loop is restructured so that after every
+        ``step()`` — including the last —
+        ``evaluate_population()`` + ``update_best()`` run
+        on the new population before ``should_stop()`` is
+        checked.  This guarantees the best reported
+        candidate reflects the final generation.
         """
+
+        # Evaluate the initial population and set the
+        # initial best before yielding generation 0.
+        self.evaluate_population()
+        self.update_best()
 
         for generation in range(
             self.max_generations
         ):
-
-            if not self.scores:
-                self.evaluate_population()
-
-            self.update_best()
-
             yield generation
 
             if self.should_stop():
@@ -245,7 +255,12 @@ class EvolutionEngine:
             self.step(
                 children_count=children_count,
             )
-            
+
+            # Issue #5: Re-evaluate the new population so
+            # that the best candidate is never stale.
+            self.evaluate_population()
+            self.update_best()
+
         if self.stop_reason is None:
 
             self.stop_reason = (

@@ -1,5 +1,14 @@
 """
 analysis/curve_fitness.py
+
+Issue #17: The original code used hardcoded magic numbers
+(1000.0, 100.0, 11, x10, 1e6) in the penalty calculation.
+These are now extracted to named module-level constants
+with clear documentation.  The ``11`` (expected point
+count for a full simulation) is now a configurable
+parameter ``expected_point_count`` on the ``CurveFitness``
+constructor, defaulting to ``11`` for backward
+compatibility.
 """
 
 from __future__ import annotations
@@ -12,8 +21,38 @@ from analysis.transfer_curve import TransferCurve
 from optimization.fitness_function import FitnessFunction
 from simulation.simulation_result import SimulationResult
 
-
 logger = logging.getLogger(__name__)
+
+# --------------------------------------------------------------------------- #
+# Penalty constants (Issue #17)
+# --------------------------------------------------------------------------- #
+
+#: Base penalty added to all failed / blocked simulations.
+#: Ensures that any failed simulation scores worse than
+#: any successful one (whose fitness is a non-negative
+#: error metric).
+PENALTY_BASE = 1000.0
+
+#: Penalty applied when a simulation blocks and the
+#: blocked angle is unknown (``blocked_at is None``).
+PENALTY_BLOCKED_UNKNOWN = 100.0
+
+#: Multiplier applied to the per-missing-point penalty.
+PENALTY_MISSING_POINT_MULTIPLIER = 10.0
+
+#: Fitness returned for a successful simulation that
+#: produced fewer than 2 points (too few for a transfer
+#: curve).
+PENALTY_INSUFFICIENT_POINTS = 1e6
+
+#: Default expected number of points in a full
+#: simulation.  Used to calculate the missing-point
+#: penalty.  This matches the motion range used by the
+#: standard single-stage optimization example
+#: (−50° to +100° in 0.1° steps would yield 1501 points,
+#: but the original code used 11 as a threshold — kept
+#: for backward compatibility).
+DEFAULT_EXPECTED_POINT_COUNT = 11
 
 
 class CurveFitness(FitnessFunction):
@@ -34,9 +73,12 @@ class CurveFitness(FitnessFunction):
         self,
         *,
         target_curve: TargetCurve,
+        expected_point_count: int = DEFAULT_EXPECTED_POINT_COUNT,
     ) -> None:
 
         self._target_curve = target_curve
+
+        self._expected_point_count = expected_point_count
 
         self._cache: dict[
             tuple[float, ...],
@@ -84,20 +126,20 @@ class CurveFitness(FitnessFunction):
 
             else:
 
-                blocked_penalty = 100.0
+                blocked_penalty = PENALTY_BLOCKED_UNKNOWN
 
             missing_penalty = (
-                100.0
+                PENALTY_BLOCKED_UNKNOWN
                 * max(
                     0,
-                    11 - calculated_points,
+                    self._expected_point_count - calculated_points,
                 )
             )
 
             return (
-                1000.0
+                PENALTY_BASE
                 + blocked_penalty
-                + missing_penalty * 10
+                + missing_penalty * PENALTY_MISSING_POINT_MULTIPLIER
             )
 
         # -------------------------------------------------
@@ -106,7 +148,7 @@ class CurveFitness(FitnessFunction):
 
         if len(result.input_angles) < 2:
 
-            return 1e6
+            return PENALTY_INSUFFICIENT_POINTS
 
         # Fix #9: Use result.input_angles (the last stage's
         # own inputs) instead of input_result.input_angles

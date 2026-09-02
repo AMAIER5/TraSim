@@ -3,6 +3,10 @@ tests/test_vector3d.py
 
 Unit tests for Vector3D.
 
+Issue #1: Added tests verifying that VECTOR_TOLERANCE is
+imported at module top and not a class attribute, and that
+almost_equal uses the module-level tolerance.
+
 Author:
     Koppelgetriebe Project
 """
@@ -14,7 +18,9 @@ import math
 import numpy as np
 import pytest
 
+from core.tolerance import VECTOR_TOLERANCE
 from core.vector3d import Vector3D
+
 
 # ---------------------------------------------------------------------------
 # Construction
@@ -71,14 +77,48 @@ def test_scalar_division():
 
 
 def test_division_by_zero():
+    """Issue #2: Exact zero scalar must raise."""
     v = Vector3D(1, 2, 3)
 
     with pytest.raises(ZeroDivisionError):
         _ = v / 0.0
 
 
+def test_division_by_tiny_scalar_does_not_raise():
+    """
+    Issue #2: A tiny but nonzero scalar must NOT raise.
+    The old code used ``isclose(scalar, 0.0, abs_tol=1e-12)``
+    which would raise for ``1e-13`` but allow ``2e-13`` —
+    inconsistent.  The fix uses ``scalar == 0.0``.
+    """
+    v = Vector3D(1, 2, 3)
+
+    for tiny in (1e-13, 1e-200, 5e-15, 1e-300):
+        result = v / tiny
+        assert math.isfinite(result.x)
+        assert math.isfinite(result.y)
+        assert math.isfinite(result.z)
+
+
+def test_division_by_negative_tiny_scalar():
+    """Issue #2: Negative tiny scalars must also not raise."""
+    v = Vector3D(1, 1, 1)
+
+    result = v / -1e-13
+
+    assert result == Vector3D(-1e13, -1e13, -1e13)
+
+
+def test_division_by_zero_integer():
+    """Issue #2: Integer zero is also caught (== 0.0)."""
+    v = Vector3D(1, 2, 3)
+
+    with pytest.raises(ZeroDivisionError):
+        _ = v / 0
+
+
 # ---------------------------------------------------------------------------
-# Norm
+# Normalization — Issue #2 consistency
 # ---------------------------------------------------------------------------
 
 def test_norm():
@@ -206,6 +246,28 @@ def test_almost_equal():
     assert a.almost_equal(b)
 
 
+def test_almost_equal_identical():
+    a = Vector3D(1, 2, 3)
+    b = Vector3D(1, 2, 3)
+
+    assert a.almost_equal(b)
+
+
+def test_almost_equal_outside_tolerance():
+    a = Vector3D(0, 0, 0)
+    b = Vector3D(1, 0, 0)
+
+    assert not a.almost_equal(b)
+
+
+def test_almost_equal_custom_tolerance():
+    a = Vector3D(0, 0, 0)
+    b = Vector3D(0.5, 0, 0)
+
+    assert a.almost_equal(b, tolerance=1.0)
+    assert not a.almost_equal(b, tolerance=0.1)
+
+
 # ---------------------------------------------------------------------------
 # NumPy
 # ---------------------------------------------------------------------------
@@ -231,3 +293,33 @@ def test_iterator():
     v = Vector3D(1, 2, 3)
 
     assert tuple(v) == (1, 2, 3)
+
+
+# ---------------------------------------------------------------------------
+# Issue #1: Imports at module top, not class attributes
+# ---------------------------------------------------------------------------
+
+def test_vector_tolerance_not_class_attribute():
+    """
+    Issue #1: VECTOR_TOLERANCE was imported inside the class
+    body, making it a class attribute.  It must not be a
+    class attribute after the fix.
+    """
+
+    assert not hasattr(Vector3D, "VECTOR_TOLERANCE")
+
+
+def test_almost_equal_default_uses_module_tolerance():
+    """
+    Issue #1: The default tolerance for almost_equal must
+    be VECTOR_TOLERANCE from core.tolerance, not a class
+    attribute.
+    """
+
+    import inspect
+
+    sig = inspect.signature(Vector3D.almost_equal)
+
+    default = sig.parameters["tolerance"].default
+
+    assert default == VECTOR_TOLERANCE

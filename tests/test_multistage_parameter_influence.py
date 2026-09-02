@@ -3,6 +3,14 @@ tests/test_multistage_parameter_influence.py
 
 Verify that parameter changes propagate through
 the complete multi-stage mechanism.
+
+Fix: test_stage1_parameter_changes_final_output failed
+because lever.1.length=70 caused stage 2 to block during
+simulation (the geometry becomes kinematically infeasible
+at that length with the default motion range).  The
+parameter value is reduced to 65 (closer to the default
+of 60) so the mechanism remains feasible while still
+producing a different output.
 """
 
 from __future__ import annotations
@@ -106,11 +114,11 @@ def test_stage1_parameter_changes_final_output(
                 name="lever.1.length",
                 minimum=40,
                 maximum=100,
-                value=70,
+                value=65,
             ),
         ),
     )
-    
+
     output_default = get_final_output(
         simulator,
         builder,
@@ -122,7 +130,7 @@ def test_stage1_parameter_changes_final_output(
         builder,
         changed,
     )
-    
+
     assert output_default != output_changed
 
 
@@ -158,13 +166,13 @@ def test_last_stage_output_lever_changes_final_output(
             ),
         ),
     )
-    
+
     print("CHANGED PARAMETERS:")
     print(changed.values())
-    
+
     mechanism_default = builder.build(default)
     mechanism_changed = builder.build(changed)
-    
+
     for name, mechanism in (
         ("DEFAULT", mechanism_default),
         ("CHANGED", mechanism_changed),
@@ -189,7 +197,7 @@ def test_last_stage_output_lever_changes_final_output(
     print(
         mechanism_changed.stages[-1].output_lever.length
     )
-    
+
     output_default = get_final_output(
         simulator,
         builder,

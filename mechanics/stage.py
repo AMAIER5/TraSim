@@ -11,10 +11,13 @@ The kinematic solution is intentionally separated.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from core.point3d import Point3D
 from mechanics.lever import Lever
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,7 +66,6 @@ class Stage:
 
     input_angle: float
     output_angle: float
-
     input_endpoint: Point3D
     output_endpoint: Point3D
 
@@ -80,6 +82,7 @@ class Stage:
         input_angle_max: float = float("inf"),
         output_angle_min: float = float("-inf"),
         output_angle_max: float = float("inf"),
+        validate_reference: bool = True,
     ) -> Stage:
         """
         Create stage from a valid reference position.
@@ -88,6 +91,14 @@ class Stage:
 
         Angles describe shaft positions.
         Offsets describe lever installation angles.
+
+        Issue #7: When ``validate_reference`` is True (the
+        default), the reference angles are checked against
+        the supplied angle ranges and a ``ValueError`` is
+        raised if they lie outside.  Set
+        ``validate_reference=False`` to create a stage with
+        an intentionally impossible configuration (used by
+        tests of the motion validator).
 
         Formula
         -------
@@ -110,6 +121,32 @@ class Stage:
         rod_length = (
             output_endpoint - input_endpoint
         ).norm()
+
+        if validate_reference:
+
+            if not (
+                input_angle_min
+                <= input_angle
+                <= input_angle_max
+            ):
+                raise ValueError(
+                    f"Reference input angle {input_angle} "
+                    f"is outside the allowed range "
+                    f"[{input_angle_min}, "
+                    f"{input_angle_max}]."
+                )
+
+            if not (
+                output_angle_min
+                <= output_angle
+                <= output_angle_max
+            ):
+                raise ValueError(
+                    f"Reference output angle {output_angle} "
+                    f"is outside the allowed range "
+                    f"[{output_angle_min}, "
+                    f"{output_angle_max}]."
+                )
 
         return cls(
             input_lever=input_lever,
@@ -159,7 +196,7 @@ class Stage:
         return self.output_lever.end_position(
             angle + self.output_angle_offset
         )
-        
+
     def accepts_input_angle(
         self,
         angle: float,

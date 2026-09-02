@@ -2,6 +2,14 @@
 mechanics/csv_mechanism_builder.py
 
 Build a mechanical mechanism from a MechanismDefinition.
+
+Issue #7 compatibility: The builder now passes
+``validate_reference=False`` to
+``Stage.from_reference_position`` because the CSV
+definition may intentionally specify reference angles
+outside the declared working ranges (the builder's own
+``StageMotionValidator`` handles feasibility checking
+after construction).
 """
 
 from __future__ import annotations
@@ -31,6 +39,7 @@ class CsvMechanismBuilder(MechanismBuilder):
         *,
         validator: StageMotionValidator | None = None,
     ) -> None:
+
         self._definition = definition
 
         self._validator = (
@@ -118,21 +127,6 @@ class CsvMechanismBuilder(MechanismBuilder):
                 )
             )
 
-# -------------------------------------------------
-# Debugging output
-# -------------------------------------------------
-#            print(
-#                "LEVER",
-#                lever.id,
-#                "old length",
-#                lever.length_start,
-#                "new length",
-#                values.get(
-#                    f"lever.{lever.id}.length",
-#                    lever.length_start,
-#                ),
-#            )         
-
         return MechanismDefinition(
             levers=tuple(levers),
         )
@@ -163,6 +157,12 @@ class CsvMechanismBuilder(MechanismBuilder):
     ) -> list[Stage]:
         """
         Create stages from driver relations.
+
+        Issue #7: Passes validate_reference=False because
+        the CSV definition may specify reference angles
+        outside the declared working ranges.  The builder's
+        own StageMotionValidator handles feasibility
+        checking after construction.
         """
 
         stages: list[Stage] = []
@@ -198,13 +198,17 @@ class CsvMechanismBuilder(MechanismBuilder):
 
                     output_angle_min=lever_definition.angle_min,
                     output_angle_max=lever_definition.angle_max,
+
+                    validate_reference=False,
                 )
             )
 
         return stages
-    
-    def get_validation_results(self):
+
+    def get_validation_results(self) -> tuple:
         """
+        Issue #21: Added return type annotation.
+
         Return stage validation results.
         """
 

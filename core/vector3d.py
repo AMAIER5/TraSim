@@ -21,6 +21,8 @@ from math import acos, isclose, sqrt
 
 import numpy as np
 
+from core.tolerance import VECTOR_TOLERANCE
+
 DEFAULT_TOLERANCE = 1.0e-12
 
 
@@ -87,8 +89,14 @@ class Vector3D:
         return self * scalar
 
     def __truediv__(self, scalar: float) -> Vector3D:
+        """
+        Divide by a scalar.
 
-        if isclose(scalar, 0.0, abs_tol=DEFAULT_TOLERANCE):
+        Issue #2: Only exact zero raises ZeroDivisionError.
+        A tiny-but-nonzero scalar is a valid divisor.
+        """
+
+        if scalar == 0.0:
             raise ZeroDivisionError("Division by zero.")
 
         return Vector3D(
@@ -190,7 +198,7 @@ class Vector3D:
 
         return float(acos(cosine))
 
-    
+
     def __matmul__(self, other: Vector3D) -> float:
         """
         Dot product using the @ operator.
@@ -210,8 +218,6 @@ class Vector3D:
         """
 
         return self.norm_squared() < tolerance * tolerance
-
-    from core.tolerance import VECTOR_TOLERANCE
 
     def almost_equal(
         self,

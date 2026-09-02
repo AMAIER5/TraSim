@@ -2,6 +2,25 @@
 solver/root_solver.py
 
 Generic numerical root finding utilities.
+
+Issue #20: The Brent implementation had two concerns:
+
+1. ``iterations`` started at 2 and loosely counted function
+   evaluations rather than iterations.  It is now initialized
+   to 0 (the first two evaluations are setup, not iterations)
+   and incremented only inside the loop body, so it accurately
+   reflects the number of *refinement steps*.
+
+2. The inverse-quadratic-interpolation acceptance condition
+   used ``abs(tolerance * q)`` (the raw user tolerance) where
+   the classic Brent (Numerical Recipes ``zbrent``) uses a
+   ``tol1``-style guard that combines the user tolerance with
+   machine epsilon.  This is now replaced by
+   ``abs(tol1 * q)`` where ``tol1`` is the same convergence
+   threshold used for the midpoint check, ensuring the
+   interpolation step is only accepted when it is large
+   relative to both the user tolerance *and* the floating-point
+   resolution at the current best estimate.
 """
 
 from __future__ import annotations
@@ -100,7 +119,6 @@ class RootSolver:
             previous_value = value
 
 
-
         #
         # Search negative direction
         #
@@ -126,13 +144,10 @@ class RootSolver:
                     evaluations,
                 )
 
-
             previous_angle = angle
             previous_value = value
 
-
         return None
-
 
 
     @staticmethod
@@ -183,20 +198,15 @@ class RootSolver:
         evaluations += 1
 
 
-
         while left < maximum:
-
 
             right = min(
                 left + step,
                 maximum,
             )
 
-
             right_value = function(right)
-
             evaluations += 1
-
 
 
             #
@@ -213,7 +223,6 @@ class RootSolver:
                     )
                 )
 
-
             #
             # Sign change
             #
@@ -227,7 +236,6 @@ class RootSolver:
                         evaluations,
                     )
                 )
-
 
             #
             # Exact root at right boundary
@@ -243,14 +251,11 @@ class RootSolver:
                     )
                 )
 
-
             left = right
 
             left_value = right_value
 
-
         return brackets
-
 
 
     @staticmethod
@@ -299,6 +304,11 @@ class RootSolver:
     ) -> tuple[float, float, int]:
         """
         Solve a bracketed root using Brent's method.
+
+        Issue #20: ``iterations`` now counts refinement
+        steps (starting from 0), not function evaluations.
+        The IQI acceptance condition now uses a ``tol1``-
+        style guard instead of the raw user tolerance.
         """
 
         fa = function(left)
@@ -306,7 +316,9 @@ class RootSolver:
         fb = function(right)
 
 
-        iterations = 2
+        # Issue #20: Count iterations, not function evals.
+        # The two evaluations above are setup.
+        iterations = 0
 
 
         if fa == 0.0:
@@ -333,10 +345,8 @@ class RootSolver:
 
         fc = fa
 
-
         d = b - a
         e = d
-
 
 
         while iterations < max_iterations:
@@ -357,6 +367,8 @@ class RootSolver:
                 )
 
 
+            # Issue #20: tol1-style convergence threshold
+            # combining machine epsilon and user tolerance.
             tolerance_step = (
                 2.0
                 * math.ulp(1.0)
@@ -408,9 +420,7 @@ class RootSolver:
 
 
                     q = fa / fc
-
                     r = fb / fc
-
 
                     p = (
                         s
@@ -445,7 +455,9 @@ class RootSolver:
                     p = -p
 
 
-
+                # Issue #20: Use tol1 (tolerance_step) instead
+                # of raw tolerance in the acceptance guard,
+                # matching the classic Brent (zbrent) form.
                 if (
                     q != 0.0
                     and
@@ -454,7 +466,7 @@ class RootSolver:
                     min(
                         3.0 * midpoint * q
                         -
-                        abs(tolerance * q),
+                        abs(tolerance_step * q),
                         abs(e * q),
                     )
                 ):
@@ -462,12 +474,10 @@ class RootSolver:
                     e = d
                     d = p / q
 
-
                 else:
 
                     d = midpoint
                     e = midpoint
-
 
 
             else:
@@ -476,11 +486,9 @@ class RootSolver:
                 e = midpoint
 
 
-
             a = b
 
             fa = fb
-
 
 
             if abs(d) > tolerance_step:
@@ -494,11 +502,8 @@ class RootSolver:
                     midpoint,
                 )
 
-
             fb = function(b)
-
             iterations += 1
-
 
 
             if (
@@ -512,9 +517,7 @@ class RootSolver:
                 fc = fa
 
                 d = b - a
-
                 e = d
-
 
 
         return (
