@@ -57,8 +57,10 @@ class CurveFitness(FitnessFunction):
                 "Simulation must contain at least one stage."
             )
 
-        # Currently only first stage is optimized.
-        result = simulation[0]
+
+        # The final stage represents the overall mechanism output.
+        input_result = simulation[0]
+        result = simulation[-1]    
 
         logger.debug(
             "Simulation result: success=%s points=%d blocked_at=%s",
@@ -114,9 +116,8 @@ class CurveFitness(FitnessFunction):
 
             return 1e6
 
-
         transfer_curve = TransferCurve(
-            input_angles=result.input_angles,
+            input_angles=input_result.input_angles,
             output_angles=result.output_angles,
         )
 

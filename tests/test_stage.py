@@ -12,6 +12,7 @@ from core.point3d import Point3D
 from core.vector3d import Vector3D
 from mechanics.lever import Lever
 from mechanics.stage import Stage
+from tests.test_angle_solver import create_test_stage
 
 # ---------------------------------------------------------------------------
 # Basic creation
@@ -139,3 +140,26 @@ def test_stage_endpoint_for_angle():
     assert point.almost_equal(
         Point3D(0, 50, 0)
     )
+    
+def test_stage_accepts_input_angle_inside_range():
+
+    stage = create_test_stage(
+        input_angle_min=math.radians(-30),
+        input_angle_max=math.radians(30),
+    )
+
+    assert stage.accepts_input_angle(
+        math.radians(10)
+    ) is True
+
+
+def test_stage_rejects_output_angle_outside_range():
+
+    stage = create_test_stage(
+        output_angle_min=math.radians(-20),
+        output_angle_max=math.radians(20),
+    )
+
+    assert stage.accepts_output_angle(
+        math.radians(30)
+    ) is False

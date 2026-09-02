@@ -7,7 +7,9 @@ Simulation of complete mechanisms.
 from __future__ import annotations
 
 from mechanics.mechanism import Mechanism
+from simulation.motion_provider import MotionProvider
 from simulation.motion_range import MotionRange
+from simulation.result_motion_provider import ResultMotionProvider
 from simulation.simulation_result import SimulationResult
 from simulation.stage_simulator import StageSimulator
 from solver.solver_precision import SolverPrecision
@@ -104,19 +106,26 @@ class MechanismSimulator:
         tuple[SimulationResult, ...]
             One SimulationResult per simulated stage.
         """
-
         stages = mechanism.stages
 
         if self._stage_limit is not None:
-
             stages = stages[:self._stage_limit]
 
+        results = []
 
-        return tuple(
-            self._stage_simulator.run(
+        motion: MotionProvider = self._motion
+
+        for stage in stages:
+
+            result = self._stage_simulator.run(
                 stage=stage,
-                motion=self._motion,
+                motion=motion,
             )
-            for stage in stages
-        )
-        
+
+            results.append(result)
+
+            motion = ResultMotionProvider(
+                result,
+            )
+
+        return tuple(results)

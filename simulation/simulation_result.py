@@ -25,10 +25,10 @@ class SimulationResult:
 
     blocked_at: float | None = None
     
-def __post_init__(self):
+    def __post_init__(self):
 
-    if len(self.input_angles) != len(self.output_angles):
+        if len(self.input_angles) != len(self.output_angles):
 
-        raise ValueError(
-            "Input and output angle count must match."
-        )
+            raise ValueError(
+                "Input and output angle count must match."
+            )

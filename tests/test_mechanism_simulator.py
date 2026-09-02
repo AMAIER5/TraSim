@@ -16,21 +16,24 @@ from simulation.motion_range import MotionRange
 from simulation.simulation_result import (
     SimulationResult,
 )
-
+from simulation.result_motion_provider import (
+    ResultMotionProvider,
+)
 
 class DummyStageSimulator:
 
     def __init__(self) -> None:
 
         self.calls: list[
-            tuple[Stage, MotionRange]
+            tuple[Stage, object]
         ] = []
+
 
     def run(
         self,
         *,
         stage: Stage,
-        motion: MotionRange,
+        motion,
     ) -> SimulationResult:
 
         self.calls.append(
@@ -41,8 +44,14 @@ class DummyStageSimulator:
         )
 
         return SimulationResult(
-            input_angles=(0.0,),
-            output_angles=(0.0,),
+            input_angles=(
+                0.0,
+                1.0,
+            ),
+            output_angles=(
+                10.0,
+                20.0,
+            ),
             success=True,
         )
 
@@ -78,7 +87,7 @@ def create_motion() -> MotionRange:
     )
 
 
-def test_simulates_every_stage():
+def test_simulates_every_stage_with_chained_motion():
 
     stage_simulator = DummyStageSimulator()
 
@@ -103,10 +112,16 @@ def test_simulates_every_stage():
 
     assert len(stage_simulator.calls) == 3
 
-    assert all(
-        call_motion is motion
-        for _, call_motion
-        in stage_simulator.calls
+    assert stage_simulator.calls[0][1] is motion
+
+    assert isinstance(
+        stage_simulator.calls[1][1],
+        ResultMotionProvider,
+    )
+
+    assert isinstance(
+        stage_simulator.calls[2][1],
+        ResultMotionProvider,
     )
 
 
@@ -139,3 +154,26 @@ def test_preserves_stage_order():
         stage1,
         stage2,
     ]
+    
+def test_stage_output_becomes_next_stage_input():
+
+    stage_simulator = DummyStageSimulator()
+
+    MechanismSimulator(
+        motion=create_motion(),
+        stage_simulator=stage_simulator,
+    ).simulate(
+        Mechanism(
+            stages=(
+                create_stage(),
+                create_stage(),
+            ),
+        ),
+    )
+
+    provider = stage_simulator.calls[1][1]
+
+    assert tuple(provider) == (
+        10.0,
+        20.0,
+    )

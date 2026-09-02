@@ -44,6 +44,7 @@ class StageSolver:
 
         self._state: SolverState | None = None
 
+
     def solve(
         self,
         *,
@@ -54,8 +55,9 @@ class StageSolver:
         """
 
         if self._state is None:
+
             self._state = SolverState.initial(
-                input_angle=self.stage.input_angle,
+                input_angle=input_angle,
                 output_angle=self.stage.output_angle,
             )
 
@@ -65,12 +67,14 @@ class StageSolver:
         )
 
         if result.success:
+
             self._state = self._state.next(
                 input_angle=input_angle,
                 output_angle=result.angle,
             )
 
         return result
+
 
     def get_stats(self) -> dict[str, int]:
         """
@@ -79,6 +83,7 @@ class StageSolver:
         """
 
         return self.angle_solver.get_stats()
+
 
     def reset_stats(self) -> None:
         """

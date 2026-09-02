@@ -13,7 +13,7 @@ from analysis.target_curve import (
 from analysis.transfer_curve import (
     TransferCurve,
 )
-
+from simulation.simulation_result import SimulationResult
 
 def create_transfer_curve() -> TransferCurve:
 
@@ -117,3 +117,89 @@ def test_metric_is_cached():
     fitness(curve)
 
     assert len(fitness._cache) == 1
+
+def test_evaluate_uses_last_stage_result():
+
+    fitness = CurveFitness(
+        target_curve=TargetCurve(
+            function=lambda angle: angle,
+        ),
+    )
+
+    stage1 = SimulationResult(
+        input_angles=(
+            0.0,
+            1.0,
+            2.0,
+        ),
+        output_angles=(
+            10.0,
+            11.0,
+            12.0,
+        ),
+        success=True,
+    )
+
+    stage2 = SimulationResult(
+        input_angles=(
+            0.0,
+            1.0,
+            2.0,
+        ),
+        output_angles=(
+            0.0,
+            1.0,
+            2.0,
+        ),
+        success=True,
+    )
+
+    result = fitness.evaluate(
+        (
+            stage1,
+            stage2,
+        )
+    )
+
+    assert result == 0.0
+    
+def test_uses_last_stage_output():
+
+    fitness = CurveFitness(
+        target_curve=TargetCurve(
+            function=lambda angle: angle,
+        ),
+    )
+
+    stage1 = SimulationResult(
+        input_angles=(
+            0.0,
+            1.0,
+        ),
+        output_angles=(
+            10.0,
+            11.0,
+        ),
+        success=True,
+    )
+
+    stage2 = SimulationResult(
+        input_angles=(
+            0.0,
+            1.0,
+        ),
+        output_angles=(
+            0.0,
+            1.0,
+        ),
+        success=True,
+    )
+
+    result = fitness.evaluate(
+        (
+            stage1,
+            stage2,
+        )
+    )
+
+    assert result == 0.0

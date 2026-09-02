@@ -129,17 +129,15 @@ class AngleSolver:
             input_angle,
         )
 
-
         predicted = state.predict_output(
             input_angle
         )
 
-
-        if predicted is None:
-            predicted = state.last_output_angle
-
-
         brackets = []
+
+        # --------------------------------------------------------------
+        # First try: reuse previous solution branch
+        # --------------------------------------------------------------
 
         if self._last_root is not None:
 
@@ -174,6 +172,10 @@ class AngleSolver:
                 ] += 1
 
 
+        # --------------------------------------------------------------
+        # Local search around predicted branch
+        # --------------------------------------------------------------
+
         if not brackets:
 
             self.stats[
@@ -188,18 +190,33 @@ class AngleSolver:
             )
 
 
-        if not brackets:
+        # --------------------------------------------------------------
+        # Search inside allowed output range
+        # --------------------------------------------------------------
 
-            self.stats[
-                "fallback_searches"
-            ] += 1
+        allowed_min = max(
+            self.search_min,
+            self.stage.output_angle_min,
+        )
+
+        allowed_max = min(
+            self.search_max,
+            self.stage.output_angle_max,
+        )
+
+
+        if allowed_min <= allowed_max:
 
             brackets = RootSolver.find_all_brackets(
                 function=residual,
-                minimum=self.search_min,
-                maximum=self.search_max,
+                minimum=allowed_min,
+                maximum=allowed_max,
                 step=self.precision.bracket_step,
             )
+
+        else:
+
+            brackets = []
 
 
         self.stats[
@@ -207,7 +224,32 @@ class AngleSolver:
         ] += len(brackets)
 
 
+        # --------------------------------------------------------------
+        # No valid bracket inside output limits
+        # Diagnose whether root exists outside limits
+        # --------------------------------------------------------------
+
         if not brackets:
+
+            diagnostic_brackets = RootSolver.find_all_brackets(
+                function=residual,
+                minimum=self.search_min,
+                maximum=self.search_max,
+                step=self.precision.bracket_step,
+            )
+
+            if diagnostic_brackets:
+
+                self.stats["blocked"] += 1
+
+                return SolverResult(
+                    success=False,
+                    angle=float("nan"),
+                    residual=float("inf"),
+                    iterations=0,
+                    reason="output_angle_limit",
+                )
+
 
             self.stats["blocked"] += 1
 
@@ -219,6 +261,10 @@ class AngleSolver:
                 reason="blocked",
             )
 
+
+        # --------------------------------------------------------------
+        # Select branch
+        # --------------------------------------------------------------
 
         if len(brackets) == 1:
 
@@ -245,6 +291,10 @@ class AngleSolver:
         left, right, bracket_iterations = bracket
 
 
+        # --------------------------------------------------------------
+        # Brent solve
+        # --------------------------------------------------------------
+
         try:
 
             angle, value, solver_iterations = (
@@ -256,10 +306,12 @@ class AngleSolver:
                     max_iterations=self.precision.max_iterations,
                 )
             )
+
             self.stats[
                 "brent_iterations"
             ] += solver_iterations
-            
+
+
         except ValueError:
 
             self.stats["blocked"] += 1
@@ -288,6 +340,7 @@ class AngleSolver:
             self._last_bracket_width = abs(
                 right - left
             )
+
 
         else:
 
@@ -436,3 +489,51 @@ class AngleSolver:
             brackets,
             key=score,
         )
+        
+    def _diagnose_outside_limits(
+        self,
+        residual,
+    ) -> bool:
+        """
+        Check whether a mathematical solution exists
+        outside the allowed output angle range.
+
+        Used only for diagnostics.
+
+        Returns:
+            True:
+                A solution exists outside limits.
+
+            False:
+                No solution found.
+        """
+
+        brackets = RootSolver.find_all_brackets(
+            function=residual,
+            minimum=self.search_min,
+            maximum=self.search_max,
+            step=self.precision.bracket_step,
+        )
+
+        if not brackets:
+            return False
+
+
+        minimum = self.stage.output_angle_min
+        maximum = self.stage.output_angle_max
+
+
+        for left, right, _ in brackets:
+
+            center = (
+                left + right
+            ) / 2.0
+
+            if (
+                center < minimum
+                or center > maximum
+            ):
+                return True
+
+
+        return False

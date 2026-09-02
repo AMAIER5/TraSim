@@ -51,6 +51,14 @@ class Stage:
     input_angle_offset: float
     output_angle_offset: float
 
+    # Allowed motion range
+
+    input_angle_min: float
+    input_angle_max: float
+
+    output_angle_min: float
+    output_angle_max: float
+
     # Stored reference configuration
 
     input_angle: float
@@ -68,6 +76,10 @@ class Stage:
         output_angle: float = 0.0,
         input_angle_offset: float = 0.0,
         output_angle_offset: float = 0.0,
+        input_angle_min: float = float("-inf"),
+        input_angle_max: float = float("inf"),
+        output_angle_min: float = float("-inf"),
+        output_angle_max: float = float("inf"),
     ) -> Stage:
         """
         Create stage from a valid reference position.
@@ -103,10 +115,19 @@ class Stage:
             input_lever=input_lever,
             output_lever=output_lever,
             rod_length=rod_length,
+
             input_angle_offset=input_angle_offset,
             output_angle_offset=output_angle_offset,
+
+            input_angle_min=input_angle_min,
+            input_angle_max=input_angle_max,
+
+            output_angle_min=output_angle_min,
+            output_angle_max=output_angle_max,
+
             input_angle=input_angle,
             output_angle=output_angle,
+
             input_endpoint=input_endpoint,
             output_endpoint=output_endpoint,
         )
@@ -137,4 +158,35 @@ class Stage:
 
         return self.output_lever.end_position(
             angle + self.output_angle_offset
+        )
+        
+    def accepts_input_angle(
+        self,
+        angle: float,
+    ) -> bool:
+        """
+        Check whether an input angle lies inside
+        the defined mechanical working range.
+        """
+
+        return (
+            self.input_angle_min
+            <= angle
+            <= self.input_angle_max
+        )
+
+
+    def accepts_output_angle(
+        self,
+        angle: float,
+    ) -> bool:
+        """
+        Check whether an output angle lies inside
+        the defined mechanical working range.
+        """
+
+        return (
+            self.output_angle_min
+            <= angle
+            <= self.output_angle_max
         )

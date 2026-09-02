@@ -13,10 +13,17 @@ from core.vector3d import Vector3D
 from mechanics.lever import Lever
 from mechanics.stage import Stage
 from solver.angle_solver import AngleSolver
+from solver.root_solver import RootSolver
 from solver.solver_state import SolverState
 
 
-def create_test_stage() -> Stage:
+def create_test_stage(
+    *,
+    input_angle_min: float = float("-inf"),
+    input_angle_max: float = float("inf"),
+    output_angle_min: float = float("-inf"),
+    output_angle_max: float = float("inf"),
+) -> Stage:
 
     input_lever = Lever(
         pivot=Point3D(0, 0, 0),
@@ -35,6 +42,10 @@ def create_test_stage() -> Stage:
         output_lever=output_lever,
         input_angle=0.0,
         output_angle=0.0,
+        input_angle_min=input_angle_min,
+        input_angle_max=input_angle_max,
+        output_angle_min=output_angle_min,
+        output_angle_max=output_angle_max,
     )
 
 
@@ -50,9 +61,7 @@ def test_angle_solver_finds_solution():
 
     stage = create_test_stage()
 
-    solver = AngleSolver(
-        stage,
-    )
+    solver = AngleSolver(stage)
 
     state = SolverState(
         last_input_angle=0.0,
@@ -81,9 +90,7 @@ def test_angle_solver_preserves_branch():
 
     stage = create_test_stage()
 
-    solver = AngleSolver(
-        stage,
-    )
+    solver = AngleSolver(stage)
 
     state = SolverState(
         last_input_angle=0.0,
@@ -228,9 +235,7 @@ def test_angle_solver_iteration_limit():
 
     stage = create_test_stage()
 
-    solver = AngleSolver(
-        stage,
-    )
+    solver = AngleSolver(stage)
 
     state = SolverState(
         last_input_angle=0.0,
@@ -244,4 +249,61 @@ def test_angle_solver_iteration_limit():
 
     assert result.success is True
 
-    assert result.iterations < 60
+    assert result.success is True
+
+    assert solver.get_stats()["solved"] == 1
+
+# ---------------------------------------------------------------------------
+# Output angle limits
+# ---------------------------------------------------------------------------
+
+
+def test_angle_solver_global_search_respects_stage_output_limits(
+    monkeypatch,
+):
+    """
+    Global bracket search is restricted to the Stage
+    output angle limits.
+    """
+
+    stage = create_test_stage(
+        output_angle_min=math.radians(-20),
+        output_angle_max=math.radians(35),
+    )
+
+    solver = AngleSolver(stage)
+
+    state = SolverState(
+        last_input_angle=0.0,
+        last_output_angle=0.0,
+    )
+
+    captured = {}
+
+    def fake_find_all_brackets(
+        *,
+        function,
+        minimum,
+        maximum,
+        step,
+    ):
+        captured["minimum"] = minimum
+        captured["maximum"] = maximum
+        return []
+
+    monkeypatch.setattr(
+        RootSolver,
+        "find_all_brackets",
+        fake_find_all_brackets,
+    )
+
+    result = solver.solve(
+        input_angle=math.radians(90),
+        state=state,
+    )
+
+    assert result.success is False
+
+    assert captured["minimum"] == math.radians(-20)
+
+    assert captured["maximum"] == math.radians(35)

@@ -128,7 +128,7 @@ stage_simulator = StageSimulator()
 simulator = MechanismSimulator(
     motion=motion,
     stage_simulator=stage_simulator,
-    stage_limit=1,
+    stage_limit=None,
 )
 
 # -------------------------------------------------
@@ -181,7 +181,7 @@ engine = EvolutionEngine(
             random_generator=rng,
         ),
     ),
-    target_fitness=0.1394,
+    target_fitness=0.01394,
     max_generations=50,
     stagnation_limit=15,
     stagnation_tolerance=1e-6,
@@ -305,9 +305,14 @@ if best_candidate is not None:
             f"{stage.input_lever.length:.6f} mm"
         )
 
+        a = stage.input_angle
+        while a < 0:
+            a += math.radians(360.0)
+        while a > math.radians(360.0):
+            a -= math.radians(360.0)
         print(
             f"  Input angle: "
-            f"{math.degrees(stage.input_angle):.6f} deg"
+            f"{math.degrees(a):.6f} deg"
         )
 
         print(
@@ -322,9 +327,14 @@ if best_candidate is not None:
             f"{stage.output_lever.length:.6f} mm"
         )
 
+        a = stage.output_angle
+        while a < 0:
+            a += math.radians(360.0)
+        while a > math.radians(360.0):
+            a -= math.radians(360.0)
         print(
             f"  Output angle: "
-            f"{math.degrees(stage.output_angle):.6f} deg"
+            f"{math.degrees(a):.6f} deg"
         )
 
         print(

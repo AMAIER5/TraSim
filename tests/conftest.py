@@ -125,3 +125,19 @@ def simple_target_csv(
     )
 
     return path
+
+@pytest.fixture
+def simple_multistage_csv(tmp_path):
+
+    path = tmp_path / "multistage.csv"
+
+    path.write_text(
+        """id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,driver,coupled
+1,50,50,50,-90,90,0,0,0,0,0,0,1,,
+2,50,50,50,-90,90,0,100,0,0,0,0,1,1,
+3,50,50,50,-90,90,0,200,0,0,0,0,1,2,
+""",
+        encoding="utf-8",
+    )
+
+    return path

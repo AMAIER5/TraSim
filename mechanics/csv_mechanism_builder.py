@@ -14,6 +14,7 @@ from mechanics.stage import Stage
 from model.mechanism_definition import MechanismDefinition
 from optimization.mechanism_builder import MechanismBuilder
 from optimization.parameter_set import ParameterSet
+from validation.stage_motion_validator import StageMotionValidator
 
 
 class CsvMechanismBuilder(MechanismBuilder):
@@ -27,8 +28,18 @@ class CsvMechanismBuilder(MechanismBuilder):
     def __init__(
         self,
         definition: MechanismDefinition,
+        *,
+        validator: StageMotionValidator | None = None,
     ) -> None:
         self._definition = definition
+
+        self._validator = (
+            validator
+            if validator is not None
+            else StageMotionValidator()
+        )
+
+        self._validation_results = []
 
     def build(
         self,
@@ -54,6 +65,19 @@ class CsvMechanismBuilder(MechanismBuilder):
             definition,
             levers,
         )
+
+        self._validation_results = []
+
+        for index, stage in enumerate(stages):
+
+            result = self._validator.validate(
+                stage,
+                stage_id=index,
+            )
+
+            self._validation_results.append(
+                result
+            )
 
         return Mechanism(
             stages=tuple(stages),
@@ -93,6 +117,21 @@ class CsvMechanismBuilder(MechanismBuilder):
                     angle_start=angle,
                 )
             )
+
+# -------------------------------------------------
+# Debugging output
+# -------------------------------------------------
+#            print(
+#                "LEVER",
+#                lever.id,
+#                "old length",
+#                lever.length_start,
+#                "new length",
+#                values.get(
+#                    f"lever.{lever.id}.length",
+#                    lever.length_start,
+#                ),
+#            )         
 
         return MechanismDefinition(
             levers=tuple(levers),
@@ -150,9 +189,25 @@ class CsvMechanismBuilder(MechanismBuilder):
                     output_lever=levers[
                         lever_definition.id
                     ],
+
                     input_angle=driver_definition.angle_start,
                     output_angle=lever_definition.angle_start,
+
+                    input_angle_min=driver_definition.angle_min,
+                    input_angle_max=driver_definition.angle_max,
+
+                    output_angle_min=lever_definition.angle_min,
+                    output_angle_max=lever_definition.angle_max,
                 )
             )
 
         return stages
+    
+    def get_validation_results(self):
+        """
+        Return stage validation results.
+        """
+
+        return tuple(
+            self._validation_results
+        )

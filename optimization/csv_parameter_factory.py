@@ -51,6 +51,15 @@ class CsvParameterFactory:
                 )
             )
 
+            parameters.append(
+                Parameter(
+                    name=f"lever.{lever.id}.angle",
+                    minimum=lever.angle_min,
+                    maximum=lever.angle_max,
+                    value=lever.angle_start,
+                )
+            )
+
         return ParameterSet(
             parameters=tuple(parameters),
         )
