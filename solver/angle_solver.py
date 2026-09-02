@@ -31,6 +31,7 @@ from solver.solver_result import SolverResult
 from solver.solver_state import SolverState
 from solver.solver_precision import SolverPrecision
 
+
 class AngleSolver:
     """
     Solve output angle for a given input angle.
@@ -95,14 +96,14 @@ class AngleSolver:
         self.precision = precision
         self.search_min = search_min
         self.search_max = search_max
-        
+
         self.reuse_factor = reuse_factor
         self.reuse_min_window = reuse_min_window
         self.reuse_max_window = reuse_max_window
 
         self._last_root: float | None = None
         self._last_bracket_width: float = self.precision.bracket_step
-        
+
         self.stats = {
             "adaptive_attempts": 0,
             "adaptive_success": 0,
@@ -116,7 +117,6 @@ class AngleSolver:
             "blocked": 0,
             "brent_iterations": 0,
         }
-
 
     def solve(
         self,
@@ -148,8 +148,7 @@ class AngleSolver:
             window = min(
                 max(
                     self._last_bracket_width
-                    *
-                    self.reuse_factor,
+                    * self.reuse_factor,
                     self.reuse_min_window,
                 ),
                 self.reuse_max_window,
@@ -162,6 +161,9 @@ class AngleSolver:
                 step=self.precision.bracket_step,
             )
 
+            # Fix #4: filter fast-path brackets to allowed output range
+            brackets = self._filter_to_allowed_range(brackets)
+
             if brackets:
                 self.stats[
                     "adaptive_success"
@@ -170,7 +172,6 @@ class AngleSolver:
                 self.stats[
                     "adaptive_failure"
                 ] += 1
-
 
         # --------------------------------------------------------------
         # Local search around predicted branch
@@ -189,9 +190,14 @@ class AngleSolver:
                 step=self.precision.bracket_step,
             )
 
+            # Fix #4: filter fast-path brackets to allowed output range
+            brackets = self._filter_to_allowed_range(brackets)
 
         # --------------------------------------------------------------
-        # Search inside allowed output range
+        # Full-range search (fallback only)
+        # Fix #3: guard with 'if not brackets' so the full-range
+        # search does not overwrite results from the adaptive
+        # and local searches above.
         # --------------------------------------------------------------
 
         allowed_min = max(
@@ -204,25 +210,28 @@ class AngleSolver:
             self.stage.output_angle_max,
         )
 
+        if not brackets:
 
-        if allowed_min <= allowed_max:
+            self.stats[
+                "fallback_searches"
+            ] += 1
 
-            brackets = RootSolver.find_all_brackets(
-                function=residual,
-                minimum=allowed_min,
-                maximum=allowed_max,
-                step=self.precision.bracket_step,
-            )
+            if allowed_min <= allowed_max:
 
-        else:
+                brackets = RootSolver.find_all_brackets(
+                    function=residual,
+                    minimum=allowed_min,
+                    maximum=allowed_max,
+                    step=self.precision.bracket_step,
+                )
 
-            brackets = []
+            else:
 
+                brackets = []
 
         self.stats[
             "brackets_found"
         ] += len(brackets)
-
 
         # --------------------------------------------------------------
         # No valid bracket inside output limits
@@ -250,7 +259,6 @@ class AngleSolver:
                     reason="output_angle_limit",
                 )
 
-
             self.stats["blocked"] += 1
 
             return SolverResult(
@@ -260,7 +268,6 @@ class AngleSolver:
                 iterations=0,
                 reason="blocked",
             )
-
 
         # --------------------------------------------------------------
         # Select branch
@@ -287,9 +294,7 @@ class AngleSolver:
                 "multi_bracket_selection"
             ] += 1
 
-
         left, right, bracket_iterations = bracket
-
 
         # --------------------------------------------------------------
         # Brent solve
@@ -311,7 +316,6 @@ class AngleSolver:
                 "brent_iterations"
             ] += solver_iterations
 
-
         except ValueError:
 
             self.stats["blocked"] += 1
@@ -324,12 +328,10 @@ class AngleSolver:
                 reason="invalid_bracket",
             )
 
-
         success = (
             abs(value)
             <= self.precision.tolerance
         )
-
 
         if success:
 
@@ -341,11 +343,9 @@ class AngleSolver:
                 right - left
             )
 
-
         else:
 
             self.stats["blocked"] += 1
-
 
         return SolverResult(
             success=success,
@@ -353,12 +353,10 @@ class AngleSolver:
             residual=abs(value),
             iterations=(
                 bracket_iterations
-                +
-                solver_iterations
+                + solver_iterations
             ),
             reason=None if success else "blocked",
         )
-
 
     def get_stats(self) -> dict[str, int]:
         """
@@ -366,7 +364,6 @@ class AngleSolver:
         """
 
         return self.stats.copy()
-
 
     def reset_stats(self) -> None:
         """
@@ -378,7 +375,6 @@ class AngleSolver:
 
         self._last_root = None
         self._last_bracket_width = self.precision.bracket_step
-
 
     @staticmethod
     def _select_branch(
@@ -398,7 +394,6 @@ class AngleSolver:
                 "direction must be either -1, 0 or 1"
             )
 
-
         def center(
             bracket: tuple[float, float, int],
         ) -> float:
@@ -409,7 +404,6 @@ class AngleSolver:
                 left + right
             ) / 2.0
 
-
         def score(
             bracket: tuple[float, float, int],
         ) -> float:
@@ -418,122 +412,91 @@ class AngleSolver:
 
             prediction_error = abs(
                 candidate
-                -
-                reference_angle
+                - reference_angle
             )
 
             if state.direction == 0:
                 return prediction_error
 
-
             output_change = abs(
                 candidate
-                -
-                state.last_output_angle
+                - state.last_output_angle
             )
-
 
             delta_input = (
                 input_angle
-                -
-                state.last_input_angle
+                - state.last_input_angle
             )
-
 
             if abs(delta_input) > 1e-12:
 
                 velocity = (
                     candidate
-                    -
-                    state.last_output_angle
+                    - state.last_output_angle
                 ) / delta_input
 
                 velocity_change = abs(
                     velocity
-                    -
-                    state.output_velocity
+                    - state.output_velocity
                 )
 
             else:
 
                 velocity_change = 0.0
 
-
             direction_penalty = 0.0
 
             if (
                 (
                     candidate
-                    -
-                    state.last_output_angle
+                    - state.last_output_angle
                 )
-                *
-                state.direction
+                * state.direction
                 < 0
             ):
                 direction_penalty = 1.0
 
-
             return (
                 prediction_error
-                +
-                5.0 * output_change
-                +
-                20.0 * velocity_change
-                +
-                direction_penalty
+                + 5.0 * output_change
+                + 20.0 * velocity_change
+                + direction_penalty
             )
-
 
         return min(
             brackets,
             key=score,
         )
-        
-    def _diagnose_outside_limits(
+
+    def _filter_to_allowed_range(
         self,
-        residual,
-    ) -> bool:
+        brackets: list[tuple[float, float, int]],
+    ) -> list[tuple[float, float, int]]:
         """
-        Check whether a mathematical solution exists
-        outside the allowed output angle range.
+        Remove brackets whose center lies outside the
+        stage's allowed output angle range.
 
-        Used only for diagnostics.
-
-        Returns:
-            True:
-                A solution exists outside limits.
-
-            False:
-                No solution found.
+        Fix #4: The adaptive and local searches around the
+        predicted position are not clipped to the stage's
+        [output_angle_min, output_angle_max] range by
+        RootSolver.find_all_brackets_around.  A bracket found
+        there could yield a Brent solution outside the
+        mechanical limits.  This filter discards such brackets
+        so the solver falls through to the full-range search.
         """
 
-        brackets = RootSolver.find_all_brackets(
-            function=residual,
-            minimum=self.search_min,
-            maximum=self.search_max,
-            step=self.precision.bracket_step,
+        allowed_min = max(
+            self.search_min,
+            self.stage.output_angle_min,
         )
 
-        if not brackets:
-            return False
+        allowed_max = min(
+            self.search_max,
+            self.stage.output_angle_max,
+        )
 
-
-        minimum = self.stage.output_angle_min
-        maximum = self.stage.output_angle_max
-
-
-        for left, right, _ in brackets:
-
-            center = (
-                left + right
-            ) / 2.0
-
-            if (
-                center < minimum
-                or center > maximum
-            ):
-                return True
-
-
-        return False
+        return [
+            (left, right, n)
+            for left, right, n in brackets
+            if allowed_min <= (left + right) / 2.0 <= allowed_max
+        ]

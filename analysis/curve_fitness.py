@@ -43,7 +43,6 @@ class CurveFitness(FitnessFunction):
             ErrorMetric,
         ] = {}
 
-
     def evaluate(
         self,
         simulation: tuple[SimulationResult, ...],
@@ -57,10 +56,8 @@ class CurveFitness(FitnessFunction):
                 "Simulation must contain at least one stage."
             )
 
-
         # The final stage represents the overall mechanism output.
-        input_result = simulation[0]
-        result = simulation[-1]    
+        result = simulation[-1]
 
         logger.debug(
             "Simulation result: success=%s points=%d blocked_at=%s",
@@ -89,11 +86,9 @@ class CurveFitness(FitnessFunction):
 
                 blocked_penalty = 100.0
 
-
             missing_penalty = (
                 100.0
-                *
-                max(
+                * max(
                     0,
                     11 - calculated_points,
                 )
@@ -101,12 +96,9 @@ class CurveFitness(FitnessFunction):
 
             return (
                 1000.0
-                +
-                blocked_penalty
-                +
-                missing_penalty*10
+                + blocked_penalty
+                + missing_penalty * 10
             )
-
 
         # -------------------------------------------------
         # Valid simulation
@@ -116,8 +108,16 @@ class CurveFitness(FitnessFunction):
 
             return 1e6
 
+        # Fix #9: Use result.input_angles (the last stage's
+        # own inputs) instead of input_result.input_angles
+        # (the first stage's inputs).  result.input_angles
+        # always has the same length as result.output_angles
+        # (enforced by SimulationResult.__post_init__), so
+        # TransferCurve construction can never fail on a
+        # length mismatch when an intermediate stage blocks.
+        # This also matches what ErrorMetric compares against.
         transfer_curve = TransferCurve(
-            input_angles=input_result.input_angles,
+            input_angles=result.input_angles,
             output_angles=result.output_angles,
         )
 
@@ -139,11 +139,9 @@ class CurveFitness(FitnessFunction):
 
             self._cache[key] = metric
 
-
         return metric.calculate(
             transfer_curve,
         )
-
 
     def __call__(
         self,
@@ -170,7 +168,6 @@ class CurveFitness(FitnessFunction):
             )
 
             self._cache[key] = metric
-
 
         return metric.calculate(
             transfer_curve,
