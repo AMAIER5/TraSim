@@ -2,38 +2,30 @@
 validation/mechanism_motion_validator.py
 
 Validation of complete mechanisms over their motion range.
+
+Issue #6: There were two MechanismValidationResult classes:
+  1. A hand-written class in this file (used by the validator)
+  2. A dataclass in mechanism_validation_result.py (unused,
+     with a different API — failed_stage property)
+
+The dataclass version (mechanism_validation_result.py) has been
+deleted.  MechanismValidationResult now lives in its own module
+(validation/mechanism_validation_result.py) as a frozen dataclass
+that is imported by both the validator and any code that needs
+the result type.  The hand-written class that was previously
+inlined here has been removed.
 """
 
 from __future__ import annotations
 
 from mechanics.mechanism import Mechanism
 from simulation.motion_range import MotionRange
+from validation.mechanism_validation_result import (
+    MechanismValidationResult,
+)
 from validation.stage_motion_validator import (
     StageMotionValidator,
 )
-from validation.stage_validation_result import (
-    StageValidationResult,
-)
-
-
-class MechanismValidationResult:
-    """
-    Container for complete mechanism validation.
-    """
-
-    def __init__(
-        self,
-        stages: tuple[StageValidationResult, ...],
-    ) -> None:
-
-        self.stages = stages
-
-    @property
-    def valid(self) -> bool:
-        return all(
-            stage.valid
-            for stage in self.stages
-        )
 
 
 class MechanismMotionValidator:
@@ -52,7 +44,6 @@ class MechanismMotionValidator:
             if stage_validator is not None
             else StageMotionValidator()
         )
-
 
     def validate(
         self,
@@ -94,7 +85,6 @@ class MechanismMotionValidator:
 
             results.append(result)
 
-
         return MechanismValidationResult(
-            tuple(results)
+            stages=tuple(results),
         )

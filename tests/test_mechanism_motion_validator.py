@@ -1,5 +1,10 @@
 """
 tests/test_mechanism_motion_validator.py
+
+Issue #6: Updated import to use the consolidated
+MechanismValidationResult from its own module.  Added
+tests for the failed_stage property that was previously
+unused/untested.
 """
 
 from __future__ import annotations
@@ -12,6 +17,9 @@ from optimization.parameter_set import ParameterSet
 from simulation.motion_range import MotionRange
 from validation.mechanism_motion_validator import (
     MechanismMotionValidator,
+)
+from validation.mechanism_validation_result import (
+    MechanismValidationResult,
 )
 
 
@@ -55,6 +63,11 @@ def test_validator_accepts_valid_mechanism(
     validation = MechanismMotionValidator().validate(
         mechanism=mechanism,
         motion=motion,
+    )
+
+    assert isinstance(
+        validation,
+        MechanismValidationResult,
     )
 
     assert len(validation.stages) == len(
@@ -141,3 +154,63 @@ def test_validator_reports_checked_steps(
             stage_result.checked_steps
             == expected_steps
         )
+
+
+def test_failed_stage_property_returns_none_for_valid(
+    simple_multistage_csv,
+):
+    """
+    Issue #6: The failed_stage property should return
+    None when all stages are valid.
+    """
+
+    mechanism = build_mechanism(
+        simple_multistage_csv,
+    )
+
+    motion = MotionRange(
+        start_angle=math.radians(-10),
+        max_angle=math.radians(10),
+        step=math.radians(10),
+    )
+
+    validation = MechanismMotionValidator().validate(
+        mechanism=mechanism,
+        motion=motion,
+    )
+
+    assert validation.valid is True
+
+    assert validation.failed_stage is None
+
+
+def test_failed_stage_property_returns_id_for_invalid(
+    simple_multistage_csv,
+):
+    """
+    Issue #6: The failed_stage property should return
+    the stage_id of the first failed stage.
+
+    We create a motion range that is too large for the
+    mechanism, causing at least one stage to fail
+    validation.
+    """
+
+    mechanism = build_mechanism(
+        simple_multistage_csv,
+    )
+
+    # Use a very large motion range to force a failure.
+    motion = MotionRange(
+        start_angle=math.radians(-90),
+        max_angle=math.radians(180),
+        step=math.radians(5),
+    )
+
+    validation = MechanismMotionValidator().validate(
+        mechanism=mechanism,
+        motion=motion,
+    )
+
+    if not validation.valid:
+        assert validation.failed_stage is not None
