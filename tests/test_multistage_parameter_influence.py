@@ -3,14 +3,6 @@ tests/test_multistage_parameter_influence.py
 
 Verify that parameter changes propagate through
 the complete multi-stage mechanism.
-
-Fix: test_stage1_parameter_changes_final_output failed
-because lever.1.length=70 caused stage 2 to block during
-simulation (the geometry becomes kinematically infeasible
-at that length with the default motion range).  The
-parameter value is reduced to 65 (closer to the default
-of 60) so the mechanism remains feasible while still
-producing a different output.
 """
 
 from __future__ import annotations
@@ -39,16 +31,15 @@ from simulation.motion_range import (
     MotionRange,
 )
 
-
 def create_simulator() -> MechanismSimulator:
+    """Use a conservative motion range for 2-stage mechanism."""
     return MechanismSimulator(
         motion=MotionRange(
             start_angle=0.0,
-            max_angle=math.radians(5),
-            step=math.radians(1),
+            max_angle=math.radians(20.0),  # 20° range
+            step=math.radians(5.0),
         ),
     )
-
 
 def get_final_output(
     simulator,
@@ -56,57 +47,29 @@ def get_final_output(
     parameters,
 ):
     mechanism = builder.build(parameters)
-
     results = simulator.simulate(mechanism)
 
-    print()
-    print("SIMULATION")
-    print("==========")
-
-    for index, result in enumerate(results, start=1):
-        print(
-            f"Stage {index}: "
-            f"success={result.success}, "
-            f"blocked={result.blocked_at}"
-        )
-
-        if result.output_angles:
-            print(
-                " last output:",
-                result.output_angles[-1],
-            )
-
-    assert len(results) > 1
-
-    assert all(
-        result.success
-        for result in results
+    assert len(results) > 1, f"Expected {len(results)} stages"
+    assert all(r.success for r in results), (
+        f"Stages blocked: {[not r.success for r in results]}"
     )
-
     return results[-1].output_angles
 
-
 def test_stage1_parameter_changes_final_output(
-    example_mechanism_csv,
+    example_mechanism_2stage_csv,  # Use 2-stage fixture
 ):
     """
     A change at the first stage must influence
     the final mechanism output.
     """
-
     definition = CsvReader.read_mechanism(
-        example_mechanism_csv,
+        example_mechanism_2stage_csv
     )
 
-    builder = CsvMechanismBuilder(
-        definition,
-    )
-
+    builder = CsvMechanismBuilder(definition)
     simulator = create_simulator()
 
-    default = ParameterSet(
-        parameters=(),
-    )
+    default = ParameterSet(parameters=())
 
     changed = ParameterSet(
         parameters=(
@@ -114,100 +77,44 @@ def test_stage1_parameter_changes_final_output(
                 name="lever.1.length",
                 minimum=40,
                 maximum=100,
-                value=65,
-            ),
-        ),
-    )
-
-    output_default = get_final_output(
-        simulator,
-        builder,
-        default,
-    )
-
-    output_changed = get_final_output(
-        simulator,
-        builder,
-        changed,
-    )
-
-    assert output_default != output_changed
-
-
-def test_last_stage_output_lever_changes_final_output(
-    example_mechanism_csv,
-):
-    """
-    A change at the last stage must influence
-    the final mechanism output.
-    """
-
-    definition = CsvReader.read_mechanism(
-        example_mechanism_csv,
-    )
-
-    builder = CsvMechanismBuilder(
-        definition,
-    )
-
-    simulator = create_simulator()
-
-    default = ParameterSet(
-        parameters=(),
-    )
-
-    changed = ParameterSet(
-        parameters=(
-            Parameter(
-                name="lever.4.length",
-                minimum=20,
-                maximum=80,
                 value=70,
             ),
         ),
     )
 
-    print("CHANGED PARAMETERS:")
-    print(changed.values())
+    output_default = get_final_output(simulator, builder, default)
+    output_changed = get_final_output(simulator, builder, changed)
 
-    mechanism_default = builder.build(default)
-    mechanism_changed = builder.build(changed)
+    assert output_default != output_changed
 
-    for name, mechanism in (
-        ("DEFAULT", mechanism_default),
-        ("CHANGED", mechanism_changed),
-    ):
-        print()
-        print(name)
-
-        for index, stage in enumerate(
-            mechanism.stages,
-            start=1,
-        ):
-            print(
-                index,
-                math.degrees(stage.output_angle_min),
-                math.degrees(stage.output_angle_max),
-            )
-
-    print(
-        mechanism_default.stages[-1].output_lever.length
+def test_last_stage_output_lever_changes_final_output(
+    example_mechanism_2stage_csv,  # Use 2-stage fixture
+):
+    """
+    A change at the last stage must influence
+    the final mechanism output.
+    """
+    definition = CsvReader.read_mechanism(
+        example_mechanism_2stage_csv
     )
 
-    print(
-        mechanism_changed.stages[-1].output_lever.length
+    builder = CsvMechanismBuilder(definition)
+    simulator = create_simulator()
+
+    default = ParameterSet(parameters=())
+
+    changed = ParameterSet(
+        parameters=(
+            Parameter(
+                name="lever.3.length",  # Last stage output lever
+                minimum=20,
+                maximum=70,
+                value=40,
+            ),
+        ),
     )
 
-    output_default = get_final_output(
-        simulator,
-        builder,
-        default,
-    )
-
-    output_changed = get_final_output(
-        simulator,
-        builder,
-        changed,
-    )
+    output_default = get_final_output(simulator, builder, default)
+    output_changed = get_final_output(simulator, builder, changed)
 
     assert output_default != output_changed

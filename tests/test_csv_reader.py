@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from mechanism_io import CsvReader
 from core.vector3d import Vector3D
 
@@ -12,10 +14,10 @@ def test_read_simulation(example_simulation_csv):
     assert config.target_error == 0.05
     assert config.mutation_rate == 0.15
     assert config.elite_size == 5
-    assert config.motion_start == -50
-    assert config.motion_end == 50
-    assert config.motion_step == 1
-
+    # Angles are now in radians (converted from degrees in CSV)
+    assert math.isclose(config.motion_start, math.radians(-50))
+    assert math.isclose(config.motion_end, math.radians(50))
+    assert math.isclose(config.motion_step, math.radians(1))
 
 def test_read_mechanism(example_mechanism_csv):
     mechanism = CsvReader.read_mechanism(example_mechanism_csv)
@@ -37,7 +39,6 @@ def test_read_mechanism(example_mechanism_csv):
     assert lever.driver == 1
     assert lever.coupled is None
 
-
 def test_driver_ignored_when_coupled(example_coupled_csv):
     mechanism = CsvReader.read_mechanism(example_coupled_csv)
 
@@ -45,8 +46,7 @@ def test_driver_ignored_when_coupled(example_coupled_csv):
 
     assert lever.coupled == 2
     assert lever.driver is None
-    
-    
+
 def test_read_lever_geometry(example_mechanism_csv):
     mechanism = CsvReader.read_mechanism(example_mechanism_csv)
 

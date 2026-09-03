@@ -2,7 +2,6 @@ from mechanics.csv_mechanism_builder import CsvMechanismBuilder
 from mechanism_io.csv_reader import CsvReader
 from optimization.parameter_set import ParameterSet
 
-
 def test_build_creates_stages(example_mechanism_csv):
     definition = CsvReader.read_mechanism(
         example_mechanism_csv
@@ -16,10 +15,10 @@ def test_build_creates_stages(example_mechanism_csv):
 
     assert len(mechanism.stages) == 3
 
-
 def test_builder_preserves_lever_geometry(
     example_mechanism_csv,
 ):
+    """Lever 3 has pivot at (200, 20, 0) - original geometry."""
     definition = CsvReader.read_mechanism(
         example_mechanism_csv
     )
@@ -30,18 +29,18 @@ def test_builder_preserves_lever_geometry(
         ParameterSet(())
     )
 
-    stage = mechanism.stages[1]
+    stage = mechanism.stages[1]  # Stage 2: Lever 2 -> Lever 3
 
     assert stage.input_lever.pivot.x == 100
     assert stage.input_lever.pivot.y == 0
 
     assert stage.output_lever.pivot.x == 200
-    assert stage.output_lever.pivot.y == 20
-
+    assert stage.output_lever.pivot.y == 20  # Lever 3 is at y=20
 
 def test_builder_calculates_rod_length(
     example_mechanism_csv,
 ):
+    """Stage 1: Lever 1(0,0,0) -> Lever 2(100,0,0), both length 60/45 at 0°."""
     definition = CsvReader.read_mechanism(
         example_mechanism_csv
     )
@@ -54,13 +53,15 @@ def test_builder_calculates_rod_length(
 
     stage = mechanism.stages[0]
 
+    # At 0°: lever1 endpoint = (60,0,0), lever2 endpoint = (145,0,0)
+    # Rod length = 85mm
     assert stage.rod_length == 85.0
-    
+
 def test_builder_preserves_stage_order(
     example_mechanism_csv,
 ):
     definition = CsvReader.read_mechanism(
-        example_mechanism_csv,
+        example_mechanism_csv
     )
 
     mechanism = CsvMechanismBuilder(
@@ -86,7 +87,7 @@ def test_builder_preserves_stage_order(
     # Stage 3: Lever 3 -> Lever 4
     assert stage3.input_lever.pivot.x == 200
     assert stage3.output_lever.pivot.x == 300
-    
+
 def test_builder_validates_created_stages(
     example_mechanism_csv,
 ):

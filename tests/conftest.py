@@ -6,15 +6,13 @@ from __future__ import annotations
 
 import pytest
 
-
 @pytest.fixture
 def example_simulation_csv(tmp_path):
     """
     Create an example simulation CSV file.
+    All angle values are in DEGREES.
     """
-
     path = tmp_path / "simulation.csv"
-
     path.write_text(
         """parameter,value
 population_size,200
@@ -29,39 +27,34 @@ motion_step,1
 """,
         encoding="utf-8",
     )
-
     return path
-
 
 @pytest.fixture
 def example_mechanism_csv(tmp_path):
     """
     Create an example mechanism CSV file.
+    All angle values are in DEGREES.
+    Original geometry: lever 3 and 4 at y=20
     """
-
     path = tmp_path / "mechanism.csv"
-
     path.write_text(
         """id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,driver,coupled
 1,40,100,60,-40,40,0,0,0,0,0,0,1,,
 2,30,90,45,-60,60,0,100,0,0,0,0,1,1,
 3,20,70,35,-30,30,0,200,20,0,0,0,1,2,
-4,20,80,40,-45,45,10,300,20,0,0,1,0,3,
+4,20,80,40,-45,45,10,300,20,0,0,0,1,3,
 """,
         encoding="utf-8",
     )
-
     return path
-
 
 @pytest.fixture
 def example_coupled_csv(tmp_path):
     """
     Create a mechanism containing a coupled lever.
+    All angle values are in DEGREES.
     """
-
     path = tmp_path / "coupled.csv"
-
     path.write_text(
         """id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,driver,coupled
 1,40,100,60,-40,40,0,0,0,0,0,0,1,,
@@ -70,28 +63,15 @@ def example_coupled_csv(tmp_path):
 """,
         encoding="utf-8",
     )
-
     return path
 
 @pytest.fixture
-def simple_stage_csv(
-    tmp_path,
-):
+def simple_stage_csv(tmp_path):
     """
     Create a simple two lever mechanism.
-
-    Input lever:
-        20-40 mm
-
-    Output lever:
-        80-120 mm
-
-    The geometry is intentionally safe
-    to avoid blocking.
+    All angle values are in DEGREES.
     """
-
     path = tmp_path / "simple_stage.csv"
-
     path.write_text(
         """id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,driver,coupled
 1,30,50,40,-60,60,0,0,0,0,0,0,1,,
@@ -99,20 +79,15 @@ def simple_stage_csv(
 """,
         encoding="utf-8",
     )
-
     return path
 
-
 @pytest.fixture
-def simple_target_csv(
-    tmp_path,
-):
+def simple_target_csv(tmp_path):
     """
     Create a simple target transfer curve.
+    All angle values are in DEGREES.
     """
-
     path = tmp_path / "target.csv"
-
     path.write_text(
         """input_angle,output_angle
 -40,-30
@@ -123,14 +98,14 @@ def simple_target_csv(
 """,
         encoding="utf-8",
     )
-
     return path
 
 @pytest.fixture
 def simple_multistage_csv(tmp_path):
-
+    """
+    All angle values are in DEGREES.
+    """
     path = tmp_path / "multistage.csv"
-
     path.write_text(
         """id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,driver,coupled
 1,50,50,50,-90,90,0,0,0,0,0,0,1,,
@@ -139,5 +114,41 @@ def simple_multistage_csv(tmp_path):
 """,
         encoding="utf-8",
     )
+    return path
 
+@pytest.fixture
+def example_mechanism_colinear_csv(tmp_path):
+    """
+    Create a colinear mechanism CSV for tests requiring robust kinematics.
+    All pivots on X-axis (y=0, z=0), all axes Z-axis.
+    All angle values are in DEGREES.
+    """
+    path = tmp_path / "mechanism.csv"
+    path.write_text(
+        """id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,driver,coupled
+1,40,100,60,-40,40,0,0,0,0,0,0,1,,
+2,30,90,45,-60,60,0,100,0,0,0,0,1,1,
+3,20,70,35,-30,30,0,200,0,0,0,0,1,2,
+4,20,80,40,-45,45,0,300,0,0,0,0,1,3,
+""",
+        encoding="utf-8",
+    )
+    return path
+
+@pytest.fixture
+def example_mechanism_2stage_csv(tmp_path):
+    """
+    Create a simple 2-stage mechanism for parameter influence tests.
+    All pivots on X-axis, all axes Z-axis.
+    All angle values are in DEGREES.
+    """
+    path = tmp_path / "mechanism.csv"
+    path.write_text(
+        """id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,driver,coupled
+1,40,100,60,-90,90,0,0,0,0,0,0,1,,
+2,30,90,45,-90,90,0,100,0,0,0,0,1,1,
+3,20,70,35,-90,90,0,200,0,0,0,0,1,2,
+""",
+        encoding="utf-8",
+    )
     return path

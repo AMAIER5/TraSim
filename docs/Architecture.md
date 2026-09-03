@@ -355,10 +355,11 @@ A lever is immutable (`frozen=True`, `slots=True`).
 
 ```text
 Lever
-├── pivot  : Point3D
-├── axis   : Vector3D
-├── length : float
-└── _normalized_axis : Vector3D  (cached, init=False)
+├── pivot              : Point3D
+├── axis               : Vector3D
+├── length             : float
+├── _normalized_axis   : Vector3D  (cached, init=False)
+└── _reference_direction : Vector3D (cached, init=False)
 ```
 
 The endpoint is calculated from:
@@ -367,14 +368,31 @@ The endpoint is calculated from:
 tip = pivot + direction(angle) * length
 ```
 
-The lever uses **Rodrigues' rotation formula** directly (optimized for the initial direction `v = (1,0,0)`) rather than creating a `Quaternion` for each evaluation. The normalized axis is cached in `__post_init__`.
+The lever uses **Rodrigues' rotation formula** with a reference direction that is **guaranteed to be perpendicular to the rotation axis**. The normalized axis and reference direction are both cached in `__post_init__`.
 
 The lever does not store dynamic angle state.
 
+#### Reference Direction Convention
+
+The initial lever direction (at angle 0) is automatically selected based on the **dominant axis** of the rotation axis vector to ensure it is never parallel to the rotation axis:
+
+
+| Rotation Axis Dominant Component | Reference Direction at 0° |
+| -------------------------------- | ------------------------- |
+|                                  | axis\_x                   |
+|                                  | axis\_y                   |
+|                                  | axis\_z                   |
+
+
+This ensures the lever can always rotate meaningfully, even when the rotation axis is aligned with a cardinal axis. Without this convention, a lever with X-axis as its rotation axis would have a degenerate initial direction parallel to its axis, resulting in no motion.
+
 Methods:
 
-- `direction(angle_rad)` → `Vector3D` (Rodrigues rotation of `(1,0,0)`)
+- `direction(angle_rad)` → `Vector3D` (Rodrigues rotation of the reference direction)
 - `end_position(angle_rad)` → `Point3D`
+
+```
+
 
 ### Rod
 
