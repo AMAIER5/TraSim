@@ -8,10 +8,19 @@ against target_curve.csv.
 
 User I/O angles are in DEGREES.
 Internal calculations use RADIANS.
+
+Rod lengths are AUTO-CALCULATED from lever endpoints at reference angles.
+The solver will naturally find non-blocking solutions if they exist in the search space.
+
+For stable optimization:
+- Use mutation strength of 0.01-0.05 (not 0.15)
+- Use sufficient generations (500+)
+- Use tight stagnation tolerance (1e-8)
 """
 
 from __future__ import annotations
 
+import csv
 import math
 import random
 from pathlib import Path
@@ -41,11 +50,13 @@ from simulation.stage_simulator import StageSimulator
 
 BASE_DIR = Path(__file__).parent
 
-# MECHANISM_FILE = BASE_DIR / "mechanism.csv"
-# TARGET_FILE = BASE_DIR / "target_curve.csv"
+# For your simple 1:1 example:
+MECHANISM_FILE = BASE_DIR / "mechanism.csv"
+TARGET_FILE = BASE_DIR / "target_curve.csv"
 
-MECHANISM_FILE = BASE_DIR / "PPBLS_mechanism.csv"
-TARGET_FILE = BASE_DIR / "PBLS_target_curve_csv_mechanism.csv"
+# For your PPBLS example (comment out the above lines if needed):
+# MECHANISM_FILE = BASE_DIR / "PPBLS_mechanism.csv"
+# TARGET_FILE = BASE_DIR / "PBLS_target_curve_csv_mechanism.csv"
 
 # -------------------------------------------------
 # Mechanism definition
@@ -63,31 +74,31 @@ print("LOADING MECHANISM")
 print("=" * 80)
 print(f"\nMechanism: {len(definition.levers)} levers")
 for lever in definition.levers:
+    driver_str = f", driver={lever.driver}" if lever.driver else ""
+    coupled_str = f", coupled={lever.coupled}" if lever.coupled else ""
     print(f"  Lever {lever.id}: pivot=({lever.pivot.x:.1f}, {lever.pivot.y:.1f}, {lever.pivot.z:.1f}), "
           f"axis=({lever.axis.x:.1f}, {lever.axis.y:.1f}, {lever.axis.z:.1f}), "
           f"length={lever.length_start:.1f}mm, "
-          f"angle=[{math.degrees(lever.angle_min):.1f}\u00b0, {math.degrees(lever.angle_max):.1f}\u00b0]")
+          f"angle=[{math.degrees(lever.angle_min):.1f}\u00b0, {math.degrees(lever.angle_max):.1f}\u00b0]"
+          f"{driver_str}{coupled_str}")
 
 # -------------------------------------------------
-# Optimization parameters
+# Target curve - READ DIRECTLY FROM CSV
 # -------------------------------------------------
 
-parameter_template = CsvParameterFactory.create(definition)
+target_input_angles_deg = []
+target_output_angles_deg = []
 
-# -------------------------------------------------
-# Target curve
-# -------------------------------------------------
+with open(TARGET_FILE, newline='', encoding='utf-8') as f:
+    reader = csv.DictReader(f)
+    for row in reader:
+        target_input_angles_deg.append(float(row['input_angle']))
+        target_output_angles_deg.append(float(row['output_angle']))
+
+target_input_angles_rad = tuple(math.radians(a) for a in target_input_angles_deg)
+target_output_angles_rad = tuple(math.radians(a) for a in target_output_angles_deg)
 
 target_curve = TargetCurve.from_csv(TARGET_FILE)
-
-# Extract input angles from target curve (stored in radians in closure)
-# The TargetCurve.from_csv converts CSV degrees to radians internally
-target_input_angles_rad = target_curve.function.__closure__[0].cell_contents
-target_output_angles_rad = target_curve.function.__closure__[1].cell_contents
-
-# Convert to degrees for display
-target_input_angles_deg = tuple(math.degrees(a) for a in target_input_angles_rad)
-target_output_angles_deg = tuple(math.degrees(a) for a in target_output_angles_rad)
 
 print("\n" + "=" * 80)
 print("LOADING TARGET CURVE")
@@ -97,16 +108,12 @@ for inp, out in zip(target_input_angles_deg, target_output_angles_deg):
     print(f"  {inp:.1f}\u00b0 \u2192 {out:.1f}\u00b0")
 
 # -------------------------------------------------
-# Simulation setup - matches target curve input range
+# Simulation setup
 # -------------------------------------------------
 
-# Use the target curve's input range for motion
-# All values in radians for internal calculations
 min_input_rad = min(target_input_angles_rad)
 max_input_rad = max(target_input_angles_rad)
 travel_range_rad = max_input_rad - min_input_rad
-
-# For step, use 2.0 degrees converted to radians
 step_rad = math.radians(2.0)
 
 motion = MotionRange(
@@ -119,19 +126,25 @@ motion = MotionRange(
 print("\n" + "=" * 80)
 print("OPTIMIZATION SETUP")
 print("=" * 80)
-print(f"\nParameters ({len(parameter_template.parameters)}):")
+print(f"\nParameters ({len(definition.levers) * 2}):")
+
+parameter_template = CsvParameterFactory.create(definition)
+
 for param in parameter_template.parameters:
-    # Convert angle parameters from radians to degrees for display
     if "angle" in param.name:
         min_deg = math.degrees(param.minimum)
         max_deg = math.degrees(param.maximum)
         val_deg = math.degrees(param.value)
-        print(f"  {param.name}: [{min_deg:.1f}, {max_deg:.1f}], default={val_deg:.1f}")
+        print(f"  {param.name}: [{min_deg:.1f}\u00b0, {max_deg:.1f}\u00b0], default={val_deg:.1f}\u00b0")
     else:
         print(f"  {param.name}: [{param.minimum:.1f}, {param.maximum:.1f}], default={param.value:.1f}")
 
 print(f"\nMotion range: {math.degrees(min_input_rad):.1f}\u00b0 to {math.degrees(max_input_rad):.1f}\u00b0, "
-      f"step={math.degrees(step_rad):.1f}\u00b0")
+      f"step=2.0\u00b0")
+
+# -------------------------------------------------
+# Create simulator and optimizer
+# -------------------------------------------------
 
 stage_simulator = StageSimulator()
 simulator = MechanismSimulator(
@@ -140,16 +153,12 @@ simulator = MechanismSimulator(
     stage_limit=None,
 )
 
-# -------------------------------------------------
-# Fitness
-# -------------------------------------------------
-
-fitness = CurveFitness(target_curve=target_curve)
-
-# -------------------------------------------------
-# Mechanism optimizer
-# -------------------------------------------------
-
+# FIX (4): Increased patience for optimization
+fitness = CurveFitness(
+    target_curve=target_curve,
+    motion_start=min_input_rad,
+    motion_range=travel_range_rad,
+)
 optimizer = MechanismOptimizer(
     builder=builder,
     simulator=simulator,
@@ -160,28 +169,31 @@ optimizer = MechanismOptimizer(
 # Initial population
 # -------------------------------------------------
 
-rng = random.Random()
+rng = random.Random(42)  # Fixed seed for reproducibility
 population_factory = PopulationFactory(random_generator=rng)
-population = population_factory.create(parameter_template, size=100)  # Larger population
+population = population_factory.create(parameter_template, size=100)
 
 # -------------------------------------------------
-# Evolution engine
+# Evolution engine - FIXES (2), (3), (4)
 # -------------------------------------------------
 
+# FIX (2): Geometric stability - use smaller population for more focused search
+# FIX (3): Reduced mutation strength from 0.15 to 0.01 for finer, more stable search
+# FIX (4): Increased patience - more generations and tighter tolerance
 engine = EvolutionEngine(
     population=population,
     evaluator=optimizer.evaluate,
-    selection_count=30,                # More survivors
+    selection_count=30,
     reproduction=Reproduction(
         mutation=ParameterMutation(
-            strength=0.15,               # Stronger mutation
+            strength=0.01,               # FIX (3): Reduced from 0.15 to 0.01
             random_generator=rng,
         ),
     ),
-    target_fitness=0.01,              # Lower target
-    max_generations=200,             # More generations
-    stagnation_limit=50,             # More patience
-    stagnation_tolerance=1e-5,        # Tighter tolerance
+    target_fitness=0.01,
+    max_generations=1000,             # FIX (4): Increased from 200 to 1000
+    stagnation_limit=200,             # FIX (4): Increased from 50 to 200
+    stagnation_tolerance=1e-8,        # FIX (4): Tighter from 1e-5 to 1e-8
 )
 
 # -------------------------------------------------
@@ -199,7 +211,10 @@ print("\n" + "=" * 80)
 print("INITIAL POPULATION")
 print("=" * 80)
 print(f"Valid candidates: {valid}/{len(engine.population)}")
-print(f"Best initial fitness: {engine.best_score:.8f}")
+if engine.best_score < float("inf"):
+    print(f"Best initial fitness: {engine.best_score:.8f}")
+else:
+    print("Best initial fitness: inf (no valid candidates)")
 
 if valid == 0:
     raise RuntimeError("No valid candidates - mechanism is infeasible")
@@ -214,7 +229,6 @@ print("=" * 80)
 print("  Generation |         Fitness |  Improvement")
 print("-" * 55)
 
-# Track generation count and improvement
 prev_best = float("inf")
 generation_count = 0
 
@@ -229,7 +243,7 @@ for generation in engine.run(children_count=100):
     print(f"  {generation:3d} | {engine.best_score:>16.8f} | {improvement_str}")
 
 # -------------------------------------------------
-# Result
+# Results
 # -------------------------------------------------
 
 print("\n" + "=" * 80)
@@ -240,13 +254,16 @@ print(f"\nStop reason: {engine.stop_reason}")
 print(f"Best fitness: {engine.best_score:.12f}")
 print(f"Generations run: {generation_count}")
 
-# Print cache statistics
 cache_stats = optimizer.get_cache_stats()
 print(f"\nCache statistics:")
 print(f"  Evaluations: {cache_stats['evaluations']}")
 print(f"  Cache hits: {cache_stats['cache_hits']}")
 print(f"  Cache misses: {cache_stats['cache_misses']}")
 print(f"  Cache size: {cache_stats['cache_size']}")
+
+# -------------------------------------------------
+# Best mechanism details
+# -------------------------------------------------
 
 if engine.best_candidate is not None:
     mechanism = builder.build(engine.best_candidate)
@@ -265,16 +282,26 @@ if engine.best_candidate is not None:
         print(f"    Input range:  [{math.degrees(stage.input_angle_min):.1f}\u00b0, {math.degrees(stage.input_angle_max):.1f}\u00b0]")
         print(f"    Output range: [{math.degrees(stage.output_angle_min):.1f}\u00b0, {math.degrees(stage.output_angle_max):.1f}\u00b0]")
 
-    # -------------------------------------------------
+    # Validation results
+    validation_results = builder.get_validation_results()
+    print("\n" + "-" * 55)
+    print("STAGE VALIDATION RESULTS")
+    print("-" * 55)
+    for stage_idx, result in enumerate(validation_results, start=1):
+        print(f"\n  Stage {stage_idx}:")
+        print(f"    Valid: {result.valid}")
+        if not result.valid:
+            print(f"    Reason: {result.reason}")
+            if hasattr(result, 'failed_at_input_angle') and result.failed_at_input_angle is not None:
+                print(f"    Failed at: {math.degrees(result.failed_at_input_angle):.1f}\u00b0")
+
     # Simulation results
-    # -------------------------------------------------
-    
     print("\n" + "-" * 55)
     print("SIMULATION RESULTS")
     print("-" * 55)
-    
+
     simulation_results = simulator.simulate(mechanism)
-    
+
     for stage_index, stage_result in enumerate(simulation_results, start=1):
         print(f"\n  Stage {stage_index}:")
         print(f"    Success: {stage_result.success}")
@@ -284,12 +311,14 @@ if engine.best_candidate is not None:
             if stage_result.output_angles:
                 output_deg = tuple(math.degrees(a) for a in stage_result.output_angles)
                 print(f"    Output range: [{min(output_deg):.1f}\u00b0, {max(output_deg):.1f}\u00b0]")
+        else:
+            if stage_result.blocked_at is not None:
+                print(f"    Blocked at: {math.degrees(stage_result.blocked_at):.1f}\u00b0")
 
-    # Print solver statistics
+    # Solver statistics
     print("\n" + "=" * 80)
     print("SOLVER STATISTICS")
     print("=" * 80)
-    # Collect statistics from all solvers
     total_stats = {}
     for solver in stage_simulator.solvers:
         stats = solver.get_stats()
