@@ -5,6 +5,9 @@ End-to-end evolutionary optimization.
 
 Optimizes a mechanism loaded from mechanism.csv
 against target_curve.csv.
+
+User I/O angles are in DEGREES.
+Internal calculations use RADIANS.
 """
 
 from __future__ import annotations
@@ -43,6 +46,7 @@ BASE_DIR = Path(__file__).parent
 
 MECHANISM_FILE = BASE_DIR / "PPBLS_mechanism.csv"
 TARGET_FILE = BASE_DIR / "PBLS_target_curve_csv_mechanism.csv"
+
 # -------------------------------------------------
 # Mechanism definition
 # -------------------------------------------------
@@ -63,16 +67,41 @@ parameter_template = CsvParameterFactory.create(definition)
 target_curve = TargetCurve.from_csv(TARGET_FILE)
 print(f"Target curve loaded from {TARGET_FILE}")
 
+# Extract input angles from target curve (stored in radians in closure)
+# The TargetCurve.from_csv converts CSV degrees to radians internally
+target_input_angles_rad = target_curve.function.__closure__[0].cell_contents
+target_output_angles_rad = target_curve.function.__closure__[1].cell_contents
+
+# Convert to degrees for display
+target_input_angles_deg = tuple(math.degrees(a) for a in target_input_angles_rad)
+target_output_angles_deg = tuple(math.degrees(a) for a in target_output_angles_rad)
+
+print(f"\nTarget curve: {len(target_input_angles_deg)} points")
+for inp, out in zip(target_input_angles_deg, target_output_angles_deg):
+    print(f"  {inp:.1f}° → {out:.1f}°")
+
 # -------------------------------------------------
-# Simulation setup - matches mechanism input range
+# Simulation setup - matches target curve input range
 # -------------------------------------------------
 
+# Use the target curve's input range for motion
+# All values in radians for internal calculations
+min_input_rad = min(target_input_angles_rad)
+max_input_rad = max(target_input_angles_rad)
+travel_range_rad = max_input_rad - min_input_rad
+
+# For step, use 2.0 degrees converted to radians
+step_rad = math.radians(2.0)
+
 motion = MotionRange(
-    start_angle=math.radians(150.0),  # 150°
-    max_angle=math.radians(80.0),    # Travel 80° → 150° to 230°
-    step=math.radians(2.5),         # 2.5° steps (finer resolution)
+    start_angle=min_input_rad,
+    max_angle=travel_range_rad,
+    step=step_rad,
     direction=1,
 )
+
+print(f"\nMotion range: {math.degrees(min_input_rad):.1f}° to {math.degrees(max_input_rad):.1f}°, "
+      f"step={math.degrees(step_rad):.1f}°")
 
 stage_simulator = StageSimulator()
 simulator = MechanismSimulator(
@@ -161,3 +190,5 @@ if engine.best_candidate is not None:
         print(f"    Output lever: length={stage.output_lever.length:.2f} mm, "
               f"pivot=({stage.output_lever.pivot.x:.1f}, {stage.output_lever.pivot.y:.1f}, {stage.output_lever.pivot.z:.1f})")
         print(f"    Rod length:  {stage.rod_length:.2f} mm")
+        print(f"    Input range:  [{math.degrees(stage.input_angle_min):.1f}°, {math.degrees(stage.input_angle_max):.1f}°]")
+        print(f"    Output range: [{math.degrees(stage.output_angle_min):.1f}°, {math.degrees(stage.output_angle_max):.1f}°]")
