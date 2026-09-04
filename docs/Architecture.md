@@ -376,12 +376,19 @@ The lever does not store dynamic angle state.
 
 The initial lever direction (at angle 0) is automatically selected based on the **dominant axis** of the rotation axis vector to ensure it is never parallel to the rotation axis:
 
+        The initial lever direction is chosen to be perpendicular to
+        the rotation axis. The reference direction is selected based on
+        the dominant axis of the rotation axis vector:
+
+        - If |axis_x| is largest: reference = Y axis (0,1,0)
+        - If |axis_y| is largest: reference = Z axis (0,0,1)
+        - If |axis_z| is largest: reference = X axis (1,0,0)
 
 | Rotation Axis Dominant Component | Reference Direction at 0° |
 | -------------------------------- | ------------------------- |
-|                                  | axis\_x                   |
-|                                  | axis\_y                   |
-|                                  | axis\_z                   |
+| axis\_z                          | axis\_x                   |
+| axis\_x                          | axis\_y                   |
+| axis\_y                          | axis\_z                   |
 
 
 This ensures the lever can always rotate meaningfully, even when the rotation axis is aligned with a cardinal axis. Without this convention, a lever with X-axis as its rotation axis would have a degenerate initial direction parallel to its axis, resulting in no motion.
