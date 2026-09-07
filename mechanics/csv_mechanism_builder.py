@@ -3,13 +3,19 @@ mechanics/csv_mechanism_builder.py
 
 Build a mechanical mechanism from a MechanismDefinition.
 
-Issue #7 compatibility: The builder now passes
-``validate_reference=False`` to
-``Stage.from_reference_position`` because the CSV
-definition may intentionally specify reference angles
-outside the declared working ranges (the builder's own
-``StageMotionValidator`` handles feasibility checking
-after construction).
+Rod lengths are calculated automatically from lever positions at reference angles.
+Each stage's rod length is computed as the Euclidean distance between the input and output
+lever endpoints at their respective reference angles (angle_start from the CSV definition).
+
+The rod length is computed once during stage construction using:
+    rod_length = || output_lever.end_position(angle_start) - input_lever.end_position(angle_start) ||
+
+This ensures the mechanism is valid at the reference configuration.
+However, the mechanism may still block during motion if the geometry doesn't allow
+the full angle range. For guaranteed motion, ensure:
+1. The pivot distance >= |input_length - output_length|
+2. The pivot distance <= input_length + output_length
+3. The motion range is within the geometric feasibility limits
 """
 
 from __future__ import annotations
@@ -24,13 +30,16 @@ from optimization.mechanism_builder import MechanismBuilder
 from optimization.parameter_set import ParameterSet
 from validation.stage_motion_validator import StageMotionValidator
 
-
 class CsvMechanismBuilder(MechanismBuilder):
     """
     Build a Mechanism from a MechanismDefinition.
 
     The builder converts the abstract model definition
     into simulation-ready mechanical components.
+
+    Rod length for each stage is automatically calculated
+    as the Euclidean distance between the input and output
+    lever endpoints at their reference angles (angle_start).
     """
 
     def __init__(
@@ -41,13 +50,11 @@ class CsvMechanismBuilder(MechanismBuilder):
     ) -> None:
 
         self._definition = definition
-
         self._validator = (
             validator
             if validator is not None
             else StageMotionValidator()
         )
-
         self._validation_results = []
 
     def build(
@@ -66,9 +73,7 @@ class CsvMechanismBuilder(MechanismBuilder):
             parameters,
         )
 
-        levers = self._create_levers(
-            definition,
-        )
+        levers = self._create_levers(definition)
 
         stages = self._create_stages(
             definition,
@@ -84,13 +89,9 @@ class CsvMechanismBuilder(MechanismBuilder):
                 stage_id=index,
             )
 
-            self._validation_results.append(
-                result
-            )
+            self._validation_results.append(result)
 
-        return Mechanism(
-            stages=tuple(stages),
-        )
+        return Mechanism(stages=tuple(stages))
 
     def _apply_parameters(
         self,
@@ -99,12 +100,10 @@ class CsvMechanismBuilder(MechanismBuilder):
     ) -> MechanismDefinition:
         """
         Apply optimization parameters to a mechanism definition.
-
         The original CSV definition remains unchanged.
         """
 
         values = parameters.values()
-
         levers = []
 
         for lever in definition.levers:
@@ -127,9 +126,7 @@ class CsvMechanismBuilder(MechanismBuilder):
                 )
             )
 
-        return MechanismDefinition(
-            levers=tuple(levers),
-        )
+        return MechanismDefinition(levers=tuple(levers))
 
     def _create_levers(
         self,
@@ -158,11 +155,16 @@ class CsvMechanismBuilder(MechanismBuilder):
         """
         Create stages from driver relations.
 
-        Issue #7: Passes validate_reference=False because
-        the CSV definition may specify reference angles
-        outside the declared working ranges.  The builder's
-        own StageMotionValidator handles feasibility
-        checking after construction.
+        Each stage's rod length is automatically calculated as the
+        distance between the input and output lever endpoints at
+        their reference angles (angle_start from the definition).
+
+        The rod length is computed as:
+            rod_length = ||output_endpoint - input_endpoint||
+
+        where endpoints are calculated at the reference angles:
+            input_endpoint = input_lever.end_position(input_angle_start)
+            output_endpoint = output_lever.end_position(output_angle_start)
         """
 
         stages: list[Stage] = []
@@ -177,18 +179,13 @@ class CsvMechanismBuilder(MechanismBuilder):
             if lever_definition.driver is None:
                 continue
 
-            driver_definition = definitions[
-                lever_definition.driver
-            ]
+            driver_definition = definitions[lever_definition.driver]
 
+            # Use the updated reference angles from parameters
             stages.append(
                 Stage.from_reference_position(
-                    input_lever=levers[
-                        lever_definition.driver
-                    ],
-                    output_lever=levers[
-                        lever_definition.id
-                    ],
+                    input_lever=levers[lever_definition.driver],
+                    output_lever=levers[lever_definition.id],
 
                     input_angle=driver_definition.angle_start,
                     output_angle=lever_definition.angle_start,
@@ -207,11 +204,6 @@ class CsvMechanismBuilder(MechanismBuilder):
 
     def get_validation_results(self) -> tuple:
         """
-        Issue #21: Added return type annotation.
-
         Return stage validation results.
         """
-
-        return tuple(
-            self._validation_results
-        )
+        return tuple(self._validation_results)
