@@ -2,17 +2,17 @@
 examples/optimize_csv_mechanism_Step1.py
 
 Schritt 1: Eine Getriebestufe, die nie blockieren kann
-mit sehr einfacher Zielfunktion (1:1 Übersetzung über gesamt 90° Drehwinkel)
+mit sehr einfacher Zielfunktion (1:1 Uebersetzung ueber gesamt 90 Grad Drehwinkel)
 
 User I/O angles are in DEGREES.
 Internal calculations use RADIANS.
 
 Dieses Beispiel verwendet einen Mechanismus mit zwei Hebeln:
-- Eingangshebel: Drehpunkt bei (0,0,0), Länge 100mm, Winkelbereich [-45°, 45°]
-- Ausgangshebel: Drehpunkt bei (100,0,0), Länge 100mm, Winkelbereich [-45°, 45°]
+- Eingangshebel: Drehpunkt bei (0,0,0), Laenge 100mm, Winkelbereich [-50, 50]
+- Ausgangshebel: Drehpunkt bei (100,0,0), Laenge 100mm, Winkelbereich [-50, 50]
 
-Die Zielkurve ist eine einfache 1:1 Übersetzung von -45° bis +45°.
-Die beiden Hebel bilden einen Rhombus mit 100mm Abstand zwischen den Drehpunkten.
+Die Zielkurve ist eine einfache 1:1 Uebersetzung von -45 bis +45.
+Die beiden Hebel bilden einen Rhombus: Stangenlaenge (100mm) = Abstand der Drehpunkte.
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ builder = CsvMechanismBuilder(definition)
 # -------------------------------------------------
 
 print("=" * 80)
-print("SCHRITT 1: EINFACHE GETRIEBESTUFE (nie blockierend, 1:1 Übersetzung)")
+print("SCHRITT 1: EINFACHE GETRIEBESTUFE (nie blockierend, 1:1 Uebersetzung)")
 print("=" * 80)
 print(f"\nMechanismus: {len(definition.levers)} Hebel")
 for lever in definition.levers:
@@ -71,11 +71,11 @@ for lever in definition.levers:
     print(f"  Hebel {lever.id}: pivot=({lever.pivot.x:.1f}, {lever.pivot.y:.1f}, {lever.pivot.z:.1f}), "
           f"axis=({lever.axis.x:.1f}, {lever.axis.y:.1f}, {lever.axis.z:.1f}), "
           f"length={lever.length_start:.1f}mm, "
-          f"angle=[{math.degrees(lever.angle_min):.1f}\u00b0, {math.degrees(lever.angle_max):.1f}\u00b0]"
+          f"angle=[{math.degrees(lever.angle_min):.1f}, {math.degrees(lever.angle_max):.1f}]"
           f"{driver_str}{coupled_str}")
 
 # -------------------------------------------------
-# Target curve - 1:1 Übersetzung von -45° bis +45°
+# Target curve - 1:1 Uebersetzung von -45 bis +45
 # -------------------------------------------------
 
 target_input_angles_deg = []
@@ -93,11 +93,11 @@ target_output_angles_rad = tuple(math.radians(a) for a in target_output_angles_d
 target_curve = TargetCurve.from_csv(TARGET_FILE)
 
 print("\n" + "=" * 80)
-print("ZIELKURVE (1:1 Übersetzung über 90° Drehwinkel)")
+print("ZIELKURVE (1:1 Uebersetzung ueber 90 Grad Drehwinkel)")
 print("=" * 80)
 print(f"\nZielkurve: {len(target_input_angles_deg)} Punkte")
 for inp, out in zip(target_input_angles_deg, target_output_angles_deg):
-    print(f"  {inp:.1f}\u00b0 \u2192 {out:.1f}\u00b0")
+    print(f"  {inp:.1f} -> {out:.1f}")
 
 # -------------------------------------------------
 # Simulation setup
@@ -127,12 +127,12 @@ for param in parameter_template.parameters:
         min_deg = math.degrees(param.minimum)
         max_deg = math.degrees(param.maximum)
         val_deg = math.degrees(param.value)
-        print(f"  {param.name}: [{min_deg:.1f}\u00b0, {max_deg:.1f}\u00b0], default={val_deg:.1f}\u00b0")
+        print(f"  {param.name}: [{min_deg:.1f}, {max_deg:.1f}], default={val_deg:.1f}")
     else:
         print(f"  {param.name}: [{param.minimum:.1f}, {param.maximum:.1f}], default={param.value:.1f}")
 
-print(f"\nBewegungsbereich: {math.degrees(min_input_rad):.1f}\u00b0 bis {math.degrees(max_input_rad):.1f}\u00b0, "
-      f"Schritt=2.0\u00b0")
+print(f"\nBewegungsbereich: {math.degrees(min_input_rad):.1f} bis {math.degrees(max_input_rad):.1f}, "
+      f"Schritt=2.0")
 
 # -------------------------------------------------
 # Create simulator and optimizer
@@ -198,14 +198,14 @@ valid = sum(score < float("inf") for score in engine.scores.values())
 print("\n" + "=" * 80)
 print("INITIALE POPULATION")
 print("=" * 80)
-print(f"Gültige Kandidaten: {valid}/{len(engine.population)}")
+print(f"Gueltige Kandidaten: {valid}/{len(engine.population)}")
 if engine.best_score < float("inf"):
-    print(f"Beste anfängliche Fitness: {engine.best_score:.8f}")
+    print(f"Beste anfaengliche Fitness: {engine.best_score:.8f}")
 else:
-    print("Beste anfängliche Fitness: inf (keine gültigen Kandidaten)")
+    print("Beste anfaengliche Fitness: inf (keine gueltigen Kandidaten)")
 
 if valid == 0:
-    raise RuntimeError("Keine gültigen Kandidaten - Mechanismus ist nicht machbar")
+    raise RuntimeError("Keine gueltigen Kandidaten - Mechanismus ist nicht machbar")
 
 # -------------------------------------------------
 # Evolution loop
@@ -246,8 +246,8 @@ cache_stats = optimizer.get_cache_stats()
 print(f"\nCache-Statistik:")
 print(f"  Bewertungen: {cache_stats['evaluations']}")
 print(f"  Cache-Treffer: {cache_stats['cache_hits']}")
-print(f"  Cache-Fehlschläge: {cache_stats['cache_misses']}")
-print(f"  Cache-Größe: {cache_stats['cache_size']}")
+print(f"  Cache-Fehlschlaege: {cache_stats['cache_misses']}")
+print(f"  Cache-Groesse: {cache_stats['cache_size']}")
 
 # -------------------------------------------------
 # Best mechanism details
@@ -262,13 +262,13 @@ if engine.best_candidate is not None:
     print("\nStufen:")
     for index, stage in enumerate(mechanism.stages, start=1):
         print(f"\n  Stufe {index}:")
-        print(f"    Eingangshebel:  Länge={stage.input_lever.length:.2f} mm, "
+        print(f"    Eingangshebel:  Laenge={stage.input_lever.length:.2f} mm, "
               f"Drehpunkt=({stage.input_lever.pivot.x:.1f}, {stage.input_lever.pivot.y:.1f}, {stage.input_lever.pivot.z:.1f})")
-        print(f"    Ausgangshebel: Länge={stage.output_lever.length:.2f} mm, "
+        print(f"    Ausgangshebel: Laenge={stage.output_lever.length:.2f} mm, "
               f"Drehpunkt=({stage.output_lever.pivot.x:.1f}, {stage.output_lever.pivot.y:.1f}, {stage.output_lever.pivot.z:.1f})")
-        print(f"    Stangenlänge:  {stage.rod_length:.2f} mm")
-        print(f"    Eingangsbereich:  [{math.degrees(stage.input_angle_min):.1f}\u00b0, {math.degrees(stage.input_angle_max):.1f}\u00b0]")
-        print(f"    Ausgangsbereich: [{math.degrees(stage.output_angle_min):.1f}\u00b0, {math.degrees(stage.output_angle_max):.1f}\u00b0]")
+        print(f"    Stangenlaenge:  {stage.rod_length:.2f} mm")
+        print(f"    Eingangsbereich:  [{math.degrees(stage.input_angle_min):.1f}, {math.degrees(stage.input_angle_max):.1f}]")
+        print(f"    Ausgangsbereich: [{math.degrees(stage.output_angle_min):.1f}, {math.degrees(stage.output_angle_max):.1f}]")
 
     # Validation results
     validation_results = builder.get_validation_results()
@@ -277,11 +277,11 @@ if engine.best_candidate is not None:
     print("-" * 55)
     for stage_idx, result in enumerate(validation_results, start=1):
         print(f"\n  Stufe {stage_idx}:")
-        print(f"    Gültig: {result.valid}")
+        print(f"    Gueltig: {result.valid}")
         if not result.valid:
             print(f"    Grund: {result.reason}")
             if hasattr(result, 'failed_at_input_angle') and result.failed_at_input_angle is not None:
-                print(f"    Fehlgeschlagen bei: {math.degrees(result.failed_at_input_angle):.1f}\u00b0")
+                print(f"    Fehlgeschlagen bei: {math.degrees(result.failed_at_input_angle):.1f}")
 
     # Simulation results
     print("\n" + "-" * 55)
@@ -298,10 +298,10 @@ if engine.best_candidate is not None:
             print(f"    Ausgabepunkte: {len(stage_result.output_angles)}")
             if stage_result.output_angles:
                 output_deg = tuple(math.degrees(a) for a in stage_result.output_angles)
-                print(f"    Ausgangsbereich: [{min(output_deg):.1f}\u00b0, {max(output_deg):.1f}\u00b0]")
+                print(f"    Ausgangsbereich: [{min(output_deg):.1f}, {max(output_deg):.1f}]")
         else:
             if stage_result.blocked_at is not None:
-                print(f"    Blockiert bei: {math.degrees(stage_result.blocked_at):.1f}\u00b0")
+                print(f"    Blockiert bei: {math.degrees(stage_result.blocked_at):.1f}")
 
     # Solver statistics
     print("\n" + "=" * 80)
@@ -318,13 +318,11 @@ if engine.best_candidate is not None:
 print("\n" + "=" * 80)
 print("SCHRITT 1 ABGESCHLOSSEN")
 print("=" * 80)
-print("\nHinweis: Dieser Mechanismus mit zwei Hebeln gleicher Länge (100mm) und einem")
+print("\nHinweis: Dieser Mechanismus mit zwei Hebeln der Laenge 100mm und einem")
 print("Abstand von 100mm zwischen den Drehpunkten bildet einen Rhombus.")
-print("Die Stangenlänge (100mm) entspricht genau dem Abstand der Drehpunkte,")
+print("Die Stangenlaenge (100mm) entspricht genau dem Abstand der Drehpunkte,")
 print("dadurch kann dieser Mechanismus theoretisch nie blockieren.")
-print("Die 1:1 Übersetzung wird durch die symmetrische Anordnung erreicht.")
-print("\nACHTUNG: Der StageMotionValidator testet mit 50 Schritten und kann")
-print("für zufällige Parameter in der initialen Population 'blocked' melden.")
-print("Der OPTIMIERTE Mechanismus blockiert jedoch nie - die Simulation")
-print("bestätigt dies mit erfolgreichem Durchlauf über den gesamten Bereich.")
+print("Die 1:1 Uebersetzung wird durch die symmetrische Anordnung erreicht.")
+print("\nDie Winkelbereiche sind auf [-50, 50] ausgelegt, um genug Spielraum")
+print("fuer die Optimierung zu bieten, waehrend die Zielkurve [-45, 45] abdeckt.")
 print("=" * 80)
