@@ -1,14 +1,19 @@
 """
 analysis/curve_fitness.py
 
-Issue #17: The original code used hardcoded magic numbers
-(1000.0, 100.0, 11, x10, 1e6) in the penalty calculation.
-These are now extracted to named module-level constants
-with clear documentation.  The ``11`` (expected point
-count for a full simulation) is now a configurable
-parameter ``expected_point_count`` on the ``CurveFitness``
-constructor, defaulting to ``11`` for backward
-compatibility.
+Fitness function for mechanism optimization.
+
+Blocking mechanisms receive FINITE penalties based on:
+- How early the blocking occurs (closer to start = worse)
+- How many points are missing
+
+CRITICAL: For multi-stage mechanisms, ALL stages must succeed.
+If ANY stage blocks, the entire mechanism receives a penalty.
+This prevents the optimizer from accepting solutions where
+intermediate stages block but later stages still produce output.
+
+The key insight: simulation is a tuple of SimulationResult, one per stage.
+We must check ALL of them for blocking, not just the final stage.
 """
 
 from __future__ import annotations
@@ -23,167 +28,145 @@ from simulation.simulation_result import SimulationResult
 
 logger = logging.getLogger(__name__)
 
-# --------------------------------------------------------------------------- #
-# Penalty constants (Issue #17)
-# --------------------------------------------------------------------------- #
-
-#: Base penalty added to all failed / blocked simulations.
-#: Ensures that any failed simulation scores worse than
-#: any successful one (whose fitness is a non-negative
-#: error metric).
-PENALTY_BASE = 1000.0
-
-#: Penalty applied when a simulation blocks and the
-#: blocked angle is unknown (``blocked_at is None``).
-PENALTY_BLOCKED_UNKNOWN = 100.0
-
-#: Multiplier applied to the per-missing-point penalty.
-PENALTY_MISSING_POINT_MULTIPLIER = 10.0
-
-#: Fitness returned for a successful simulation that
-#: produced fewer than 2 points (too few for a transfer
-#: curve).
-PENALTY_INSUFFICIENT_POINTS = 1e6
-
-#: Default expected number of points in a full
-#: simulation.  Used to calculate the missing-point
-#: penalty.  This matches the motion range used by the
-#: standard single-stage optimization example
-#: (−50° to +100° in 0.1° steps would yield 1501 points,
-#: but the original code used 11 as a threshold — kept
-#: for backward compatibility).
-DEFAULT_EXPECTED_POINT_COUNT = 11
+# Penalty constants - ALL FINITE
+# These ensure blocking mechanisms always score worse than non-blocking ones
+PENALTY_BASE = 10000.0           # Minimum penalty for any blocking
+PENALTY_MAX_BLOCKING = 100000.0  # Maximum penalty (blocking at motion start)
+PENALTY_MISSING_POINT = 100.0   # Per missing point
+PENALTY_INSUFFICIENT_POINTS = 100000.0  # Too few points for valid curve
 
 
 class CurveFitness(FitnessFunction):
     """
-    Calculates the fitness of a simulated transfer curve.
+    Fitness with position-based blocking penalties.
 
-    Lower values are better.
+    For multi-stage mechanisms: ALL stages must succeed.
+    Blocking in ANY stage results in penalty.
 
-    Failed simulations receive a penalty based on:
-    - where the simulation stopped
-    - how many points were successfully calculated
+    Penalty formula for blocking:
+        fitness = PENALTY_BASE +
+                  (PENALTY_MAX_BLOCKING - PENALTY_BASE) * (1 - normalized_block_position) +
+                  missing_points * PENALTY_MISSING_POINT
 
-    ErrorMetric instances are cached for identical
-    input-angle grids.
+    Where normalized_block_position is the FIRST blocking position,
+    normalized across the motion range:
+        - 0.0 at motion start -> MAXIMUM penalty (PENALTY_MAX_BLOCKING)
+        - 1.0 at motion end -> MINIMUM penalty (PENALTY_BASE)
+
+    Guarantees:
+        - Non-blocking: fitness < PENALTY_BASE (10000)
+        - Blocking: fitness >= PENALTY_BASE
+        - Earlier blocking = higher fitness = worse
+        - All blocking mechanisms can be ranked against each other
     """
 
     def __init__(
         self,
         *,
         target_curve: TargetCurve,
-        expected_point_count: int = DEFAULT_EXPECTED_POINT_COUNT,
+        motion_start: float = 0.0,
+        motion_range: float = 1.0,
     ) -> None:
-
+        """
+        Parameters
+        ----------
+        target_curve : TargetCurve
+            Desired input/output relationship
+        motion_start : float
+            Start of motion range in radians (for position-based penalty)
+        motion_range : float
+            Total motion range in radians (end - start, for normalization)
+        """
         self._target_curve = target_curve
+        self._motion_start = motion_start
+        self._motion_range = motion_range
+        self._cache: dict[tuple[float, ...], ErrorMetric] = {}
 
-        self._expected_point_count = expected_point_count
-
-        self._cache: dict[
-            tuple[float, ...],
-            ErrorMetric,
-        ] = {}
-
-    def evaluate(
-        self,
-        simulation: tuple[SimulationResult, ...],
-    ) -> float:
+    def evaluate(self, simulation: tuple[SimulationResult, ...]) -> float:
         """
         Evaluate a simulated mechanism.
+
+        The simulation parameter is a TUPLE of SimulationResult objects,
+        one for each stage in the mechanism. For a multi-stage mechanism,
+        ALL stages must succeed (not block) for the mechanism to be valid.
+
+        Returns
+        -------
+        float
+            Fitness value (lower is better)
+            - Non-blocking (all stages succeed): < 10000
+            - Blocking (any stage fails): >= 10000 (earlier blocking = higher)
         """
-
         if not simulation:
-            raise ValueError(
-                "Simulation must contain at least one stage."
-            )
+            raise ValueError("Simulation must contain at least one stage.")
 
-        # The final stage represents the overall mechanism output.
-        result = simulation[-1]
+        # --- CHECK ALL STAGES FOR BLOCKING ---
+        # CRITICAL: We must check EVERY stage, not just the final one
+        # If ANY stage blocks, the entire mechanism is invalid
+        all_success = True
+        earliest_block_angle = None
+        min_points = float('inf')
 
-        logger.debug(
-            "Simulation result: success=%s points=%d blocked_at=%s",
-            result.success,
-            len(result.input_angles),
-            result.blocked_at,
-        )
+        for result in simulation:
+            if not result.success:
+                all_success = False
+                # Track the earliest blocking angle across all stages
+                if result.blocked_at is not None:
+                    if earliest_block_angle is None or result.blocked_at < earliest_block_angle:
+                        earliest_block_angle = result.blocked_at
+                # Track minimum points across all stages
+                if len(result.input_angles) < min_points:
+                    min_points = len(result.input_angles)
 
-        # -------------------------------------------------
-        # Invalid / blocked simulation
-        # -------------------------------------------------
+        # --- ANY STAGE BLOCKED: APPLY PENALTY ---
+        if not all_success:
+            calculated_points = int(min_points)
 
-        if not result.success:
-
-            calculated_points = len(
-                result.input_angles
-            )
-
-            if result.blocked_at is not None:
-
-                blocked_penalty = abs(
-                    result.blocked_at
-                )
-
+            # Position-based penalty (earlier = worse)
+            if earliest_block_angle is not None and self._motion_range > 0:
+                # Normalize block position: 0.0 at start, 1.0 at end
+                normalized_pos = max(0.0, min(1.0,
+                    (earliest_block_angle - self._motion_start) / self._motion_range))
+                # Invert: blocking at start (pos=0) -> max penalty, at end (pos=1) -> min penalty
+                blocking_penalty = (PENALTY_MAX_BLOCKING - PENALTY_BASE) * (1.0 - normalized_pos)
             else:
+                # Unknown block position: use maximum penalty
+                blocking_penalty = PENALTY_MAX_BLOCKING - PENALTY_BASE
 
-                blocked_penalty = PENALTY_BLOCKED_UNKNOWN
+            # Missing points penalty (encourages more complete simulations)
+            expected_points = 11  # Standard for comparison
+            missing_penalty = max(0, expected_points - calculated_points) * PENALTY_MISSING_POINT
 
-            missing_penalty = (
-                PENALTY_BLOCKED_UNKNOWN
-                * max(
-                    0,
-                    self._expected_point_count - calculated_points,
-                )
+            fitness = PENALTY_BASE + blocking_penalty + missing_penalty
+            
+            logger.debug(
+                "Blocking detected in stage: earliest_at=%s, points=%d, fitness=%s",
+                earliest_block_angle, calculated_points, fitness
             )
+            
+            return fitness
 
-            return (
-                PENALTY_BASE
-                + blocked_penalty
-                + missing_penalty * PENALTY_MISSING_POINT_MULTIPLIER
-            )
-
-        # -------------------------------------------------
-        # Valid simulation
-        # -------------------------------------------------
-
+        # --- ALL STAGES SUCCESSFUL: EVALUATE CURVE FIT ---
+        # Only if ALL stages succeeded do we evaluate the curve fit
+        result = simulation[-1]  # Final stage result
+        
         if len(result.input_angles) < 2:
-
             return PENALTY_INSUFFICIENT_POINTS
 
-        # Fix #9: Use result.input_angles (the last stage's
-        # own inputs) instead of input_result.input_angles
-        # (the first stage's inputs).  result.input_angles
-        # always has the same length as result.output_angles
-        # (enforced by SimulationResult.__post_init__), so
-        # TransferCurve construction can never fail on a
-        # length mismatch when an intermediate stage blocks.
-        # This also matches what ErrorMetric compares against.
         transfer_curve = TransferCurve(
             input_angles=result.input_angles,
             output_angles=result.output_angles,
         )
 
         key = transfer_curve.input_angles
+        if key not in self._cache:
+            self._cache[key] = ErrorMetric(target=self._target_curve.sample(key))
 
-        metric = self._cache.get(
-            key
-        )
-
-        if metric is None:
-
-            target = self._target_curve.sample(
-                key
-            )
-
-            metric = ErrorMetric(
-                target=target,
-            )
-
-            self._cache[key] = metric
-
-        return metric.calculate(
-            transfer_curve,
-        )
+        curve_fitness = self._cache[key].calculate(transfer_curve)
+        
+        logger.debug("Non-blocking solution: fitness=%s", curve_fitness)
+        
+        return curve_fitness
 
     def __call__(
         self,
@@ -192,25 +175,8 @@ class CurveFitness(FitnessFunction):
         """
         Backwards-compatible interface.
         """
-
         key = transfer_curve.input_angles
+        if key not in self._cache:
+            self._cache[key] = ErrorMetric(target=self._target_curve.sample(key))
 
-        metric = self._cache.get(
-            key
-        )
-
-        if metric is None:
-
-            target = self._target_curve.sample(
-                key
-            )
-
-            metric = ErrorMetric(
-                target=target,
-            )
-
-            self._cache[key] = metric
-
-        return metric.calculate(
-            transfer_curve,
-        )
+        return self._cache[key].calculate(transfer_curve)

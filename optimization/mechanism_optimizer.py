@@ -3,11 +3,15 @@ optimization/mechanism_optimizer.py
 
 Adapter between mechanism simulation
 and evolutionary optimization.
+
+Cache key now uses immutable values instead of object references
+to prevent incorrect cache hits between different mechanisms.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from optimization.mechanism_builder import MechanismBuilder
 from optimization.fitness_function import FitnessFunction
@@ -20,15 +24,25 @@ class OptimizationCacheKey:
     """
     Cache identity for one fitness evaluation.
 
-    The same parameters may produce different results
-    with different simulation settings.
+    Uses IMMUTABLE VALUES only to ensure proper hashing:
+    - parameters: the ParameterSet (already hashable)
+    - motion_start, motion_max, motion_step: float values from MotionRange
+    - precision: tuple of values if present, else None
+    - stage_limit: int or None
+
+    This prevents cache collisions between different mechanisms
+    that might have the same object reference but different values.
     """
 
     parameters: ParameterSet
 
-    motion: object
+    # Motion range values (not the object reference)
+    motion_start: float
+    motion_max: float
+    motion_step: float
+    motion_direction: int
 
-    precision: object | None
+    precision: tuple[Any, ...] | None  # Convert precision to tuple if present
 
     stage_limit: int | None
 
@@ -38,7 +52,8 @@ class MechanismOptimizer:
     Evaluates mechanism candidates.
 
     Fitness results are cached for identical optimization
-    conditions.
+    conditions. The cache key now uses immutable values
+    to prevent incorrect cache hits.
     """
 
 
@@ -80,24 +95,29 @@ class MechanismOptimizer:
 
         self._evaluations += 1
 
+        # Extract motion values as immutable floats (not object references)
+        motion = self._simulator.motion
+        motion_start = motion.start_angle
+        motion_max = motion.max_angle
+        motion_step = motion.step
+        motion_direction = motion.direction
+
+        # Extract precision as immutable tuple if present
+        precision = self._simulator.precision
+        if precision is not None:
+            # Convert precision to tuple of its values for proper hashing
+            precision_tuple = tuple(vars(precision).values())
+        else:
+            precision_tuple = None
 
         key = OptimizationCacheKey(
             parameters=parameters,
-            motion=getattr(
-                self._simulator,
-                "motion",
-                None,
-            ),
-            precision=getattr(
-                self._simulator,
-                "precision",
-                None,
-            ),
-            stage_limit=getattr(
-                self._simulator,
-                "stage_limit",
-                None,
-            ),
+            motion_start=motion_start,
+            motion_max=motion_max,
+            motion_step=motion_step,
+            motion_direction=motion_direction,
+            precision=precision_tuple,
+            stage_limit=self._simulator.stage_limit,
         )
 
 
