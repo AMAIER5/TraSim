@@ -44,7 +44,6 @@ from optimization.evolution_engine import EvolutionEngine
 from optimization.mechanism_optimizer import MechanismOptimizer
 from optimization.parameter_mutation import ParameterMutation
 from optimization.parameter_set import ParameterSet
-from optimization.population import Population
 from optimization.population_factory import PopulationFactory
 from optimization.reproduction import Reproduction
 
@@ -176,25 +175,10 @@ optimizer = MechanismOptimizer(
 # -------------------------------------------------
 # Initial population
 # -------------------------------------------------
-#
-# Die exakte Referenzgeometrie (perfekter Rhombus in beiden Stufen:
-# Stangenlaenge = Drehpunktabstand = 100mm) blockiert theoretisch nie
-# und realisiert bereits die gewuenschte 1:1 Uebersetzung. Sie wird als
-# erstes Mitglied der Population eingefuegt, so dass die Evolution von der
-# bekannten, nicht-blockierenden Loesung ausgeht und diese verfeinert.
-# Bei zwei gekoppelten Stufen ist der Bereich nicht-blockierender
-# Geometrien schmal, so dass eine rein zufaellige Startpopulation die
-# Loesung oft nicht verlaesslich findet.
-# -------------------------------------------------
 
 rng = random.Random(42)  # Fixed seed for reproducibility
 population_factory = PopulationFactory(random_generator=rng)
-random_population = population_factory.create(parameter_template, size=50)
-
-seed_candidate = parameter_template
-population = Population(
-    tuple([seed_candidate] + list(random_population.members))
-)
+population = population_factory.create(parameter_template, size=50)
 
 # -------------------------------------------------
 # Evolution engine
