@@ -33,6 +33,7 @@ from mechanism_io.csv_reader import CsvReader
 from mechanics.csv_mechanism_builder import CsvMechanismBuilder
 
 from optimization.csv_parameter_factory import CsvParameterFactory
+from optimization.adaptive_strength import AdaptiveStrength
 from optimization.crossover import Crossover
 from optimization.evolution_engine import EvolutionEngine
 from optimization.mechanism_optimizer import MechanismOptimizer
@@ -198,9 +199,32 @@ POPULATION_SIZE = 400
 SELECTION_COUNT = 80
 CHILDREN_COUNT = 400
 
+# Adaptive step-size control via the Rechenberg 1/5 success
+# rule: the mutation strength is increased when many
+# generations improve the best solution (explore further)
+# and decreased when few do (exploit the current region).
+ADAPTIVE_WINDOW = 10
+ADAPTIVE_MIN_STRENGTH = 0.005
+ADAPTIVE_MAX_STRENGTH = 0.5
+
 rng = random.Random(42)  # Fixed seed for reproducibility
 population_factory = PopulationFactory(random_generator=rng)
 population = population_factory.create(parameter_template, size=POPULATION_SIZE)
+
+# Mutation operator is shared with the reproduction and the
+# adaptive controller so the controller can update its
+# strength in place every ADAPTIVE_WINDOW generations.
+mutation_operator = ParameterMutation(
+    strength=0.1,
+    distribution="gauss",
+    random_generator=rng,
+)
+adaptive_controller = AdaptiveStrength(
+    mutation_operator,
+    window=ADAPTIVE_WINDOW,
+    min_strength=ADAPTIVE_MIN_STRENGTH,
+    max_strength=ADAPTIVE_MAX_STRENGTH,
+)
 
 # -------------------------------------------------
 # Evolution engine
@@ -211,17 +235,7 @@ engine = EvolutionEngine(
     evaluator=optimizer.evaluate,
     selection_count=SELECTION_COUNT,
     reproduction=Reproduction(
-        mutation=ParameterMutation(
-            # Improved mutation: Gaussian distribution (many small
-            # steps for fine tuning, few large steps for exploration)
-            # and boundary reflection instead of clamping.
-            # strength 0.1 reaches markedly lower fitness than the
-            # previous uniform 0.01 (measured: ~29800 vs ~62200 after
-            # 30 generations on the PPBLS mechanism).
-            strength=0.1,
-            distribution="gauss",
-            random_generator=rng,
-        ),
+        mutation=mutation_operator,
         # Crossover: recombine two parents per child (grouped by
         # lever) so good sub-configurations of individual levers can
         # be combined.  Each child is the recombination of two
@@ -235,6 +249,8 @@ engine = EvolutionEngine(
     max_generations=1000,
     stagnation_limit=200,
     stagnation_tolerance=1e-8,
+    # Adaptive 1/5 success-rule step-size control.
+    adaptive_strength=adaptive_controller,
 )
 
 # -------------------------------------------------
@@ -297,6 +313,16 @@ print("=" * 80)
 print(f"\nStop reason: {engine.stop_reason}")
 print(f"Best fitness: {engine.best_score:.12f}")
 print(f"Generations run: {generation_count}")
+
+# Final adaptierte Mutationsstaerke (1/5-Erfolgsregel).
+print(f"\nAdaptive mutation strength (1/5 success rule):")
+print(f"  Initial strength : {adaptive_controller.history[0]:.6f}")
+print(f"  Final strength   : {adaptive_controller.strength:.6f}")
+print(f"  Adaptations      : {len(adaptive_controller.history) - 1}")
+if len(adaptive_controller.history) > 1:
+    print(f"  Strength history : " + ", ".join(
+        f"{s:.4f}" for s in adaptive_controller.history
+    ))
 
 cache_stats = optimizer.get_cache_stats()
 print(f"\nCache statistics:")
