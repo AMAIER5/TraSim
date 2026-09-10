@@ -62,6 +62,7 @@ class EvolutionEngine:
         max_generations: int = 100,
         stagnation_limit: int | None = None,
         stagnation_tolerance: float = 1e-6,
+        adaptive_strength=None,
     ) -> None:
 
         self.population = population
@@ -94,6 +95,14 @@ class EvolutionEngine:
             stagnation_tolerance
         )
 
+        # Optional adaptive step-size controller (1/5
+        # success rule).  When provided, the engine feeds
+        # it the per-generation improvement outcome so it
+        # can adapt the mutation strength automatically.
+        self.adaptive_strength = (
+            adaptive_strength
+        )
+
         # state
 
         self.scores: dict[
@@ -106,6 +115,8 @@ class EvolutionEngine:
         self.best_score = float("inf")
 
         self._stagnation_counter = 0
+
+        self._improved_this_generation = False
 
         self.stop_reason: str | None = None
 
@@ -153,9 +164,13 @@ class EvolutionEngine:
 
             self._stagnation_counter = 0
 
+            self._improved_this_generation = True
+
         else:
 
             self._stagnation_counter += 1
+
+            self._improved_this_generation = False
 
     def should_stop(self) -> bool:
         """
@@ -260,6 +275,14 @@ class EvolutionEngine:
             # that the best candidate is never stale.
             self.evaluate_population()
             self.update_best()
+
+            # Adapt the mutation strength based on whether
+            # this generation improved the best solution.
+            if self.adaptive_strength is not None:
+
+                self.adaptive_strength.record(
+                    self._improved_this_generation
+                )
 
         if self.stop_reason is None:
 
