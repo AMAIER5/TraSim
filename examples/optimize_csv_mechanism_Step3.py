@@ -175,10 +175,22 @@ optimizer = MechanismOptimizer(
 # -------------------------------------------------
 # Initial population
 # -------------------------------------------------
+#
+# Bei zwei verkoppelten Getriebestufen ist der Bereich
+# nicht-blockierender Geometrien deutlich schmaler als bei
+# einer einzelnen Stufe: in jeder Stufe entspricht die
+# Stangenlaenge genau dem Drehpunktabstand, so dass nur eine
+# exakte geometrische Konfiguration nicht blockiert. Damit der
+# evolutionaere Algorithmus diese Konfiguration selbst findet
+# (ohne Vorlage einer Loesung), wird eine ausreichend grosse
+# Startpopulation gewaehlt. Mit 400 Kandidaten findet die
+# Evolution zuverlaessig selbst eine nicht-blockierende
+# Loesung, die der 1:1 Zielkurve entspricht.
+# -------------------------------------------------
 
 rng = random.Random(42)  # Fixed seed for reproducibility
 population_factory = PopulationFactory(random_generator=rng)
-population = population_factory.create(parameter_template, size=50)
+population = population_factory.create(parameter_template, size=400)
 
 # -------------------------------------------------
 # Evolution engine
@@ -187,7 +199,7 @@ population = population_factory.create(parameter_template, size=50)
 engine = EvolutionEngine(
     population=population,
     evaluator=optimizer.evaluate,
-    selection_count=15,
+    selection_count=80,
     reproduction=Reproduction(
         mutation=ParameterMutation(
             strength=0.01,
@@ -195,8 +207,8 @@ engine = EvolutionEngine(
         ),
     ),
     target_fitness=0.01,
-    max_generations=500,
-    stagnation_limit=100,
+    max_generations=300,
+    stagnation_limit=25,
     stagnation_tolerance=1e-8,
 )
 
@@ -236,7 +248,7 @@ print("-" * 55)
 prev_best = float("inf")
 generation_count = 0
 
-for generation in engine.run(children_count=50):
+for generation in engine.run(children_count=400):
     generation_count += 1
     improvement = prev_best - engine.best_score
     prev_best = engine.best_score
