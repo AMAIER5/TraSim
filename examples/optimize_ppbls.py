@@ -30,6 +30,8 @@ from analysis.target_curve import TargetCurve
 
 from mechanism_io.csv_reader import CsvReader
 
+from simulation.point_motion import PointMotion
+
 from mechanics.csv_mechanism_builder import CsvMechanismBuilder
 
 from optimization.csv_parameter_factory import CsvParameterFactory
@@ -43,7 +45,6 @@ from optimization.population_factory import PopulationFactory
 from optimization.reproduction import Reproduction
 
 from simulation.mechanism_simulator import MechanismSimulator
-from simulation.motion_range import MotionRange
 from simulation.stage_simulator import StageSimulator
 
 # -------------------------------------------------
@@ -122,7 +123,10 @@ with open(TARGET_FILE, newline='', encoding='utf-8') as f:
 target_input_angles_rad = tuple(math.radians(a) for a in target_input_angles_deg)
 target_output_angles_rad = tuple(math.radians(a) for a in target_output_angles_deg)
 
-target_curve = TargetCurve.from_csv(TARGET_FILE)
+# Non-interpolating target curve: fitness is only defined at the
+# 11 prescribed support points; no linear interpolation between
+# them is used for evaluation.
+target_curve = TargetCurve.from_csv_strict(TARGET_FILE)
 
 print("\n" + "=" * 80)
 print("LOADING TARGET CURVE")
@@ -134,17 +138,19 @@ for inp, out in zip(target_input_angles_deg, target_output_angles_deg):
 # -------------------------------------------------
 # Simulation setup
 # -------------------------------------------------
+#
+# Simulate exactly at the prescribed support points of the target
+# curve (the 11 input angles from the CSV), not on a 2-degree grid.
+# This keeps the chain intact (output of a stage feeds the next
+# stage, see MechanismSimulator.simulate) while ensuring the
+# fitness is compared only at the support points.
 
 min_input_rad = min(target_input_angles_rad)
 max_input_rad = max(target_input_angles_rad)
 travel_range_rad = max_input_rad - min_input_rad
-step_rad = math.radians(2.0)
 
-motion = MotionRange(
-    start_angle=min_input_rad,
-    max_angle=travel_range_rad,
-    step=step_rad,
-    direction=1,
+motion = PointMotion(
+    angles=target_input_angles_rad,
 )
 
 print("\n" + "=" * 80)
@@ -163,8 +169,9 @@ for param in parameter_template.parameters:
     else:
         print(f"  {param.name}: [{param.minimum:.1f}, {param.maximum:.1f}], default={param.value:.1f}")
 
-print(f"\nMotion range: {math.degrees(min_input_rad):.1f}deg to {math.degrees(max_input_rad):.1f}deg, "
-      f"step=2.0deg")
+print(f"\nMotion: simulated at the {len(target_input_angles_rad)} prescribed "
+      f"support points ({math.degrees(min_input_rad):.1f}deg to "
+      f"{math.degrees(max_input_rad):.1f}deg), no interpolation")
 
 # -------------------------------------------------
 # Create simulator and optimizer

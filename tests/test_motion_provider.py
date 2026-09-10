@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
 from core.point3d import Point3D
 from core.vector3d import Vector3D
 from mechanics.lever import Lever
@@ -15,6 +17,7 @@ from mechanics.stage import Stage
 from simulation.adaptive_motion_range import AdaptiveMotionRange
 from simulation.motion_provider import MotionProvider
 from simulation.motion_range import MotionRange
+from simulation.point_motion import PointMotion
 from simulation.stage_simulator import StageSimulator
 from solver.solver_precision import SolverPrecision
 from solver.solver_result import SolverResult
@@ -140,3 +143,97 @@ def test_stage_simulator_runs_with_adaptive_motion_range():
     assert result.success
 
     assert len(result.input_angles) > 0
+
+
+def test_point_motion_is_motion_provider():
+
+    motion: MotionProvider = PointMotion(
+        angles=(
+            0.0,
+            math.radians(5),
+            math.radians(10),
+        ),
+    )
+
+    assert list(motion) == [
+        0.0,
+        math.radians(5),
+        math.radians(10),
+    ]
+
+
+def test_point_motion_reproduces_arbitrary_non_equidistant_angles():
+
+    angles = (
+        math.radians(-50),
+        math.radians(-40),
+        math.radians(-30),
+    )
+
+    motion = PointMotion(
+        angles=angles,
+    )
+
+    assert tuple(motion) == angles
+
+
+def test_point_motion_is_repeatable():
+
+    motion = PointMotion(
+        angles=(
+            0.0,
+            math.radians(5),
+        ),
+    )
+
+    first = tuple(motion)
+    second = tuple(motion)
+
+    assert first == second
+
+
+def test_point_motion_requires_at_least_one_angle():
+
+    with pytest.raises(ValueError):
+        PointMotion(angles=())
+
+
+def test_point_motion_properties_match_motion_range_interface():
+
+    motion = PointMotion(
+        angles=(
+            math.radians(-50),
+            math.radians(-40),
+            math.radians(50),
+        ),
+    )
+
+    assert motion.start_angle == math.radians(-50)
+    assert math.isclose(
+        motion.max_angle,
+        math.radians(100),
+    )
+    assert motion.step == 0.0
+    assert motion.direction == 1
+
+
+def test_stage_simulator_runs_with_point_motion():
+
+    simulator = StageSimulator(
+        solver_type=DummySolver,
+    )
+
+    result = simulator.run(
+        stage=create_stage(),
+        motion=PointMotion(
+            angles=(
+                0.0,
+                math.radians(5),
+                math.radians(10),
+            ),
+        ),
+    )
+
+    assert result.success
+
+    assert len(result.input_angles) == 3
