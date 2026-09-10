@@ -1,27 +1,41 @@
 """
 tests/test_curve_fitness.py
 
-Issue #17: Added tests for named penalty constants and
-the configurable ``expected_point_count`` parameter.
-Also preserves all existing tests from the Issue #9 fix.
+Tests for CurveFitness, the position-based blocking penalty
+and the finer gradient in the blocking region.
+
+The fitness uses a two-tier model:
+
+- Non-blocking (all stages succeed): fitness < PENALTY_BASE.
+  Equal to the mean absolute error against the target curve.
+
+- Blocking (any stage blocks): fitness >= PENALTY_BASE.
+  A position-based penalty that is higher the earlier the
+  mechanism blocks, plus a missing-point penalty, plus an
+  optional partial-curve error that creates a finer gradient
+  among blocking candidates so the optimizer is guided toward
+  non-blocking configurations.
+
+Earlier blocking is always penalised more heavily than later
+blocking, and every blocking mechanism scores worse than
+every non-blocking mechanism.
 """
 
 from __future__ import annotations
 
+from math import isclose
+
 from analysis.curve_fitness import (
     CurveFitness,
     PENALTY_BASE,
-    PENALTY_BLOCKED_UNKNOWN,
-    PENALTY_MISSING_POINT_MULTIPLIER,
+    PENALTY_MAX_BLOCKING,
+    PENALTY_MISSING_POINT,
     PENALTY_INSUFFICIENT_POINTS,
-    DEFAULT_EXPECTED_POINT_COUNT,
+    PARTIAL_CURVE_WEIGHT,
+    partial_curve_error,
 )
-from analysis.target_curve import (
-    TargetCurve,
-)
-from analysis.transfer_curve import (
-    TransferCurve,
-)
+from analysis.target_curve import TargetCurve
+from analysis.transfer_curve import TransferCurve
 from simulation.simulation_result import SimulationResult
 
 
@@ -365,122 +379,137 @@ def test_evaluate_uses_last_stage_input_angles_not_first():
 
 
 # ---------------------------------------------------------------------------
-# Issue #17: Named constants and expected_point_count
+# Penalty constants
 # ---------------------------------------------------------------------------
 
 def test_penalty_constants_are_positive():
 
     assert PENALTY_BASE > 0
-    assert PENALTY_BLOCKED_UNKNOWN > 0
-    assert PENALTY_MISSING_POINT_MULTIPLIER > 0
+    assert PENALTY_MAX_BLOCKING > 0
+    assert PENALTY_MISSING_POINT > 0
     assert PENALTY_INSUFFICIENT_POINTS > 0
-    assert DEFAULT_EXPECTED_POINT_COUNT > 0
+    assert PARTIAL_CURVE_WEIGHT > 0
 
 
-def test_default_expected_point_count_is_11():
+def test_blocking_fitness_is_at_least_penalty_base():
     """
-    Issue #17: The default expected_point_count is 11,
-    matching the original hardcoded magic number.
-    """
-
-    fitness = CurveFitness(
-        target_curve=TargetCurve(
-            function=lambda angle: angle,
-        ),
-    )
-
-    assert fitness._expected_point_count == 11
-
-
-def test_custom_expected_point_count():
-    """
-    Issue #17: expected_point_count is configurable.
+    Every blocking mechanism must score at least PENALTY_BASE,
+    so non-blocking solutions (fitness < PENALTY_BASE) always
+    rank better.
     """
 
     fitness = CurveFitness(
         target_curve=TargetCurve(
             function=lambda angle: angle,
         ),
-        expected_point_count=1501,
-    )
-
-    assert fitness._expected_point_count == 1501
-
-
-def test_penalty_uses_named_constants():
-    """
-    Issue #17: The penalty for a blocked simulation with
-    known blocked_at must equal:
-        PENALTY_BASE + |blocked_at|
-            + PENALTY_BLOCKED_UNKNOWN
-              * max(0, expected - points)
-              * PENALTY_MISSING_POINT_MULTIPLIER
-    """
-
-    fitness = CurveFitness(
-        target_curve=TargetCurve(
-            function=lambda angle: angle,
-        ),
-        expected_point_count=11,
+        motion_start=0.0,
+        motion_range=10.0,
     )
 
     blocked = SimulationResult(
-        input_angles=(0.0, 1.0),  # 2 points
+        input_angles=(0.0, 1.0),
         output_angles=(0.0, 1.0),
         success=False,
-        blocked_at=3.0,
+        blocked_at=9.0,
     )
 
-    result = fitness.evaluate((blocked,))
-
-    expected = (
-        PENALTY_BASE
-        + abs(3.0)
-        + PENALTY_BLOCKED_UNKNOWN
-        * max(0, 11 - 2)
-        * PENALTY_MISSING_POINT_MULTIPLIER
-    )
-
-    assert result == expected
+    assert fitness.evaluate((blocked,)) >= PENALTY_BASE
 
 
-def test_penalty_blocked_at_none_uses_unknown_penalty():
+def test_earlier_blocking_is_penalised_more():
     """
-    Issue #17: When blocked_at is None, the blocked_penalty
-    is PENALTY_BLOCKED_UNKNOWN.
+    Blocking earlier in the motion range must produce a
+    higher fitness than blocking later.
     """
 
     fitness = CurveFitness(
         target_curve=TargetCurve(
             function=lambda angle: angle,
         ),
-        expected_point_count=11,
+        motion_start=0.0,
+        motion_range=10.0,
     )
 
-    blocked = SimulationResult(
-        input_angles=(0.0, 1.0),  # 2 points
-        output_angles=(0.0, 1.0),
+    early = SimulationResult(
+        input_angles=(0.0,),
+        output_angles=(0.0,),
+        success=False,
+        blocked_at=1.0,
+    )
+
+    late = SimulationResult(
+        input_angles=(0.0,),
+        output_angles=(0.0,),
+        success=False,
+        blocked_at=9.0,
+    )
+
+    # Same number of points, so the only difference is the
+    # block position -> early blocking is worse (higher).
+    assert fitness.evaluate((early,)) > fitness.evaluate((late,))
+
+
+def test_unknown_block_position_uses_maximum_penalty():
+    """
+    When blocked_at is None the block position is unknown,
+    so the maximum position-based penalty is applied.
+    """
+
+    fitness = CurveFitness(
+        target_curve=TargetCurve(
+            function=lambda angle: angle,
+        ),
+        motion_start=0.0,
+        motion_range=10.0,
+    )
+
+    unknown = SimulationResult(
+        input_angles=(0.0,),
+        output_angles=(0.0,),
         success=False,
         blocked_at=None,
     )
 
-    result = fitness.evaluate((blocked,))
+    assert fitness.evaluate((unknown,)) >= PENALTY_MAX_BLOCKING
 
-    expected = (
-        PENALTY_BASE
-        + PENALTY_BLOCKED_UNKNOWN
-        + PENALTY_BLOCKED_UNKNOWN
-        * max(0, 11 - 2)
-        * PENALTY_MISSING_POINT_MULTIPLIER
+
+def test_missing_points_increase_penalty():
+    """
+    A blocking simulation that produces fewer valid points
+    must score worse than one producing more, at the same
+    block position.
+    """
+
+    fitness = CurveFitness(
+        target_curve=TargetCurve(
+            function=lambda angle: angle,
+        ),
+        motion_start=0.0,
+        motion_range=10.0,
     )
 
-    assert result == expected
+    few = SimulationResult(
+        input_angles=(0.0,),
+        output_angles=(0.0,),
+        success=False,
+        blocked_at=5.0,
+    )
+
+    many = SimulationResult(
+        input_angles=(0.0, 1.0, 2.0, 3.0),
+        output_angles=(0.0, 1.0, 2.0, 3.0),
+        success=False,
+        blocked_at=5.0,
+    )
+
+    assert fitness.evaluate((few,)) > fitness.evaluate((many,))
 
 
 def test_insufficient_points_returns_constant():
     """
-    Issue #17: A successful simulation with < 2 points
-    returns PENALTY_INSUFFICIENT_POINTS.
+    A successful simulation with fewer than 2 points
+    returns PENALTY_INSUFFICIENT_POINTS (too few for a
+    transfer curve).
     """
 
     fitness = CurveFitness(
@@ -500,34 +529,174 @@ def test_insufficient_points_returns_constant():
     assert result == PENALTY_INSUFFICIENT_POINTS
 
 
-def test_custom_expected_count_affects_penalty():
+# ---------------------------------------------------------------------------
+# Finer gradient in the blocking region
+# ---------------------------------------------------------------------------
+
+def test_partial_curve_error_zero_for_perfect_curve():
     """
-    Issue #17: A higher expected_point_count increases the
-    missing-point penalty for the same blocked simulation.
+    A partial output identical to the target produces a zero
+    partial-curve error.
     """
 
-    blocked = SimulationResult(
-        input_angles=(0.0, 1.0),  # 2 points
-        output_angles=(0.0, 1.0),
+    target = TargetCurve(function=lambda angle: angle + 10.0)
+
+    error = partial_curve_error(
+        target=target,
+        input_angles=(0.0, 1.0, 2.0),
+        output_angles=(10.0, 11.0, 12.0),
+    )
+
+    assert error == 0.0
+
+
+def test_partial_curve_error_positive_for_deviating_curve():
+    """
+    A partial output that deviates from the target produces a
+    positive partial-curve error.
+    """
+
+    target = TargetCurve(function=lambda angle: angle + 10.0)
+
+    error = partial_curve_error(
+        target=target,
+        input_angles=(0.0, 1.0, 2.0),
+        output_angles=(20.0, 21.0, 22.0),
+    )
+
+    assert error > 0.0
+
+
+def test_partial_curve_error_requires_two_points():
+    """
+    Fewer than 2 points cannot define a curve, so the
+    partial-curve error is zero (no gradient available).
+    """
+
+    target = TargetCurve(function=lambda angle: angle + 10.0)
+
+    error = partial_curve_error(
+        target=target,
+        input_angles=(0.0,),
+        output_angles=(5.0,),
+    )
+
+    assert error == 0.0
+
+
+def test_finer_gradient_rewards_partial_curve_fit():
+    """
+    Two blocking mechanisms that block at the same position
+    with the same number of points must still be ranked by
+    how well their partial output matches the target.  The
+    one closer to the target scores better (lower fitness).
+    """
+
+    fitness = CurveFitness(
+        target_curve=TargetCurve(
+            function=lambda angle: angle + 10.0,
+        ),
+        motion_start=0.0,
+        motion_range=10.0,
+    )
+
+    good = SimulationResult(
+        input_angles=(0.0, 1.0, 2.0),
+        output_angles=(10.0, 11.0, 12.0),
         success=False,
-        blocked_at=1.0,
+        blocked_at=5.0,
     )
 
-    fitness_low = CurveFitness(
+    bad = SimulationResult(
+        input_angles=(0.0, 1.0, 2.0),
+        output_angles=(20.0, 21.0, 22.0),
+        success=False,
+        blocked_at=5.0,
+    )
+
+    assert fitness.evaluate((good,)) < fitness.evaluate((bad,))
+
+
+def test_finer_gradient_can_be_disabled():
+    """
+    With finer_gradient=False the blocking fitness collapses
+    to the plain position + missing-point penalty, so two
+    mechanisms with identical block position and point count
+    score equally even if their partial curves differ.
+    """
+
+    fitness = CurveFitness(
+        target_curve=TargetCurve(
+            function=lambda angle: angle + 10.0,
+        ),
+        motion_start=0.0,
+        motion_range=10.0,
+        finer_gradient=False,
+    )
+
+    good = SimulationResult(
+        input_angles=(0.0, 1.0, 2.0),
+        output_angles=(10.0, 11.0, 12.0),
+        success=False,
+        blocked_at=5.0,
+    )
+
+    bad = SimulationResult(
+        input_angles=(0.0, 1.0, 2.0),
+        output_angles=(20.0, 21.0, 22.0),
+        success=False,
+        blocked_at=5.0,
+    )
+
+    assert fitness.evaluate((good,)) == fitness.evaluate((bad,))
+
+
+def test_finer_gradient_keeps_blocking_above_base():
+    """
+    The partial-curve error term must never pull a blocking
+    fitness below PENALTY_BASE, preserving the non-blocking
+    / blocking separation.
+    """
+
+    fitness = CurveFitness(
         target_curve=TargetCurve(
             function=lambda angle: angle,
         ),
-        expected_point_count=5,
+        motion_start=0.0,
+        motion_range=10.0,
     )
 
-    fitness_high = CurveFitness(
+    # A perfectly matching partial curve (error 0).
+    good = SimulationResult(
+        input_angles=(0.0, 1.0, 2.0),
+        output_angles=(0.0, 1.0, 2.0),
+        success=False,
+        blocked_at=9.0,
+    )
+
+    assert fitness.evaluate((good,)) >= PENALTY_BASE
+
+
+def test_finer_gradient_does_not_affect_non_blocking():
+    """
+    The finer gradient only applies to blocking simulations;
+    a fully successful simulation is still scored by the
+    plain curve error (< PENALTY_BASE).
+    """
+
+    fitness = CurveFitness(
         target_curve=TargetCurve(
             function=lambda angle: angle,
         ),
-        expected_point_count=50,
+        motion_start=0.0,
+        motion_range=10.0,
     )
 
-    penalty_low = fitness_low.evaluate((blocked,))
-    penalty_high = fitness_high.evaluate((blocked,))
+    ok = SimulationResult(
+        input_angles=(0.0, 1.0, 2.0),
+        output_angles=(0.0, 1.0, 2.0),
+        success=True,
+    )
 
-    assert penalty_high > penalty_low
+    assert fitness.evaluate((ok,)) == 0.0
+    assert fitness.evaluate((ok,)) < PENALTY_BASE
