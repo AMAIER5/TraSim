@@ -33,6 +33,7 @@ from mechanism_io.csv_reader import CsvReader
 from mechanics.csv_mechanism_builder import CsvMechanismBuilder
 
 from optimization.csv_parameter_factory import CsvParameterFactory
+from optimization.crossover import Crossover
 from optimization.evolution_engine import EvolutionEngine
 from optimization.mechanism_optimizer import MechanismOptimizer
 from optimization.parameter_mutation import ParameterMutation
@@ -219,6 +220,14 @@ engine = EvolutionEngine(
             # 30 generations on the PPBLS mechanism).
             strength=0.1,
             distribution="gauss",
+            random_generator=rng,
+        ),
+        # Crossover: recombine two parents per child (grouped by
+        # lever) so good sub-configurations of individual levers can
+        # be combined.  Each child is the recombination of two
+        # randomly chosen survivors followed by Gaussian mutation.
+        crossover=Crossover(
+            strategy="grouped",
             random_generator=rng,
         ),
     ),

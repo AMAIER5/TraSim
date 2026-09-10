@@ -15,12 +15,25 @@ from the survivor population.  This preserves diversity
 and avoids the deterministic collapse.  A random
 generator is accepted so the behaviour is reproducible
 in tests.
+
+Optional crossover: when a ``crossover`` operator is
+provided, each child is produced by recombining two
+randomly chosen parents and then mutating the result.
+This lets the optimiser assemble good sub-solutions
+(for example a good lever 1/2 configuration from one
+parent with a good lever 3/4 configuration from another)
+instead of relying on single-parent mutation alone.
+When ``crossover`` is ``None`` the original mutations-
+only behaviour is preserved.
 """
 
 from __future__ import annotations
 
 import random
 
+from optimization.crossover import (
+    Crossover,
+)
 from optimization.parameter_mutation import (
     ParameterMutation,
 )
@@ -38,7 +51,9 @@ class Reproduction:
 
     Parents are selected randomly (with replacement) from
     the survivor population.  Each child is a mutated copy
-    of its parent.
+    of its parent.  When a crossover operator is provided,
+    each child is instead produced by recombining two
+    parents and then mutating the result.
     """
 
     def __init__(
@@ -46,7 +61,8 @@ class Reproduction:
         *,
         mutation: ParameterMutation,
         random_generator: random.Random | None = None,
-    ):
+        crossover: Crossover | None = None,
+    ) -> None:
 
         self.mutation = mutation
 
@@ -55,6 +71,8 @@ class Reproduction:
             if random_generator is not None
             else random.Random()
         )
+
+        self.crossover = crossover
 
     def create(
         self,
@@ -66,7 +84,10 @@ class Reproduction:
         Create mutated children.
 
         Parents are chosen randomly from the population.
-        Each child is a mutated copy of its parent.
+        When crossover is enabled each child is the
+        recombination of two parents followed by mutation;
+        otherwise each child is a mutated copy of a single
+        parent.
 
         Parameters
         ----------
@@ -92,12 +113,8 @@ class Reproduction:
 
         for _ in range(count):
 
-            parent = self.random.choice(
-                population.members
-            )
-
-            child = self.mutation.apply(
-                parent
+            child = self._create_child(
+                population
             )
 
             children.append(
@@ -106,4 +123,43 @@ class Reproduction:
 
         return Population(
             tuple(children)
+        )
+
+    def _create_child(
+        self,
+        population: Population,
+    ) -> ParameterSet:
+        """
+        Create a single child.
+
+        With crossover: recombine two randomly chosen
+        parents and mutate the result.  Without crossover:
+        mutate a single randomly chosen parent.
+        """
+
+        if self.crossover is None:
+
+            parent = self.random.choice(
+                population.members
+            )
+
+            return self.mutation.apply(
+                parent
+            )
+
+        parent_a = self.random.choice(
+            population.members
+        )
+
+        parent_b = self.random.choice(
+            population.members
+        )
+
+        recombined = self.crossover.recombine(
+            parent_a,
+            parent_b,
+        )
+
+        return self.mutation.apply(
+            recombined
         )
