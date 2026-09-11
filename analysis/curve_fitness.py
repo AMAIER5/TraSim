@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 
 from analysis.error_metric import ErrorMetric
-from analysis.target_curve import TargetCurve
+from analysis.target_curve import TargetCurve, DiscreteTargetCurve
 from analysis.transfer_curve import TransferCurve
 from optimization.fitness_function import FitnessFunction
 from simulation.simulation_result import SimulationResult
@@ -64,6 +64,12 @@ def partial_curve_error(
 
     Fewer than two points cannot define a curve, so the error is
     zero (no gradient is available in that case).
+
+    For a non-interpolating ``DiscreteTargetCurve`` only the input
+    angles that coincide with a support point are compared; every
+    other angle is ignored.  This keeps the comparison at the
+    prescribed support points and never uses interpolation between
+    them.
     """
 
     if len(input_angles) < 2 or len(output_angles) < 2:
@@ -72,17 +78,71 @@ def partial_curve_error(
     if len(input_angles) != len(output_angles):
         return 0.0
 
-    target_curve = target.sample(input_angles)
+    pairs = _matched_pairs(
+        target,
+        input_angles,
+        output_angles,
+    )
+
+    if len(pairs) < 2:
+        return 0.0
 
     total = 0.0
-    for input_angle, target_output, actual_output in zip(
-        input_angles,
-        target_curve.output_angles,
-        output_angles,
-    ):
+    for target_output, actual_output in pairs:
         total += abs(actual_output - target_output)
 
-    return total / len(input_angles)
+    return total / len(pairs)
+
+
+def _matched_pairs(
+    target: TargetCurve,
+    input_angles: tuple[float, ...],
+    output_angles: tuple[float, ...],
+) -> list[tuple[float, float]]:
+    """
+    Pairs of (target_output, actual_output) used for comparison.
+
+    For a regular ``TargetCurve`` (defined everywhere) every
+    simulated input angle is compared, sampling the target at the
+    simulated input angles exactly as before.
+
+    For a ``DiscreteTargetCurve`` only the input angles that
+    coincide (within tolerance) with a support point contribute;
+    the target output is taken directly from that support point,
+    so no interpolation between support points is ever used.
+    """
+
+    if isinstance(target, DiscreteTargetCurve):
+
+        pairs: list[tuple[float, float]] = []
+
+        for input_angle, actual_output in zip(
+            input_angles,
+            output_angles,
+        ):
+            index = target.support_index(input_angle)
+
+            if index is None:
+                continue
+
+            pairs.append(
+                (
+                    target.output_angles[index],
+                    actual_output,
+                )
+            )
+
+        return pairs
+
+    target_curve = target.sample(input_angles)
+
+    return [
+        (target_output, actual_output)
+        for target_output, actual_output in zip(
+            target_curve.output_angles,
+            output_angles,
+        )
+    ]
 
 
 class CurveFitness(FitnessFunction):
@@ -230,8 +290,50 @@ class CurveFitness(FitnessFunction):
             return fitness
 
         # --- ALL STAGES SUCCESSFUL: EVALUATE CURVE FIT ---
-        # Only if ALL stages succeeded do we evaluate the curve fit
-        result = simulation[-1]  # Final stage result
+        # Only if ALL stages succeeded do we evaluate the curve fit.
+        #
+        # For a non-interpolating DiscreteTargetCurve the fitness is the
+        # mean absolute error of the overall transfer curve: the original
+        # support-point inputs (simulation[0].input_angles) are compared
+        # against the final stage outputs (simulation[-1].output_angles),
+        # and the target is sampled only at those support points.  No
+        # interpolation between support points is used.  This keeps the
+        # established single-stage behaviour (where simulation[0] ==
+        # simulation[-1]) and extends it correctly to chained stages:
+        # the support points flow through the kinematic chain as the
+        # first-stage inputs, and the last-stage outputs are matched to
+        # the target at those same support points.
+        final_result = simulation[-1]
+
+        if isinstance(self._target_curve, DiscreteTargetCurve):
+            first_result = simulation[0]
+
+            if len(first_result.input_angles) < 2:
+                return PENALTY_INSUFFICIENT_POINTS
+
+            pairs = _matched_pairs(
+                self._target_curve,
+                first_result.input_angles,
+                final_result.output_angles,
+            )
+
+            if len(pairs) < 2:
+                return PENALTY_INSUFFICIENT_POINTS
+
+            total = 0.0
+            for target_output, actual_output in pairs:
+                total += abs(actual_output - target_output)
+
+            curve_fitness = total / len(pairs)
+
+            logger.debug(
+                "Non-blocking discrete solution: fitness=%s",
+                curve_fitness,
+            )
+
+            return curve_fitness
+
+        result = final_result  # Final stage result (legacy path)
 
         if len(result.input_angles) < 2:
             return PENALTY_INSUFFICIENT_POINTS
@@ -257,7 +359,29 @@ class CurveFitness(FitnessFunction):
     ) -> float:
         """
         Backwards-compatible interface.
+
+        For a non-interpolating ``DiscreteTargetCurve`` the mean
+        absolute error is computed only at the transfer-curve input
+        angles that coincide with a support point, without
+        interpolating between support points.
         """
+        if isinstance(self._target_curve, DiscreteTargetCurve):
+
+            pairs = _matched_pairs(
+                self._target_curve,
+                transfer_curve.input_angles,
+                transfer_curve.output_angles,
+            )
+
+            if len(pairs) < 2:
+                return PENALTY_INSUFFICIENT_POINTS
+
+            total = 0.0
+            for target_output, actual_output in pairs:
+                total += abs(actual_output - target_output)
+
+            return total / len(pairs)
+
         key = transfer_curve.input_angles
         if key not in self._cache:
             self._cache[key] = ErrorMetric(target=self._target_curve.sample(key))
