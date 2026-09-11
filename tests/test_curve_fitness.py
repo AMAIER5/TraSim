@@ -37,6 +37,9 @@ from analysis.curve_fitness import (
 from analysis.target_curve import TargetCurve
 from analysis.transfer_curve import TransferCurve
 from simulation.simulation_result import SimulationResult
+from validation.stage_validation_result import (
+    StageValidationResult,
+)
 
 
 def create_transfer_curve() -> TransferCurve:
@@ -700,3 +703,156 @@ def test_finer_gradient_does_not_affect_non_blocking():
 
     assert fitness.evaluate((ok,)) == 0.0
     assert fitness.evaluate((ok,)) < PENALTY_BASE
+
+
+# ---------------------------------------------------------------------------
+# Validation-driven blocking detection
+#
+# The simulation samples only the support points of the target curve, so a
+# stage that blocks between support points can still report success.  When
+# stage validation results are supplied, a stage whose validation reports
+# ``valid=False`` is treated as blocking even if the simulation succeeded,
+# closing the gap with information already computed at build time.
+# ---------------------------------------------------------------------------
+
+def test_validation_blocks_successful_simulation():
+    """
+    A simulation that reports success but whose validation
+    reports an invalid stage must be treated as blocking and
+    therefore score at least PENALTY_BASE.  This is the
+    scenario from the reported example: the simulation never
+    sampled the blocking angle (-46 deg) because it was not
+    a support point of the target curve.
+    """
+
+    fitness = CurveFitness(
+        target_curve=TargetCurve(
+            function=lambda angle: angle,
+        ),
+        motion_start=0.0,
+        motion_range=10.0,
+    )
+
+    simulation = SimulationResult(
+        input_angles=(0.0, 1.0, 2.0),
+        output_angles=(0.0, 1.0, 2.0),
+        success=True,
+    )
+
+    validation = StageValidationResult(
+        valid=False,
+        checked_steps=50,
+        failed_at_input_angle=4.0,
+        reason="blocked",
+        stage_id=0,
+    )
+
+    result = fitness.evaluate(
+        (simulation,),
+        (validation,),
+    )
+
+    assert result >= PENALTY_BASE
+
+
+def test_validation_none_keeps_successful_simulation_below_base():
+    """
+    Without validation information, a successful simulation
+    must remain a non-blocking result (< PENALTY_BASE).
+    """
+
+    fitness = CurveFitness(
+        target_curve=TargetCurve(
+            function=lambda angle: angle,
+        ),
+        motion_start=0.0,
+        motion_range=10.0,
+    )
+
+    simulation = SimulationResult(
+        input_angles=(0.0, 1.0, 2.0),
+        output_angles=(0.0, 1.0, 2.0),
+        success=True,
+    )
+
+    assert fitness.evaluate((simulation,)) < PENALTY_BASE
+    assert fitness.evaluate((simulation,), None) < PENALTY_BASE
+
+
+def test_validation_block_position_drives_position_penalty():
+    """
+    When both the simulation and the validation report a
+    block, the validation's failed_at_input_angle is the
+    more precise position (sampled over the full stage range)
+    and must drive the position-based penalty.
+    """
+
+    fitness = CurveFitness(
+        target_curve=TargetCurve(
+            function=lambda angle: angle,
+        ),
+        motion_start=0.0,
+        motion_range=10.0,
+    )
+
+    early_validation = StageValidationResult(
+        valid=False,
+        checked_steps=50,
+        failed_at_input_angle=1.0,
+        reason="blocked",
+        stage_id=0,
+    )
+    late_validation = StageValidationResult(
+        valid=False,
+        checked_steps=50,
+        failed_at_input_angle=9.0,
+        reason="blocked",
+        stage_id=0,
+    )
+
+    simulation = SimulationResult(
+        input_angles=(0.0,),
+        output_angles=(0.0,),
+        success=True,
+    )
+
+    early = fitness.evaluate(
+        (simulation,),
+        (early_validation,),
+    )
+    late = fitness.evaluate(
+        (simulation,),
+        (late_validation,),
+    )
+
+    assert early > late
+
+
+def test_validation_valid_does_not_block_successful_simulation():
+    """
+    A valid validation result must not turn a successful
+    simulation into a blocking one.
+    """
+
+    fitness = CurveFitness(
+        target_curve=TargetCurve(
+            function=lambda angle: angle,
+        ),
+    )
+
+    simulation = SimulationResult(
+        input_angles=(0.0, 1.0, 2.0),
+        output_angles=(0.0, 1.0, 2.0),
+        success=True,
+    )
+
+    validation = StageValidationResult(
+        valid=True,
+        checked_steps=50,
+        stage_id=0,
+    )
+
+    assert fitness.evaluate(
+        (simulation,),
+        (validation,),
+    ) == 0.0

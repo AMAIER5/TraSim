@@ -100,3 +100,15 @@ class StandardMechanismBuilder(MechanismBuilder):
                 stage,
             )
         )
+
+    def get_validation_results(
+        self,
+    ) -> tuple:
+        """
+        Return the stage validation results from the most recent build.
+
+        The standard builder performs no validation, so an empty
+        tuple is returned.
+        """
+
+        return ()

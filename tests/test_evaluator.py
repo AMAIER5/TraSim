@@ -25,6 +25,9 @@ from optimization.parameter_set import (
 from simulation.mechanism_simulator import (
     MechanismSimulator,
 )
+from simulation.motion_range import (
+    MotionRange,
+)
 from simulation.simulation_result import (
     SimulationResult,
 )
@@ -46,6 +49,14 @@ class DummySimulator(MechanismSimulator):
 
         self.called = False
 
+        self._motion = MotionRange(
+            start_angle=0.0,
+            max_angle=1.0,
+            step=0.5,
+        )
+        self._precision = None
+        self._stage_limit = None
+
     def simulate(
         self,
         mechanism: Mechanism,
@@ -65,6 +76,7 @@ class DummyFitness(FitnessFunction):
     def evaluate(
         self,
         simulation: tuple[SimulationResult, ...],
+        validation=None,
     ) -> float:
 
         self.called = True

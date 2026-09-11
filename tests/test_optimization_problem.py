@@ -42,7 +42,13 @@ class DummySimulator(MechanismSimulator):
 
     def __init__(self):
 
-        pass
+        self._motion = MotionRange(
+            start_angle=0.0,
+            max_angle=1.0,
+            step=0.5,
+        )
+        self._precision = None
+        self._stage_limit = None
 
     def simulate(
         self,
@@ -61,6 +67,7 @@ class DummyFitness(CurveFitness):
     def evaluate(
         self,
         simulation,
+        validation=None,
     ) -> float:
 
         return 1.0

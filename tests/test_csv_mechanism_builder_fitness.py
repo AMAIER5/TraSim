@@ -39,6 +39,7 @@ class OutputRangeFitness:
     def evaluate(
         self,
         simulation,
+        validation=None,
     ) -> float:
 
         result = simulation[0]
