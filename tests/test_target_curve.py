@@ -11,6 +11,7 @@ import math
 import pytest
 
 from analysis.target_curve import (
+    DiscreteTargetCurve,
     TargetCurve,
 )
 
@@ -229,3 +230,93 @@ def test_target_curve_from_csv_requires_columns(
         TargetCurve.from_csv(
             csv_file
         )
+
+
+# ---------------------------------------------------------------------------
+# Non-interpolating (strict) target curve
+# ---------------------------------------------------------------------------
+
+def test_from_points_strict_returns_discrete_target_curve():
+
+    curve = TargetCurve.from_points_strict(
+        input_angles=(
+            0.0,
+            10.0,
+            20.0,
+        ),
+        output_angles=(
+            0.0,
+            20.0,
+            40.0,
+        ),
+    )
+
+    assert isinstance(
+        curve,
+        DiscreteTargetCurve,
+    )
+
+
+def test_from_points_strict_does_not_interpolate():
+
+    curve = TargetCurve.from_points_strict(
+        input_angles=(
+            0.0,
+            10.0,
+            20.0,
+        ),
+        output_angles=(
+            0.0,
+            20.0,
+            40.0,
+        ),
+    )
+
+    assert math.isclose(
+        curve.evaluate(10.0),
+        20.0,
+    )
+
+    with pytest.raises(
+        ValueError
+    ):
+        curve.evaluate(5.0)
+
+
+def test_from_csv_strict_does_not_interpolate(
+    tmp_path,
+):
+
+    csv_file = (
+        tmp_path
+        / "curve.csv"
+    )
+
+    csv_file.write_text(
+        (
+            "input_angle,output_angle\n"
+            "0,0\n"
+            "10,20\n"
+            "20,40\n"
+        ),
+        encoding="utf-8",
+    )
+
+    curve = TargetCurve.from_csv_strict(
+        csv_file
+    )
+
+    assert isinstance(
+        curve,
+        DiscreteTargetCurve,
+    )
+
+    assert math.isclose(
+        curve.evaluate(math.radians(10.0)),
+        math.radians(20.0),
+    )
+
+    with pytest.raises(
+        ValueError
+    ):
+        curve.evaluate(math.radians(5.0))
