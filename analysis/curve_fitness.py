@@ -29,6 +29,9 @@ from analysis.target_curve import TargetCurve, DiscreteTargetCurve
 from analysis.transfer_curve import TransferCurve
 from optimization.fitness_function import FitnessFunction
 from simulation.simulation_result import SimulationResult
+from validation.stage_validation_result import (
+    StageValidationResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -209,13 +212,27 @@ class CurveFitness(FitnessFunction):
         self._finer_gradient = finer_gradient
         self._cache: dict[tuple[float, ...], ErrorMetric] = {}
 
-    def evaluate(self, simulation: tuple[SimulationResult, ...]) -> float:
+    def evaluate(
+        self,
+        simulation: tuple[SimulationResult, ...],
+        validation: tuple[StageValidationResult, ...] | None = None,
+    ) -> float:
         """
         Evaluate a simulated mechanism.
 
         The simulation parameter is a TUPLE of SimulationResult objects,
         one for each stage in the mechanism. For a multi-stage mechanism,
         ALL stages must succeed (not block) for the mechanism to be valid.
+
+        Optional stage validation results (one per stage) refine the
+        blocking detection: the simulation samples only a finite set of
+        input angles, so it can miss a block that occurs between support
+        points.  A stage is therefore treated as blocking when EITHER the
+        simulation reports a block OR the validation reports an invalid
+        stage (``valid`` is False).  When both are available, the earliest
+        block position wins; the validation's ``failed_at_input_angle``
+        is preferred over the simulation's ``blocked_at`` because it is
+        sampled over the full stage input range.
 
         Returns
         -------
@@ -229,18 +246,48 @@ class CurveFitness(FitnessFunction):
 
         # --- CHECK ALL STAGES FOR BLOCKING ---
         # CRITICAL: We must check EVERY stage, not just the final one
-        # If ANY stage blocks, the entire mechanism is invalid
+        # If ANY stage blocks, the entire mechanism is invalid.
+        #
+        # Blocking is detected from BOTH sources:
+        #   - simulation: a stage's SimulationResult.success is False
+        #   - validation: a stage's StageValidationResult.valid is False
+        #
+        # The simulation only checks the support points of the target
+        # curve, so a stage that blocks between support points can still
+        # report success.  The validation samples the full stage input
+        # range and therefore closes that gap using information that is
+        # already computed during mechanism construction.
         all_success = True
         earliest_block_angle = None
         min_points = float('inf')
 
-        for result in simulation:
-            if not result.success:
+        for index, result in enumerate(simulation):
+            stage_blocked = not result.success
+
+            validation_result = (
+                validation[index]
+                if validation is not None and index < len(validation)
+                else None
+            )
+
+            if validation_result is not None and not validation_result.valid:
+                stage_blocked = True
+
+            if stage_blocked:
                 all_success = False
-                # Track the earliest blocking angle across all stages
-                if result.blocked_at is not None:
-                    if earliest_block_angle is None or result.blocked_at < earliest_block_angle:
-                        earliest_block_angle = result.blocked_at
+
+                # Prefer the validation's failed input angle: it is
+                # sampled over the full stage range and therefore more
+                # precise than the simulation's coarse support points.
+                block_angle = None
+                if validation_result is not None and validation_result.failed_at_input_angle is not None:
+                    block_angle = validation_result.failed_at_input_angle
+                elif result.blocked_at is not None:
+                    block_angle = result.blocked_at
+
+                if block_angle is not None:
+                    if earliest_block_angle is None or block_angle < earliest_block_angle:
+                        earliest_block_angle = block_angle
                 # Track minimum points across all stages
                 if len(result.input_angles) < min_points:
                     min_points = len(result.input_angles)

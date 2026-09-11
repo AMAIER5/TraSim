@@ -109,6 +109,7 @@ class CountingFitness:
     def evaluate(
         self,
         simulation,
+        validation=None,
     ) -> float:
 
         self.calls += 1

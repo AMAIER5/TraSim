@@ -105,8 +105,15 @@ class MechanismOptimizer:
         # Extract precision as immutable tuple if present
         precision = self._simulator.precision
         if precision is not None:
-            # Convert precision to tuple of its values for proper hashing
-            precision_tuple = tuple(vars(precision).values())
+            # Convert precision to a tuple of its declared field
+            # values for proper hashing.  dataclasses.fields works
+            # for frozen/slots dataclasses where vars() would fail.
+            from dataclasses import fields
+
+            precision_tuple = tuple(
+                getattr(precision, field.name)
+                for field in fields(precision)
+            )
         else:
             precision_tuple = None
 
@@ -147,8 +154,14 @@ class MechanismOptimizer:
         )
 
 
+        validation = self._builder_validation_results(
+            self._builder,
+        )
+
+
         result = self._fitness.evaluate(
-            simulation
+            simulation,
+            validation,
         )
 
 
@@ -173,6 +186,31 @@ class MechanismOptimizer:
         self._cache_hits = 0
         self._cache_misses = 0
         self._evaluations = 0
+
+
+    @staticmethod
+    def _builder_validation_results(
+        builder,
+    ):
+        """
+        Return the builder's validation results when available.
+
+        Not every builder exposes ``get_validation_results`` (the
+        protocol is optional for builders that perform no
+        validation).  Missing support is treated as "no validation
+        information", returned as None.
+        """
+
+        getter = getattr(
+            builder,
+            "get_validation_results",
+            None,
+        )
+
+        if getter is None:
+            return None
+
+        return getter()
 
 
 

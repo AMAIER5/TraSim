@@ -62,6 +62,23 @@ def test_complete_optimization_pipeline():
 
     class DummySimulator:
 
+        @property
+        def motion(self):
+            from simulation.motion_range import MotionRange
+            return MotionRange(
+                start_angle=0.0,
+                max_angle=1.0,
+                step=0.5,
+            )
+
+        @property
+        def precision(self):
+            return None
+
+        @property
+        def stage_limit(self):
+            return None
+
         def simulate(
             self,
             mechanism,
@@ -76,6 +93,7 @@ def test_complete_optimization_pipeline():
         def evaluate(
             self,
             result,
+            validation=None,
         ) -> float:
             return float(
                 result["stages"]

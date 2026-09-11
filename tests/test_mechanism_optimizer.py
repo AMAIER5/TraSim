@@ -42,6 +42,30 @@ class DummySimulator:
 
         self.called = False
 
+    @property
+    def motion(self):
+
+        from simulation.motion_range import (
+            MotionRange,
+        )
+
+        return MotionRange(
+            start_angle=0.0,
+            max_angle=1.0,
+            step=0.1,
+            direction=1,
+        )
+
+    @property
+    def precision(self):
+
+        return None
+
+    @property
+    def stage_limit(self):
+
+        return None
+
     def simulate(
         self,
         mechanism,
@@ -66,6 +90,7 @@ class DummyFitness(FitnessFunction):
     def evaluate(
         self,
         simulation,
+        validation=None,
     ) -> float:
 
         self.called = True
