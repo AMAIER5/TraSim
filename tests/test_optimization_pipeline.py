@@ -43,13 +43,13 @@ def create_parameters():
                 value=120.0,
             ),
             Parameter(
-                name="input_angle_offset",
+                name="input_angle",
                 minimum=-3.141592653589793,
                 maximum=3.141592653589793,
                 value=0.0,
             ),
             Parameter(
-                name="output_angle_offset",
+                name="output_angle",
                 minimum=-3.141592653589793,
                 maximum=3.141592653589793,
                 value=0.0,

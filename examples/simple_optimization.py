@@ -148,7 +148,7 @@ def random_parameter_set() -> ParameterSet:
             ),
 
             Parameter(
-                name="input_angle_offset",
+                name="input_angle",
                 minimum=-math.radians(45),
                 maximum=math.radians(45),
                 value=rng.uniform(
@@ -158,7 +158,7 @@ def random_parameter_set() -> ParameterSet:
             ),
 
             Parameter(
-                name="output_angle_offset",
+                name="output_angle",
                 minimum=-math.radians(45),
                 maximum=math.radians(45),
                 value=rng.uniform(
@@ -265,7 +265,7 @@ if best_candidate is not None:
     for name, value in (
         best_candidate.values().items()
     ):
-        if "angle_offset" in name:
+        if "angle" in name:
 
             print(
                 f"{name}: "

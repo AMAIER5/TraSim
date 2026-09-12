@@ -23,8 +23,17 @@ class StandardMechanismBuilder(MechanismBuilder):
 
     input_lever_length
     output_lever_length
-    input_angle_offset
-    output_angle_offset
+    input_angle
+    output_angle
+
+    The lever installation poses (reference directions) are
+    fixed by this builder: both levers start in the +X
+    direction, so the lever angles supplied by the optimizer
+    are measured relative to that installation pose.  The
+    angle limits are left unbounded, so the build-space
+    constraint is governed by the motion range and the
+    solver's kinematic feasibility rather than by explicit
+    lever-angle segments here.
 
     All angles are stored internally in radians.
     """
@@ -37,11 +46,12 @@ class StandardMechanismBuilder(MechanismBuilder):
         from the reference position.
 
         Reference position:
-            input_angle  = 0 rad
-            output_angle = 0 rad
+            input_angle  = the supplied input lever angle
+            output_angle = the supplied output lever angle
 
-        The lever installation offsets are included
-        in the reference geometry.
+        The lever installation pose is the +X direction, so
+        the supplied angles are lever angles relative to that
+        pose.
         """
 
         input_length = parameters.get(
@@ -52,18 +62,24 @@ class StandardMechanismBuilder(MechanismBuilder):
             "output_lever_length"
         ).value
 
-        input_angle_offset = parameters.get(
-            "input_angle_offset"
+        input_angle = parameters.get(
+            "input_angle"
         ).value
 
-        output_angle_offset = parameters.get(
-            "output_angle_offset"
+        output_angle = parameters.get(
+            "output_angle"
         ).value
 
         rotation_axis = Vector3D(
             0.0,
             0.0,
             1.0,
+        )
+
+        reference_direction = Vector3D(
+            1.0,
+            0.0,
+            0.0,
         )
 
         input_lever = Lever(
@@ -74,6 +90,7 @@ class StandardMechanismBuilder(MechanismBuilder):
             ),
             axis=rotation_axis,
             length=input_length,
+            reference_direction=reference_direction,
         )
 
         output_lever = Lever(
@@ -84,15 +101,14 @@ class StandardMechanismBuilder(MechanismBuilder):
             ),
             axis=rotation_axis,
             length=output_length,
+            reference_direction=reference_direction,
         )
 
         stage = Stage.from_reference_position(
             input_lever=input_lever,
             output_lever=output_lever,
-            input_angle=0.0,
-            output_angle=0.0,
-            input_angle_offset=input_angle_offset,
-            output_angle_offset=output_angle_offset,
+            input_angle=input_angle,
+            output_angle=output_angle,
         )
 
         return Mechanism(

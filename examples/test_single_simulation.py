@@ -49,13 +49,13 @@ parameters = ParameterSet(
             value=70.0,
         ),
         Parameter(
-            name="input_angle_offset",
+            name="input_angle",
             minimum=-math.pi,
             maximum=math.pi,
             value=math.radians(-20),
         ),
         Parameter(
-            name="output_angle_offset",
+            name="output_angle",
             minimum=-math.pi,
             maximum=math.pi,
             value=math.radians(-25),
@@ -85,13 +85,13 @@ print(
 )
 
 print(
-    f"Input offset: "
-    f"{math.degrees(stage.input_angle_offset):.3f} deg"
+    f"Input angle: "
+    f"{math.degrees(stage.input_angle):.3f} deg"
 )
 
 print(
-    f"Output offset: "
-    f"{math.degrees(stage.output_angle_offset):.3f} deg"
+    f"Output angle: "
+    f"{math.degrees(stage.output_angle):.3f} deg"
 )
 
 

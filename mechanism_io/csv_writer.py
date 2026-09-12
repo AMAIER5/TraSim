@@ -135,13 +135,19 @@ class CsvWriter:
                     "axis_x",
                     "axis_y",
                     "axis_z",
+                    "ref_x",
+                    "ref_y",
+                    "ref_z",
                     "driver",
                     "coupled",
                 )
             )
 
             for lever in mechanism.levers:
-                # Convert angle values from radians to degrees
+                # Convert angle values from radians to degrees.
+                # Angles are lever angles measured relative to the
+                # lever's reference_direction about its axis.
+                ref = lever.reference_direction
                 writer.writerow(
                     (
                         lever.id,
@@ -157,6 +163,9 @@ class CsvWriter:
                         lever.axis.x,
                         lever.axis.y,
                         lever.axis.z,
+                        "" if ref is None else ref.x,
+                        "" if ref is None else ref.y,
+                        "" if ref is None else ref.z,
                         "" if lever.driver is None else lever.driver,
                         "" if lever.coupled is None else lever.coupled,
                     )

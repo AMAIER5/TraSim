@@ -10,6 +10,18 @@ from core.point3d import Point3D
 class LeverDefinition:
     """
     Definition of one lever read from CSV.
+
+    The ``angle_min``/``angle_max``/``angle_start`` fields are
+    lever angles: each is measured relative to the lever's
+    ``reference_direction`` about its rotation ``axis``.  Together
+    with the pivot they describe the lever's installation pose and
+    its admissible lever-angle segment (circular build space).
+
+    When ``reference_direction`` is ``None`` the lever selects one
+    automatically from the dominant axis component (see
+    ``Lever._auto_reference_direction``); in that case the angle
+    limits are still treated as lever angles, but their physical
+    meaning depends on that automatic choice.
     """
 
     id: int
@@ -26,8 +38,10 @@ class LeverDefinition:
 
     axis: Vector3D
 
-    driver: int | None
-    coupled: int | None
+    reference_direction: Vector3D | None = None
+
+    driver: int | None = None
+    coupled: int | None = None
 
     @property
     def is_driver(self) -> bool:

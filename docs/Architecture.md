@@ -313,10 +313,12 @@ Static methods:
 Example:
 
 ```csv
-id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,driver,coupled
-1,40,100,60,-40,40,0,0,0,0,0,0,1,,
-2,30,90,45,-60,60,0,100,0,0,0,0,1,1,
+id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,ref_x,ref_y,ref_z,driver,coupled
+1,40,100,60,-40,40,0,0,0,0,0,0,1,1,0,0,,
+2,30,90,45,-60,60,0,100,0,0,0,0,1,1,0,0,1,
 ```
+
+The `angle_min`/`angle_max`/`angle_start` columns are **lever angles** measured relative to the lever's `reference_direction` (the `ref_x`/`ref_y`/`ref_z` columns) about its `axis`. They describe the lever's admissible lever-angle segment, i.e. its circular build space. The `ref_x`/`ref_y`/`ref_z` columns are optional; when all three are empty the lever selects a reference direction automatically, and the angle limits are then relative to that automatic choice.
 
 ### Driver Relationship
 
@@ -358,6 +360,7 @@ Lever
 ├── pivot              : Point3D
 ├── axis               : Vector3D
 ├── length             : float
+├── reference_direction: Vector3D | None  (lever direction at angle 0)
 ├── _normalized_axis   : Vector3D  (cached, init=False)
 └── _reference_direction : Vector3D (cached, init=False)
 ```
@@ -374,7 +377,7 @@ The lever does not store dynamic angle state.
 
 #### Reference Direction Convention
 
-The initial lever direction (at angle 0) is automatically selected based on the **dominant axis** of the rotation axis vector to ensure it is never parallel to the rotation axis:
+The lever direction at angle 0 is its `reference_direction`. When an explicit `reference_direction` is supplied (as a build-space specification) it must be perpendicular to the rotation axis and is normalized internally. When it is `None`, a reference direction is selected automatically based on the **dominant axis** of the rotation axis vector to ensure it is never parallel to the rotation axis:
 
         The initial lever direction is chosen to be perpendicular to
         the rotation axis. The reference direction is selected based on
@@ -425,26 +428,26 @@ Stage
 ├── input_lever  : Lever
 ├── output_lever : Lever
 ├── rod_length   : float
-├── input_angle_offset  : float  (installation offset, rad)
-├── output_angle_offset : float  (installation offset, rad)
-├── input_angle_min  : float
+├── input_angle_min  : float  (lever-angle segment, rad)
 ├── input_angle_max  : float
-├── output_angle_min : float
+├── output_angle_min : float  (lever-angle segment, rad)
 ├── output_angle_max : float
-├── input_angle      : float  (stored reference)
-├── output_angle     : float  (stored reference)
+├── input_angle      : float  (stored reference, lever angle)
+├── output_angle     : float  (stored reference, lever angle)
 ├── input_endpoint   : Point3D
 └── output_endpoint  : Point3D
 ```
 
 Factory: `Stage.from_reference_position(...)` — creates a stage from a valid reference position. The rod length is calculated automatically from the reference endpoints. All working-range limits default to ±∞ if not specified.
 
+Angles are **lever angles**: each is measured relative to the corresponding lever's `reference_direction` about its rotation axis. The `input_angle_min`/`input_angle_max` and `output_angle_min`/`output_angle_max` limits therefore describe each lever's admissible lever-angle segment, i.e. its circular build space. There is no separate installation offset: the lever's installation pose is fixed by its `reference_direction`, and the angle limits apply directly to the lever angle. See `mechanics/lever_angle_range.py` for the standalone circular-segment description of one lever's build space.
+
 Methods:
 
-- `input_position(angle)` → `Point3D` (applies offset automatically)
-- `output_position(angle)` → `Point3D` (applies offset automatically)
-- `accepts_input_angle(angle)` → `bool` (within working range)
-- `accepts_output_angle(angle)` → `bool` (within working range)
+- `input_position(angle)` → `Point3D`
+- `output_position(angle)` → `Point3D`
+- `accepts_input_angle(angle)` → `bool` (within lever-angle segment)
+- `accepts_output_angle(angle)` → `bool` (within lever-angle segment)
 
 ### Mechanism
 
@@ -478,7 +481,7 @@ ParameterSet
 Mechanism
 ```
 
-Builds a single-stage mechanism from optimization parameters. Expected parameters: `input_lever_length`, `output_lever_length`, `input_angle_offset`, `output_angle_offset`.
+Builds a single-stage mechanism from optimization parameters. Expected parameters: `input_lever_length`, `output_lever_length`, `input_angle`, `output_angle`. The lever installation pose is fixed as the +X direction, so the supplied angles are lever angles measured relative to that pose.
 
 ### CsvMechanismBuilder
 

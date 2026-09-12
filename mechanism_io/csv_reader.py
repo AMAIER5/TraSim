@@ -107,6 +107,10 @@ class CsvReader:
         if coupled is not None:
             driver = None
 
+        reference_direction = (
+            CsvReader._parse_optional_vector(row)
+        )
+
         return LeverDefinition(
             id=int(row["id"]),
 
@@ -114,7 +118,9 @@ class CsvReader:
             length_max=float(row["length_max"]),
             length_start=float(row["length_start"]),
 
-            # Convert angles from degrees to radians
+            # Convert angles from degrees to radians.
+            # Angles are lever angles measured relative to the
+            # lever's reference_direction about its axis.
             angle_min=math.radians(float(row["angle_min"])),
             angle_max=math.radians(float(row["angle_max"])),
             angle_start=math.radians(float(row["angle_start"])),
@@ -130,6 +136,8 @@ class CsvReader:
                 y=float(row["axis_y"]),
                 z=float(row["axis_z"]),
             ),
+
+            reference_direction=reference_direction,
 
             driver=driver,
             coupled=coupled,
@@ -148,3 +156,38 @@ class CsvReader:
             return None
 
         return int(value)
+
+    @staticmethod
+    def _parse_optional_vector(
+        row: dict[str, str],
+    ) -> Vector3D | None:
+        """
+        Parse an optional reference direction from the
+        ``ref_x``/``ref_y``/``ref_z`` columns.
+
+        When all three columns are absent or empty the lever
+        selects its reference direction automatically.
+        """
+        keys = ("ref_x", "ref_y", "ref_z")
+
+        present = {
+            key: row.get(key)
+            for key in keys
+            if row.get(key) is not None
+            and row.get(key, "").strip() != ""
+        }
+
+        if not present:
+            return None
+
+        if len(present) != len(keys):
+            raise ValueError(
+                "reference direction requires all "
+                "of ref_x, ref_y, ref_z."
+            )
+
+        return Vector3D(
+            x=float(present["ref_x"]),
+            y=float(present["ref_y"]),
+            z=float(present["ref_z"]),
+        )

@@ -43,11 +43,22 @@ class Lever:
 
     length:
         Lever length in mm.
+
+    reference_direction:
+        Direction of the lever at angle 0.  Must be perpendicular
+        to the rotation axis.  When ``None`` a reference direction
+        is selected automatically from the dominant axis component,
+        which keeps simple test setups working but is not meant as
+        a build-space specification.  To use angle limits as a
+        packaging constraint, supply an explicit reference
+        direction that matches the lever's installation pose.
     """
 
     pivot: Point3D
     axis: Vector3D
     length: float
+
+    reference_direction: Vector3D | None = None
 
     #
     # Cached normalized axis and reference direction
@@ -83,15 +94,36 @@ class Lever:
             self.axis.normalized(),
         )
 
-        object.__setattr__(
-            self,
-            "_reference_direction",
-            self._compute_reference_direction(),
-        )
+        if self.reference_direction is None:
+            object.__setattr__(
+                self,
+                "_reference_direction",
+                self._auto_reference_direction(),
+            )
+        else:
+            normalized = (
+                self.reference_direction.normalized()
+            )
 
-    def _compute_reference_direction(self) -> Vector3D:
+            if abs(
+                normalized.dot(self._normalized_axis)
+            ) > 1e-9:
+                raise ValueError(
+                    "reference_direction must be "
+                    "perpendicular to the rotation "
+                    "axis."
+                )
+
+            object.__setattr__(
+                self,
+                "_reference_direction",
+                normalized,
+            )
+
+    def _auto_reference_direction(self) -> Vector3D:
         """
-        Compute reference direction perpendicular to rotation axis.
+        Compute a reference direction perpendicular to the
+        rotation axis when none is supplied.
 
         Uses the dominant axis of the rotation axis to select
         a perpendicular cardinal direction:
@@ -127,13 +159,11 @@ class Lever:
         """
         Calculate lever direction for a given angle.
 
-        The initial lever direction is chosen to be perpendicular to
-        the rotation axis. The reference direction is selected based on
-        the dominant axis of the rotation axis vector:
-
-        - If |axis_x| is largest: reference = Y axis (0,1,0)
-        - If |axis_y| is largest: reference = Z axis (0,0,1)
-        - If |axis_z| is largest: reference = X axis (1,0,0)
+        The lever direction at ``angle_rad == 0`` is the lever's
+        ``reference_direction``.  When the lever was constructed
+        without an explicit reference direction, one is chosen
+        automatically based on the dominant axis component of the
+        rotation axis (see ``_auto_reference_direction``).
 
         Uses Rodrigues rotation formula:
 
