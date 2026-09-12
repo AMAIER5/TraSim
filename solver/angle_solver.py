@@ -330,7 +330,7 @@ class AngleSolver:
 
         success = (
             abs(value)
-            <= self.precision.tolerance
+            <= self.precision.acceptance
         )
 
         if success:

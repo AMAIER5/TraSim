@@ -28,6 +28,8 @@ class SolverPrecision:
 
     tolerance: float = 1e-10
 
+    acceptance: float = 1e-6
+
     max_iterations: int = 40
 
     bracket_step: float = math.radians(1)
@@ -39,6 +41,11 @@ class SolverPrecision:
         if self.tolerance <= 0.0:
             raise ValueError(
                 "tolerance must be positive."
+            )
+
+        if self.acceptance <= 0.0:
+            raise ValueError(
+                "acceptance must be positive."
             )
 
         if self.max_iterations < 1:
