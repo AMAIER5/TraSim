@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
 from mechanism_io import CsvReader
+
 from core.vector3d import Vector3D
 
 def test_read_simulation(example_simulation_csv):
@@ -61,3 +64,47 @@ def test_read_lever_geometry(example_mechanism_csv):
         0,
         1,
     )
+
+
+def test_read_lever_without_reference_direction_is_none(
+    example_mechanism_csv,
+):
+    mechanism = CsvReader.read_mechanism(
+        example_mechanism_csv
+    )
+
+    for lever in mechanism.levers:
+        assert lever.reference_direction is None
+
+
+def test_read_lever_with_explicit_reference_direction(
+    tmp_path,
+):
+    path = tmp_path / "mechanism.csv"
+    path.write_text(
+        """id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,ref_x,ref_y,ref_z,driver,coupled
+1,40,100,60,-40,40,0,0,0,0,0,0,1,1,0,0,,
+2,30,90,45,-60,60,0,100,0,0,0,0,1,0,1,0,1,
+""",
+        encoding="utf-8",
+    )
+
+    mechanism = CsvReader.read_mechanism(path)
+
+    assert mechanism.get_lever(1).reference_direction == Vector3D(1, 0, 0)
+    assert mechanism.get_lever(2).reference_direction == Vector3D(0, 1, 0)
+
+
+def test_partial_reference_direction_raises(
+    tmp_path,
+):
+    path = tmp_path / "mechanism.csv"
+    path.write_text(
+        """id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,ref_x,ref_y,ref_z,driver,coupled
+1,40,100,60,-40,40,0,0,0,0,0,0,1,1,0,,,
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="ref_x"):
+        CsvReader.read_mechanism(path)

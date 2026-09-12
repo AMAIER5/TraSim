@@ -143,6 +143,9 @@ class CsvMechanismBuilder(MechanismBuilder):
                 pivot=lever_definition.pivot,
                 axis=lever_definition.axis,
                 length=lever_definition.length_start,
+                reference_direction=(
+                    lever_definition.reference_direction
+                ),
             )
 
         return result

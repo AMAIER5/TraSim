@@ -3,8 +3,14 @@ mechanics/stage.py
 
 Mechanical stage consisting of two levers connected by an ideal rod.
 
-Version 0.2:
-    Added angular installation offsets for input and output levers.
+Version 0.3:
+    Removed angular installation offsets.  The angles flowing
+    through a stage are now lever angles: each angle is measured
+    relative to the corresponding lever's ``reference_direction``.
+    The input/output angle limits therefore directly describe the
+    admissible lever-angle segment (circular build space) of each
+    lever, instead of constraining the shaft rotation while the
+    lever sat at an unspecified offset.
 
 The kinematic solution is intentionally separated.
 """
@@ -39,11 +45,19 @@ class Stage:
     rod_length:
         Fixed coupling rod length.
 
-    input_angle_offset:
-        Installation offset of input lever [rad].
+    input_angle_min:
+        Minimum admissible input lever angle [rad], measured
+        relative to the input lever's ``reference_direction``.
 
-    output_angle_offset:
-        Installation offset of output lever [rad].
+    input_angle_max:
+        Maximum admissible input lever angle [rad].
+
+    output_angle_min:
+        Minimum admissible output lever angle [rad], measured
+        relative to the output lever's ``reference_direction``.
+
+    output_angle_max:
+        Maximum admissible output lever angle [rad].
     """
 
     input_lever: Lever
@@ -51,18 +65,11 @@ class Stage:
 
     rod_length: float
 
-    input_angle_offset: float
-    output_angle_offset: float
-
-    # Allowed motion range
-
     input_angle_min: float
     input_angle_max: float
 
     output_angle_min: float
     output_angle_max: float
-
-    # Stored reference configuration
 
     input_angle: float
     output_angle: float
@@ -76,8 +83,6 @@ class Stage:
         output_lever: Lever,
         input_angle: float = 0.0,
         output_angle: float = 0.0,
-        input_angle_offset: float = 0.0,
-        output_angle_offset: float = 0.0,
         input_angle_min: float = float("-inf"),
         input_angle_max: float = float("inf"),
         output_angle_min: float = float("-inf"),
@@ -89,8 +94,10 @@ class Stage:
 
         The rod length is calculated automatically.
 
-        Angles describe shaft positions.
-        Offsets describe lever installation angles.
+        Angles are lever angles, each measured relative to the
+        corresponding lever's ``reference_direction``.  The angle
+        limits describe the admissible lever-angle segment of each
+        lever (its circular build space).
 
         Issue #7: When ``validate_reference`` is True (the
         default), the reference angles are checked against
@@ -108,13 +115,13 @@ class Stage:
 
         input_endpoint = (
             input_lever.end_position(
-                input_angle + input_angle_offset
+                input_angle
             )
         )
 
         output_endpoint = (
             output_lever.end_position(
-                output_angle + output_angle_offset
+                output_angle
             )
         )
 
@@ -153,9 +160,6 @@ class Stage:
             output_lever=output_lever,
             rod_length=rod_length,
 
-            input_angle_offset=input_angle_offset,
-            output_angle_offset=output_angle_offset,
-
             input_angle_min=input_angle_min,
             input_angle_max=input_angle_max,
 
@@ -174,13 +178,11 @@ class Stage:
         angle: float,
     ) -> Point3D:
         """
-        Calculate input lever endpoint.
-
-        The installation offset is applied automatically.
+        Calculate input lever endpoint for a lever angle.
         """
 
         return self.input_lever.end_position(
-            angle + self.input_angle_offset
+            angle
         )
 
     def output_position(
@@ -188,13 +190,11 @@ class Stage:
         angle: float,
     ) -> Point3D:
         """
-        Calculate output lever endpoint.
-
-        The installation offset is applied automatically.
+        Calculate output lever endpoint for a lever angle.
         """
 
         return self.output_lever.end_position(
-            angle + self.output_angle_offset
+            angle
         )
 
     def accepts_input_angle(
@@ -202,8 +202,8 @@ class Stage:
         angle: float,
     ) -> bool:
         """
-        Check whether an input angle lies inside
-        the defined mechanical working range.
+        Check whether an input lever angle lies inside
+        the admissible lever-angle segment.
         """
 
         return (
@@ -212,14 +212,13 @@ class Stage:
             <= self.input_angle_max
         )
 
-
     def accepts_output_angle(
         self,
         angle: float,
     ) -> bool:
         """
-        Check whether an output angle lies inside
-        the defined mechanical working range.
+        Check whether an output lever angle lies inside
+        the admissible lever-angle segment.
         """
 
         return (

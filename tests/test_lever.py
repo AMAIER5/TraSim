@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
 from core.point3d import Point3D
 from core.quaternion import Quaternion
 from core.vector3d import Vector3D
@@ -197,3 +199,76 @@ def test_direction_is_unit_vector():
     for deg in (0, 45, 90, 137):
         d = lever.direction(math.radians(deg))
         assert math.isclose(d.norm(), 1.0, abs_tol=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# Explicit reference direction
+# ---------------------------------------------------------------------------
+
+def test_explicit_reference_direction_used_at_zero_angle():
+    """
+    At angle 0 the lever points along the explicitly supplied
+    reference direction, not the auto-selected one.
+    """
+    lever = Lever(
+        pivot=Point3D(0, 0, 0),
+        axis=Vector3D(0, 0, 1),
+        length=100.0,
+        reference_direction=Vector3D(0, 1, 0),
+    )
+    end = lever.end_position(0.0)
+    assert end.almost_equal(Point3D(0, 100, 0))
+
+
+def test_explicit_reference_direction_is_normalized():
+    """
+    A non-unit reference direction is normalized internally
+    so the lever length is preserved.
+    """
+    lever = Lever(
+        pivot=Point3D(0, 0, 0),
+        axis=Vector3D(0, 0, 1),
+        length=50.0,
+        reference_direction=Vector3D(0, 2, 0),
+    )
+    end = lever.end_position(0.0)
+    assert end.almost_equal(Point3D(0, 50, 0))
+
+
+def test_explicit_reference_direction_perpendicular_check():
+    """
+    A reference direction not perpendicular to the rotation
+    axis is rejected.
+    """
+    with pytest.raises(ValueError, match="perpendicular"):
+        Lever(
+            pivot=Point3D(0, 0, 0),
+            axis=Vector3D(0, 0, 1),
+            length=50.0,
+            reference_direction=Vector3D(1, 0, 1),
+        )
+
+
+def test_explicit_reference_direction_rotation_matches_quaternion():
+    """
+    Rotating about an explicit reference direction matches the
+    quaternion-based calculation with the same reference vector.
+
+    The reference direction must be perpendicular to the axis,
+    so for axis (1,1,1) use (1,-1,0).
+    """
+    axis = Vector3D(1, 1, 1)
+    reference = Vector3D(1, -1, 0)
+    lever = Lever(
+        pivot=Point3D(0, 0, 0),
+        axis=axis,
+        length=40.0,
+        reference_direction=reference,
+    )
+    for deg in (-90, -30, 0, 45, 120):
+        angle = math.radians(deg)
+        lever_dir = lever.direction(angle)
+        q = Quaternion.from_axis_angle(axis, angle)
+        # The lever normalizes its reference direction internally.
+        quat_dir = q.rotate_vector(reference.normalized())
+        assert lever_dir.almost_equal(quat_dir, tolerance=1e-12)

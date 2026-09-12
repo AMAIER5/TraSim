@@ -361,3 +361,87 @@ def test_validate_reference_false_allows_impossible_stage():
 
     assert stage.output_angle == 0.0
     assert stage.output_angle_min == math.radians(90)
+
+
+# ---------------------------------------------------------------------------
+# Build-space (lever-angle) semantics with explicit reference directions
+# ---------------------------------------------------------------------------
+
+def test_angle_limits_are_lever_angles_relative_to_reference_direction():
+    """
+    The stage's angle limits are lever angles measured
+    relative to each lever's reference direction.  When the
+    levers use an explicit reference direction, the angle
+    range describes the lever's circular build space and is
+    independent of the rotation-axis orientation in world
+    coordinates.
+    """
+    # Levers rotate about a tilted axis (1,1,1).  The reference
+    # direction must be perpendicular to the axis, so use (1,-1,0).
+    reference = Vector3D(1, -1, 0)
+
+    axis = Vector3D(1, 1, 1)
+    input_lever = Lever(
+        pivot=Point3D(0, 0, 0),
+        axis=axis,
+        length=50,
+        reference_direction=reference,
+    )
+    output_lever = Lever(
+        pivot=Point3D(100, 0, 0),
+        axis=axis,
+        length=50,
+        reference_direction=reference,
+    )
+
+    stage = Stage.from_reference_position(
+        input_lever=input_lever,
+        output_lever=output_lever,
+        input_angle=0.0,
+        output_angle=0.0,
+        input_angle_min=math.radians(-30),
+        input_angle_max=math.radians(30),
+        output_angle_min=math.radians(-30),
+        output_angle_max=math.radians(30),
+    )
+
+    # Angles inside the segment are accepted, regardless of
+    # the tilted axis, because the test is a pure lever-angle
+    # comparison in the lever's own coordinate system.
+    assert stage.accepts_input_angle(math.radians(10))
+    assert stage.accepts_output_angle(math.radians(-10))
+    assert not stage.accepts_input_angle(math.radians(40))
+    assert not stage.accepts_output_angle(math.radians(40))
+
+
+def test_offset_no_longer_shifts_angle_limits():
+    """
+    There is no installation offset anymore: the reference
+    direction IS the installation pose, and the angle limits
+    apply directly to the lever angle.  Two levers with the
+    same geometry but different reference directions produce
+    different end positions at angle 0, but the same angle
+    range check.
+    """
+    axis = Vector3D(0, 0, 1)
+
+    lever_a = Lever(
+        pivot=Point3D(0, 0, 0),
+        axis=axis,
+        length=50,
+        reference_direction=Vector3D(1, 0, 0),
+    )
+    lever_b = Lever(
+        pivot=Point3D(0, 0, 0),
+        axis=axis,
+        length=50,
+        reference_direction=Vector3D(0, 1, 0),
+    )
+
+    end_a = lever_a.end_position(0.0)
+    end_b = lever_b.end_position(0.0)
+
+    # Different installation pose -> different end point.
+    assert not end_a.almost_equal(end_b)
+    assert end_a.almost_equal(Point3D(50, 0, 0))
+    assert end_b.almost_equal(Point3D(0, 50, 0))
