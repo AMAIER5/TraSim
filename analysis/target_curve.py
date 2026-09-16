@@ -25,6 +25,11 @@ from analysis.transfer_curve import (
 # from the same CSV support points are recognised as matches.
 _DISCRETE_ANGLE_TOLERANCE = 1e-9
 
+# Upper bound for per-support-point fitness weights read from
+# a target-curve CSV.  Larger values are clamped to this limit
+# so a single support point cannot dominate the whole fitness.
+MAX_WEIGHT = 100.0
+
 
 @dataclass(frozen=True, slots=True)
 class TargetCurve:
@@ -125,7 +130,7 @@ class TargetCurve:
         ...
         """
 
-        input_angles, output_angles = _read_csv_points(
+        input_angles, output_angles, _weights = _read_csv_points(
             path,
         )
 
@@ -139,6 +144,7 @@ class TargetCurve:
         cls,
         input_angles: tuple[float, ...],
         output_angles: tuple[float, ...],
+        weights: tuple[float, ...] | None = None,
     ) -> DiscreteTargetCurve:
         """
         Create a non-interpolating target curve from sampled points.
@@ -151,11 +157,17 @@ class TargetCurve:
         that the fitness is computed exclusively at the
         prescribed support points and never uses interpolated
         translations between them.
+
+        ``weights`` is an optional per-support-point weighting of
+        the fitness error.  When ``None`` every support point is
+        weighted by 1.  Negative weights are rejected; weights
+        greater than ``MAX_WEIGHT`` are clamped to it.
         """
 
         return DiscreteTargetCurve(
             input_angles=input_angles,
             output_angles=output_angles,
+            weights=weights,
         )
 
     @classmethod
@@ -169,15 +181,19 @@ class TargetCurve:
         Same CSV format as ``from_csv``, but the resulting curve
         is only defined at the support points read from the file
         (no interpolation between them).
+
+        An optional third column ``weight`` sets the per-support-point
+        fitness weighting (default 1, clamped to ``MAX_WEIGHT``).
         """
 
-        input_angles, output_angles = _read_csv_points(
+        input_angles, output_angles, weights = _read_csv_points(
             path,
         )
 
         return cls.from_points_strict(
             tuple(input_angles),
             tuple(output_angles),
+            tuple(weights),
         )
 
     def evaluate(
@@ -237,6 +253,7 @@ class DiscreteTargetCurve:
         *,
         input_angles: tuple[float, ...],
         output_angles: tuple[float, ...],
+        weights: tuple[float, ...] | None = None,
     ) -> None:
 
         if len(input_angles) != len(
@@ -257,8 +274,30 @@ class DiscreteTargetCurve:
                 "input_angles must be sorted."
             )
 
+        if weights is None:
+            weights = tuple(
+                1.0 for _ in input_angles
+            )
+
+        if len(weights) != len(input_angles):
+            raise ValueError(
+                "weights must have the same length "
+                "as input_angles."
+            )
+
+        clamped: list[float] = []
+        for weight in weights:
+            if weight < 0.0:
+                raise ValueError(
+                    "weights must be non-negative."
+                )
+            clamped.append(
+                min(weight, MAX_WEIGHT)
+            )
+
         self._input_angles = input_angles
         self._output_angles = output_angles
+        self._weights = tuple(clamped)
 
     @property
     def input_angles(self) -> tuple[float, ...]:
@@ -271,6 +310,19 @@ class DiscreteTargetCurve:
         """Support point output angles."""
 
         return self._output_angles
+
+    @property
+    def weights(self) -> tuple[float, ...]:
+        """
+        Per-support-point fitness weighting.
+
+        Each weight multiplies the absolute error at its support
+        point in the weighted mean absolute error used by
+        ``CurveFitness``.  Weights are non-negative and clamped
+        to ``MAX_WEIGHT``.
+        """
+
+        return self._weights
 
     def evaluate(
         self,
@@ -362,14 +414,20 @@ class DiscreteTargetCurve:
 
 def _read_csv_points(
     path: str | Path,
-) -> tuple[list[float], list[float]]:
+) -> tuple[list[float], list[float], list[float]]:
     """
     Read input/output angle pairs (in degrees) from a CSV file
     and return them converted to radians.
+
+    An optional third column ``weight`` sets the per-support-point
+    fitness weighting; when it is absent every point is weighted
+    by 1.  Weights are read verbatim here (clamping to
+    ``MAX_WEIGHT`` happens in ``DiscreteTargetCurve``).
     """
 
     input_angles: list[float] = []
     output_angles: list[float] = []
+    weights: list[float] = []
 
     with open(
         path,
@@ -396,6 +454,11 @@ def _read_csv_points(
                 "'output_angle'."
             )
 
+        has_weights = (
+            reader.fieldnames is not None
+            and "weight" in reader.fieldnames
+        )
+
         for row in reader:
             input_angles.append(
                 radians(
@@ -409,4 +472,12 @@ def _read_csv_points(
                 )
             )
 
-        return input_angles, output_angles
+            if has_weights:
+                weight_raw = row["weight"]
+                weights.append(
+                    float(weight_raw) if weight_raw else 1.0
+                )
+            else:
+                weights.append(1.0)
+
+        return input_angles, output_angles, weights
