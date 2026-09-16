@@ -439,6 +439,36 @@ if engine.best_candidate is not None:
             if stage_result.blocked_at is not None:
                 print(f"    Blocked at: {math.degrees(stage_result.blocked_at):.1f}deg")
 
+    # -------------------------------------------------
+    # UEBERTRAGUNGSKURVE (erreichte Winkel) - comparison
+    # of the prescribed target output angles against the
+    # actually achieved output angles of the optimized
+    # mechanism, evaluated at the prescribed support
+    # points.  Only printed after a successful (non-blocking)
+    # evolution, when every stage produced a full output.
+    # -------------------------------------------------
+
+    print("\n" + "-" * 55)
+    print("UEBERTRAGUNGSKURVE (erreichte Winkel)")
+    print("-" * 55)
+
+    final_result = simulation_results[-1]
+    all_succeeded = all(r.success for r in simulation_results)
+    if (
+        all_succeeded
+        and len(final_result.output_angles) == len(target_input_angles_deg)
+    ):
+        print("input_angle,output_angle_target,output_angle_final")
+        for inp_deg, tgt_deg, out_rad in zip(
+            target_input_angles_deg,
+            target_output_angles_deg,
+            final_result.output_angles,
+        ):
+            out_deg = math.degrees(out_rad)
+            print(f"{inp_deg:g},{tgt_deg:.1f},{round(out_deg)}")
+    else:
+        print("  Simulation blockiert - keine vollstaendige Uebertragungskurve.")
+
     # Solver statistics
     print("\n" + "=" * 80)
     print("SOLVER STATISTICS")
