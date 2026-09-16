@@ -91,33 +91,40 @@ def partial_curve_error(
         return 0.0
 
     total = 0.0
-    for target_output, actual_output in pairs:
-        total += abs(actual_output - target_output)
+    weight_total = 0.0
+    for target_output, actual_output, weight in pairs:
+        total += weight * abs(actual_output - target_output)
+        weight_total += weight
 
-    return total / len(pairs)
+    if weight_total <= 0.0:
+        return 0.0
+
+    return total / weight_total
 
 
 def _matched_pairs(
     target: TargetCurve,
     input_angles: tuple[float, ...],
     output_angles: tuple[float, ...],
-) -> list[tuple[float, float]]:
+) -> list[tuple[float, float, float]]:
     """
-    Pairs of (target_output, actual_output) used for comparison.
+    Triples of (target_output, actual_output, weight) used for
+    comparison.
 
     For a regular ``TargetCurve`` (defined everywhere) every
     simulated input angle is compared, sampling the target at the
-    simulated input angles exactly as before.
+    simulated input angles exactly as before; the weight is 1.
 
     For a ``DiscreteTargetCurve`` only the input angles that
     coincide (within tolerance) with a support point contribute;
     the target output is taken directly from that support point,
-    so no interpolation between support points is ever used.
+    so no interpolation between support points is ever used.  The
+    weight is the support point's fitness weight (default 1).
     """
 
     if isinstance(target, DiscreteTargetCurve):
 
-        pairs: list[tuple[float, float]] = []
+        pairs: list[tuple[float, float, float]] = []
 
         for input_angle, actual_output in zip(
             input_angles,
@@ -132,6 +139,7 @@ def _matched_pairs(
                 (
                     target.output_angles[index],
                     actual_output,
+                    target.weights[index],
                 )
             )
 
@@ -140,7 +148,7 @@ def _matched_pairs(
     target_curve = target.sample(input_angles)
 
     return [
-        (target_output, actual_output)
+        (target_output, actual_output, 1.0)
         for target_output, actual_output in zip(
             target_curve.output_angles,
             output_angles,
@@ -368,10 +376,15 @@ class CurveFitness(FitnessFunction):
                 return PENALTY_INSUFFICIENT_POINTS
 
             total = 0.0
-            for target_output, actual_output in pairs:
-                total += abs(actual_output - target_output)
+            weight_total = 0.0
+            for target_output, actual_output, weight in pairs:
+                total += weight * abs(actual_output - target_output)
+                weight_total += weight
 
-            curve_fitness = total / len(pairs)
+            if weight_total <= 0.0:
+                return PENALTY_INSUFFICIENT_POINTS
+
+            curve_fitness = total / weight_total
 
             logger.debug(
                 "Non-blocking discrete solution: fitness=%s",
@@ -424,10 +437,15 @@ class CurveFitness(FitnessFunction):
                 return PENALTY_INSUFFICIENT_POINTS
 
             total = 0.0
-            for target_output, actual_output in pairs:
-                total += abs(actual_output - target_output)
+            weight_total = 0.0
+            for target_output, actual_output, weight in pairs:
+                total += weight * abs(actual_output - target_output)
+                weight_total += weight
 
-            return total / len(pairs)
+            if weight_total <= 0.0:
+                return PENALTY_INSUFFICIENT_POINTS
+
+            return total / weight_total
 
         key = transfer_curve.input_angles
         if key not in self._cache:

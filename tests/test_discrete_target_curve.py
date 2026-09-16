@@ -367,3 +367,220 @@ def test_non_blocking_discrete_fitness_below_penalty_base():
     )
 
     assert fitness.evaluate((result,)) < PENALTY_BASE
+
+
+# ---------------------------------------------------------------------------
+# Per-support-point weighting
+# ---------------------------------------------------------------------------
+
+def test_weights_default_to_one():
+    """
+    A DiscreteTargetCurve constructed without weights gives every
+    support point a weight of 1.
+    """
+    curve = make_discrete_target()
+    assert curve.weights == tuple(
+        1.0 for _ in SUPPORT_INPUTS_DEG
+    )
+
+
+def test_weights_are_stored():
+    weights = tuple(
+        float(i) for i in range(len(SUPPORT_INPUTS_DEG))
+    )
+    curve = TargetCurve.from_points_strict(
+        support_inputs_rad(),
+        support_outputs_rad(),
+        weights=weights,
+    )
+    assert curve.weights == weights
+
+
+def test_weights_length_must_match():
+    with pytest.raises(ValueError):
+        TargetCurve.from_points_strict(
+            support_inputs_rad(),
+            support_outputs_rad(),
+            weights=(1.0, 2.0),
+        )
+
+
+def test_weights_must_be_non_negative():
+    weights = tuple(
+        -1.0 for _ in SUPPORT_INPUTS_DEG
+    )
+    with pytest.raises(ValueError):
+        TargetCurve.from_points_strict(
+            support_inputs_rad(),
+            support_outputs_rad(),
+            weights=weights,
+        )
+
+
+def test_weights_clamped_to_max():
+    from analysis.target_curve import MAX_WEIGHT
+
+    weights = tuple(
+        1000.0 for _ in SUPPORT_INPUTS_DEG
+    )
+    curve = TargetCurve.from_points_strict(
+        support_inputs_rad(),
+        support_outputs_rad(),
+        weights=weights,
+    )
+    assert curve.weights == tuple(
+        MAX_WEIGHT for _ in SUPPORT_INPUTS_DEG
+    )
+
+
+def test_from_csv_strict_reads_optional_weight_column(tmp_path):
+    csv_file = tmp_path / "curve.csv"
+    lines = ["input_angle,output_angle,weight"]
+    for inp, out in zip(
+        SUPPORT_INPUTS_DEG,
+        SUPPORT_OUTPUTS_DEG,
+    ):
+        lines.append(f"{inp},{out},2")
+    csv_file.write_text(
+        "\n".join(lines) + "\n",
+        encoding="utf-8",
+    )
+    curve = TargetCurve.from_csv_strict(csv_file)
+    assert isinstance(curve, DiscreteTargetCurve)
+    assert curve.weights == tuple(
+        2.0 for _ in SUPPORT_INPUTS_DEG
+    )
+
+
+def test_from_csv_strict_defaults_weight_to_one_without_column(tmp_path):
+    csv_file = tmp_path / "curve.csv"
+    lines = ["input_angle,output_angle"]
+    for inp, out in zip(
+        SUPPORT_INPUTS_DEG,
+        SUPPORT_OUTPUTS_DEG,
+    ):
+        lines.append(f"{inp},{out}")
+    csv_file.write_text(
+        "\n".join(lines) + "\n",
+        encoding="utf-8",
+    )
+    curve = TargetCurve.from_csv_strict(csv_file)
+    assert curve.weights == tuple(
+        1.0 for _ in SUPPORT_INPUTS_DEG
+    )
+
+
+def test_weighted_fitness_is_weighted_mean_absolute_error():
+    """
+    With a single high-weight support point the weighted mean
+    absolute error equals the deviation at that point.
+    """
+    weights = [1.0] * len(SUPPORT_INPUTS_DEG)
+    weights[3] = 10.0  # high weight at the 4th support point
+    curve = TargetCurve.from_points_strict(
+        support_inputs_rad(),
+        support_outputs_rad(),
+        weights=tuple(weights),
+    )
+    fitness = CurveFitness(target_curve=curve)
+    outputs = list(support_outputs_rad())
+    deviation = math.radians(5.0)
+    outputs[3] += deviation
+    result = SimulationResult(
+        input_angles=support_inputs_rad(),
+        output_angles=tuple(outputs),
+        success=True,
+    )
+    weight_total = sum(weights)
+    expected = (10.0 * deviation) / weight_total
+    assert math.isclose(
+        fitness.evaluate((result,)),
+        expected,
+        rel_tol=1e-12,
+    )
+
+
+def test_weighted_fitness_call_is_weighted_mean_absolute_error():
+    weights = [1.0] * len(SUPPORT_INPUTS_DEG)
+    weights[5] = 4.0
+    curve = TargetCurve.from_points_strict(
+        support_inputs_rad(),
+        support_outputs_rad(),
+        weights=tuple(weights),
+    )
+    fitness = CurveFitness(target_curve=curve)
+    outputs = list(support_outputs_rad())
+    deviation = math.radians(4.0)
+    outputs[5] += deviation
+    transfer = TransferCurve(
+        input_angles=support_inputs_rad(),
+        output_angles=tuple(outputs),
+    )
+    weight_total = sum(weights)
+    expected = (4.0 * deviation) / weight_total
+    assert math.isclose(
+        fitness(transfer),
+        expected,
+        rel_tol=1e-12,
+    )
+
+
+def test_weighted_partial_curve_error_is_weighted():
+    weights = [1.0] * len(SUPPORT_INPUTS_DEG)
+    weights[0] = 3.0
+    weights[2] = 2.0
+    target = TargetCurve.from_points_strict(
+        support_inputs_rad(),
+        support_outputs_rad(),
+        weights=tuple(weights),
+    )
+    inputs = (
+        math.radians(-50.0),
+        math.radians(-30.0),
+    )
+    outputs = (
+        math.radians(61.0),  # 1deg off at support 0 (weight 3)
+        math.radians(70.0),  # 2deg off at support 2 (weight 2)
+    )
+    error = partial_curve_error(
+        target=target,
+        input_angles=inputs,
+        output_angles=outputs,
+    )
+    weight_total = 3.0 + 2.0
+    expected = (
+        3.0 * math.radians(1.0) + 2.0 * math.radians(2.0)
+    ) / weight_total
+    assert math.isclose(
+        error,
+        expected,
+        rel_tol=1e-12,
+    )
+
+
+def test_zero_weight_support_point_is_ignored_in_fitness():
+    """
+    A support point with weight 0 does not contribute to the
+    weighted mean absolute error.
+    """
+    weights = [1.0] * len(SUPPORT_INPUTS_DEG)
+    weights[3] = 0.0
+    curve = TargetCurve.from_points_strict(
+        support_inputs_rad(),
+        support_outputs_rad(),
+        weights=tuple(weights),
+    )
+    fitness = CurveFitness(target_curve=curve)
+    outputs = list(support_outputs_rad())
+    deviation = math.radians(5.0)
+    outputs[3] += deviation  # large deviation, but weight 0
+    result = SimulationResult(
+        input_angles=support_inputs_rad(),
+        output_angles=tuple(outputs),
+        success=True,
+    )
+    assert math.isclose(
+        fitness.evaluate((result,)),
+        0.0,
+        abs_tol=1e-12,
+    )
