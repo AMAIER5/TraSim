@@ -41,3 +41,6 @@ Thumbs.db
 .cache/
 logs/
 *.log
+
+# Generated visualization output
+examples/simulation_result.html
