@@ -66,6 +66,25 @@ def example_coupled_csv(tmp_path):
     return path
 
 @pytest.fixture
+def example_coupled_drive_csv(tmp_path):
+    """
+    Create a mechanism with a coupled lever that drives
+    a following stage (not a pure chain).
+    All angle values are in DEGREES.
+    """
+    path = tmp_path / "coupled_drive.csv"
+    path.write_text(
+        """id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,driver,coupled
+1,50,150,50,60,120,90,0,0,0,0,0,1,,
+2,50,150,60,60,120,90,100,0,0,0,0,1,1,
+3,50,150,70,60,120,90,100,0,100,0,0,1,,2
+4,50,150,70,60,120,90,200,0,100,0,0,1,3,
+""",
+        encoding="utf-8",
+    )
+    return path
+
+@pytest.fixture
 def simple_stage_csv(tmp_path):
     """
     Create a simple two lever mechanism.

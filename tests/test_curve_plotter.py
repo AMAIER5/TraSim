@@ -161,6 +161,73 @@ def test_states_from_results_three_positions(
     )
 
 
+def test_states_from_results_coupled_levers(
+    example_coupled_drive_csv,
+):
+    definition = CsvReader.read_mechanism(
+        example_coupled_drive_csv,
+    )
+    assert (
+        definition.levers[2].coupled == 2
+    )
+    assert (
+        definition.levers[3].driver == 3
+    )
+    mechanism = CsvMechanismBuilder(
+        definition,
+    ).build(ParameterSet(()))
+    assert len(mechanism.stages) == 2
+    motion = PointMotion(
+        angles=(
+            math.radians(70),
+            math.radians(90),
+            math.radians(110),
+        ),
+    )
+    simulator = MechanismSimulator(
+        motion=motion,
+        stage_simulator=StageSimulator(),
+    )
+    results = simulator.simulate(mechanism)
+    assert all(
+        result.success for result in results
+    )
+    min_state, mid_state, max_state = (
+        mechanism_states_from_results(
+            mechanism,
+            results,
+        )
+    )
+    samples = {
+        min_state: 0,
+        mid_state: 1,
+        max_state: 2,
+    }
+    for state, sample in samples.items():
+        assert len(state.levers) == 4
+        assert state.levers[1].angle == (
+            pytest.approx(
+                state.levers[2].angle,
+            )
+        )
+        assert state.levers[3].angle == (
+            pytest.approx(
+                results[1].output_angles[
+                    sample
+                ],
+            )
+        )
+    assert math.degrees(
+        min_state.levers[3].angle,
+    ) != pytest.approx(90)
+    assert math.degrees(
+        mid_state.levers[3].angle,
+    ) == pytest.approx(90)
+    assert math.degrees(
+        max_state.levers[3].angle,
+    ) != pytest.approx(90)
+
+
 def test_states_from_results_requires_samples(
     example_mechanism_csv,
 ):
