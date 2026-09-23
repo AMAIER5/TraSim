@@ -557,10 +557,13 @@ def mechanism_states_from_results(
     complete stage simulation.
 
     ``results`` is the tuple returned by
-    ``MechanismSimulator.simulate`` for a chain mechanism:
-    stage ``i`` connects lever ``i`` with lever ``i + 1``,
-    so the output angles of stage ``i`` are the lever
-    angles of lever ``i + 1``.  The three positions are
+    ``MechanismSimulator.simulate``:  the input lever of
+    every stage is drawn at the stage's input angle and
+    the output lever at the stage's output angle, so the
+    mapping also works for mechanisms that are not a
+    pure chain (for example a coupled lever that drives
+    a following stage).  Levers that appear in no stage
+    keep their reference angle.  The three positions are
     taken from the first sample, the sample closest to
     the middle of the drive range and the last sample
     of the simulation.
@@ -590,6 +593,15 @@ def mechanism_states_from_results(
             input_angles[index] - middle_angle
         ),
     )
+    lever_ids = {
+        id(entry.lever): index + 1
+        for index, entry in enumerate(
+            _ordered_levers(mechanism),
+        )
+    }
+    drive_id = lever_ids[
+        id(mechanism.stages[0].input_lever)
+    ]
     states: list[MechanismPlotState] = []
     for label, sample in (
         (position_labels[0], first),
@@ -597,26 +609,35 @@ def mechanism_states_from_results(
         (position_labels[2], last),
     ):
         lever_angles: dict[int, float] = {}
-        for stage_index, result in enumerate(
+        for stage, result in zip(
+            mechanism.stages,
             results,
         ):
-            if stage_index == 0:
-                lever_angles[1] = (
-                    result.input_angles[
-                        sample
-                    ]
-                )
-            lever_angles[
-                stage_index + 2
-            ] = result.output_angles[
-                sample
+            input_id = lever_ids[
+                id(stage.input_lever)
             ]
+            output_id = lever_ids[
+                id(stage.output_lever)
+            ]
+            lever_angles.setdefault(
+                input_id,
+                result.input_angles[
+                    sample
+                ],
+            )
+            lever_angles[output_id] = (
+                result.output_angles[
+                    sample
+                ]
+            )
         states.append(
             MechanismPlotState.from_mechanism(
                 mechanism,
                 lever_angles=lever_angles,
                 position_label=label,
-                position_angle=lever_angles[1],
+                position_angle=(
+                    lever_angles[drive_id]
+                ),
             ),
         )
     return (
