@@ -13,7 +13,11 @@ Supports:
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Iterator
+from concurrent.futures import (
+    ProcessPoolExecutor,
+)
 
 from optimization.parameter_set import (
     ParameterSet,
@@ -32,6 +36,85 @@ from optimization.selection import (
 )
 
 
+_WORKER_EVALUATOR: Callable[
+    [ParameterSet],
+    float,
+] | None = None
+
+_WORKER_STATS_PROVIDER: (
+    Callable[[], dict[str, int]] | None
+) = None
+
+
+def _worker_initializer(
+    evaluator_factory: Callable[
+        [],
+        Callable[[ParameterSet], float],
+    ],
+    stats_provider: Callable[
+        [],
+        dict[str, int]
+    ] | None,
+) -> None:
+    """
+    Initialize one worker process.
+
+    Builds the evaluator (builder/simulator/
+    fitness) ONCE per process so that every
+    evaluation reuses the already initialized
+    infrastructure instead of rebuilding it.
+    """
+
+    global _WORKER_EVALUATOR, _WORKER_STATS_PROVIDER
+
+    _WORKER_EVALUATOR = (
+        evaluator_factory()
+    )
+
+    _WORKER_STATS_PROVIDER = (
+        stats_provider
+    )
+
+
+def _evaluate_candidate(
+    candidate: ParameterSet,
+) -> float:
+    """
+    Evaluate one candidate inside a worker
+    process using the process-local evaluator.
+    """
+
+    if _WORKER_EVALUATOR is None:
+        raise RuntimeError(
+            "worker evaluator not initialized"
+        )
+
+    return _WORKER_EVALUATOR(
+        candidate
+    )
+
+
+def _worker_stats(
+    process_index: int,
+) -> tuple[int, dict[str, int]]:
+    """
+    Collect the cumulative stats of one worker
+    process, tagged with the process id so the
+    main process can de-duplicate answers.
+    """
+
+    if _WORKER_STATS_PROVIDER is None:
+        return (
+            os.getpid(),
+            {},
+        )
+
+    return (
+        os.getpid(),
+        _WORKER_STATS_PROVIDER(),
+    )
+
+
 class EvolutionEngine:
     """
     Executes evolutionary optimization.
@@ -46,6 +129,30 @@ class EvolutionEngine:
 
     - a target fitness is reached
     - no relevant improvement occurs
+
+    Parallel evaluation
+    -------------------
+
+    With ``workers=1`` (default) the population is
+    evaluated sequentially and ``evaluator`` is
+    used directly.  With ``workers > 1`` a process
+    pool evaluates ``evaluate_population()`` via
+    an order-preserving ``pool.map`` so the score
+    mapping stays DETERMINISTIC and identical to
+    the sequential mode.
+
+    The worker processes build their own evaluator
+    through ``evaluator_factory`` (builder/simulator/
+    fitness) ONCE per process via the pool
+    initializer.  The main-process ``evaluator`` is
+    not used in parallel mode.
+
+    Statistics collected inside worker processes
+    (e.g. solver statistics) are NOT visible in the
+    main process automatically.  An optional
+    ``stats_provider`` can expose them; its
+    per-worker cumulative values can be retrieved
+    aggregated with ``collect_worker_stats()``.
     """
 
     def __init__(
@@ -55,7 +162,7 @@ class EvolutionEngine:
         evaluator: Callable[
             [ParameterSet],
             float,
-        ],
+        ] | None = None,
         selection_count: int,
         reproduction: Reproduction,
         target_fitness: float | None = None,
@@ -63,7 +170,53 @@ class EvolutionEngine:
         stagnation_limit: int | None = None,
         stagnation_tolerance: float = 1e-6,
         adaptive_strength=None,
+        workers: int = 1,
+        evaluator_factory: Callable[
+            [],
+            Callable[[ParameterSet], float],
+        ] | None = None,
+        stats_provider: Callable[
+            [],
+            dict[str, int]
+        ] | None = None,
     ) -> None:
+
+        if workers < 1:
+            raise ValueError(
+                "workers must be at least 1"
+            )
+
+        if (
+            workers > 1
+            and
+            evaluator_factory is None
+        ):
+            raise ValueError(
+                "workers > 1 requires an "
+                "evaluator_factory"
+            )
+
+        if (
+            workers == 1
+            and
+            evaluator is None
+        ):
+            raise ValueError(
+                "sequential mode (workers == 1) "
+                "requires an evaluator"
+            )
+
+        self.workers = workers
+
+        self.evaluator_factory = (
+            evaluator_factory
+        )
+
+        self.stats_provider = (
+            stats_provider
+        )
+
+        self._pool = None
 
         self.population = population
 
@@ -125,14 +278,131 @@ class EvolutionEngine:
     ) -> None:
         """
         Evaluate current population.
+
+        In parallel mode (``workers > 1``) the
+        candidates are evaluated by a process pool
+        using ``pool.map``, which PRESERVES the input
+        order.  The resulting score mapping is
+        therefore identical to the sequential mode
+        and the optimization stays deterministic.
         """
 
+        candidates = (
+            self.population.members
+        )
+
+        if self.workers == 1:
+
+            self.scores = {
+                candidate:
+                    self.evaluator(candidate)
+                for candidate
+                in candidates
+            }
+
+            return
+
+        pool = self._ensure_pool()
+
+        scores = pool.map(
+            _evaluate_candidate,
+            candidates,
+        )
+
         self.scores = {
-            candidate:
-                self.evaluator(candidate)
-            for candidate
-            in self.population
+            candidate: score
+            for candidate, score
+            in zip(
+                candidates,
+                scores,
+            )
         }
+
+    def _ensure_pool(
+        self,
+    ) -> ProcessPoolExecutor:
+        """
+        Lazily create the worker pool so the worker
+        processes (and their evaluator built by the
+        initializer) are reused across generations
+        instead of being recreated per evaluation.
+        """
+
+        if self._pool is None:
+
+            self._pool = (
+                ProcessPoolExecutor(
+                    max_workers=self.workers,
+                    initializer=(
+                        _worker_initializer
+                    ),
+                    initargs=(
+                        self.evaluator_factory,
+                        self.stats_provider,
+                    ),
+                )
+            )
+
+        return self._pool
+
+    def collect_worker_stats(
+        self,
+    ) -> dict[str, int]:
+        """
+        Aggregate cumulative worker statistics.
+
+        Asks every worker process for the stats
+        reported by ``stats_provider`` and sums the
+        per-process values.  Answers are de-duplicated
+        by process id so a worker answering more than
+        once is not counted twice.
+
+        Returns an empty mapping in sequential mode
+        (``workers == 1``): in that mode all stats live
+        in the main process anyway.
+        """
+
+        if self._pool is None:
+            return {}
+
+        results = self._pool.map(
+            _worker_stats,
+            range(
+                4 * self.workers
+            ),
+            chunksize=1,
+        )
+
+        per_process: dict[int, dict[str, int]] = {}
+
+        for process_id, stats in results:
+            per_process[process_id] = stats
+
+        totals: dict[str, int] = {}
+
+        for stats in per_process.values():
+            for key, value in stats.items():
+                totals[key] = (
+                    totals.get(key, 0)
+                    +
+                    value
+                )
+
+        return totals
+
+    def close(
+        self,
+    ) -> None:
+        """
+        Shut down the worker pool.
+
+        Sequential engines have no pool; the call is
+        a no-op for them.
+        """
+
+        if self._pool is not None:
+            self._pool.shutdown()
+            self._pool = None
 
     def update_best(
         self,

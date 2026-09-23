@@ -276,3 +276,249 @@ def test_run_evaluates_initial_population():
 
     # After the first iteration, scores must be populated.
     assert len(engine.scores) >= 1
+
+# ---------------------------------------------------------------------------
+# workers parameter (parallel evaluation, default sequential)
+# ---------------------------------------------------------------------------
+
+def _simple_evaluator(
+    candidate: ParameterSet,
+) -> float:
+    return candidate.get("length").value
+
+
+def _simple_evaluator_factory():
+    return _simple_evaluator
+
+
+def test_workers_default_is_sequential():
+    engine = create_engine(
+        Population(
+            (
+                create_candidate(50.0),
+                create_candidate(20.0),
+            )
+        )
+    )
+
+    assert engine.workers == 1
+    assert engine._pool is None
+
+
+def test_workers_invalid_counts_rejected():
+    population = Population(
+        (
+            create_candidate(50.0),
+        )
+    )
+
+    try:
+        EvolutionEngine(
+            population=population,
+            evaluator=_simple_evaluator,
+            selection_count=1,
+            reproduction=Reproduction(
+                mutation=ParameterMutation(
+                    random_generator=random.Random(1)
+                )
+            ),
+            workers=0,
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("workers=0 must raise ValueError")
+
+    try:
+        EvolutionEngine(
+            population=population,
+            evaluator=_simple_evaluator,
+            selection_count=1,
+            reproduction=Reproduction(
+                mutation=ParameterMutation(
+                    random_generator=random.Random(1)
+                )
+            ),
+            workers=2,
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(
+            "workers=2 without evaluator_factory must raise ValueError"
+        )
+
+
+def test_parallel_scores_match_sequential():
+    population = Population(
+        (
+            create_candidate(50.0),
+            create_candidate(20.0),
+            create_candidate(70.0),
+        )
+    )
+
+    sequential = EvolutionEngine(
+        population=population,
+        evaluator=_simple_evaluator,
+        selection_count=1,
+        reproduction=Reproduction(
+            mutation=ParameterMutation(
+                random_generator=random.Random(1)
+            )
+        ),
+    )
+
+    parallel = EvolutionEngine(
+        population=population,
+        selection_count=1,
+        reproduction=Reproduction(
+            mutation=ParameterMutation(
+                random_generator=random.Random(1)
+            )
+        ),
+        workers=2,
+        evaluator_factory=_simple_evaluator_factory,
+    )
+
+    try:
+        sequential.evaluate_population()
+        parallel.evaluate_population()
+
+        assert parallel.scores == sequential.scores
+    finally:
+        parallel.close()
+
+
+def test_parallel_pool_is_reused_across_calls():
+    engine = EvolutionEngine(
+        population=Population(
+            (
+                create_candidate(50.0),
+                create_candidate(20.0),
+            )
+        ),
+        selection_count=1,
+        reproduction=Reproduction(
+            mutation=ParameterMutation(
+                random_generator=random.Random(1)
+            )
+        ),
+        workers=2,
+        evaluator_factory=_simple_evaluator_factory,
+    )
+
+    try:
+        engine.evaluate_population()
+        first_pool = engine._pool
+
+        engine.evaluate_population()
+        second_pool = engine._pool
+
+        assert first_pool is not None
+        assert first_pool is second_pool
+    finally:
+        engine.close()
+
+    assert engine._pool is None
+
+
+def test_parallel_run_deterministic():
+    """Parallel and sequential runs produce the
+    same final best candidate (determinism via
+    order-preserving pool.map)."""
+
+    def build_engine(**kwargs):
+        return EvolutionEngine(
+            population=Population(
+                (
+                    create_candidate(90.0),
+                    create_candidate(10.0),
+                )
+            ),
+            selection_count=1,
+            reproduction=Reproduction(
+                mutation=ParameterMutation(
+                    random_generator=random.Random(42),
+                )
+            ),
+            max_generations=3,
+            **kwargs,
+        )
+
+    sequential = build_engine(
+        evaluator=_simple_evaluator,
+    )
+
+    parallel = build_engine(
+        workers=2,
+        evaluator_factory=_simple_evaluator_factory,
+    )
+
+    try:
+        list(sequential.run(children_count=2))
+        list(parallel.run(children_count=2))
+
+        assert (
+            parallel.best_candidate
+            == sequential.best_candidate
+        )
+        assert (
+            parallel.best_score
+            == sequential.best_score
+        )
+    finally:
+        parallel.close()
+
+
+def test_worker_stats_aggregated():
+    """Worker stats are collected from every worker
+    process exactly once (de-duplicated by pid)."""
+
+    def stats_provider() -> dict[str, int]:
+        return {"worker_marker": 1}
+
+    engine = EvolutionEngine(
+        population=Population(
+            (
+                create_candidate(50.0),
+                create_candidate(20.0),
+            )
+        ),
+        selection_count=1,
+        reproduction=Reproduction(
+            mutation=ParameterMutation(
+                random_generator=random.Random(1)
+            )
+        ),
+        workers=2,
+        evaluator_factory=_simple_evaluator_factory,
+        stats_provider=stats_provider,
+    )
+
+    try:
+        engine.evaluate_population()
+
+        stats = engine.collect_worker_stats()
+
+        assert 1 <= stats.get("worker_marker", 0) <= 2
+        assert engine.scores == {
+            create_candidate(50.0): 50.0,
+            create_candidate(20.0): 20.0,
+        }
+    finally:
+        engine.close()
+
+
+def test_collect_worker_stats_sequential_returns_empty():
+    engine = create_engine(
+        Population(
+            (
+                create_candidate(50.0),
+            )
+        )
+    )
+
+    engine.evaluate_population()
+
+    assert engine.collect_worker_stats() == {}
