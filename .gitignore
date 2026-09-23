@@ -44,3 +44,4 @@ logs/
 
 # Generated visualization output
 examples/simulation_result.html
+examples/mechanism_optimized.csv

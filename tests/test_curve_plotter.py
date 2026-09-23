@@ -178,9 +178,6 @@ def test_states_from_results_requires_samples(
 
 def test_plotter_build_data_degrees():
     plotter = CurvePlotter(title="Test")
-    plotter.set_input_curve(
-        (math.radians(0), math.radians(90)),
-    )
     plotter.set_target_curve(
         TargetCurve.from_points(
             (math.radians(0), math.radians(90)),
@@ -193,13 +190,8 @@ def test_plotter_build_data_degrees():
     )
     data = plotter.build_data()
     assert data["title"] == "Test"
-    assert len(data["curves"]) == 3
-    input_curve = data["curves"][0]
-    assert input_curve["input_angles"] == [
-        0.0,
-        90.0,
-    ]
-    target_curve = data["curves"][1]
+    assert len(data["curves"]) == 2
+    target_curve = data["curves"][0]
     assert target_curve["label"] == (
         "Soll-Ausgangskurve"
     )
@@ -207,10 +199,14 @@ def test_plotter_build_data_degrees():
         10.0,
         80.0,
     ]
-    actual_curve = data["curves"][2]
+    actual_curve = data["curves"][1]
     assert actual_curve["label"] == (
         "Ist-Ausgangskurve"
     )
+    assert actual_curve["output_angles"] == [
+        pytest.approx(12.0),
+        pytest.approx(82.0),
+    ]
 
 
 def test_target_input_angles_extracts_supports():
@@ -247,8 +243,11 @@ def test_set_target_curve_with_explicit_points():
 
 def test_build_html_embeds_json():
     plotter = CurvePlotter(title="Test")
-    plotter.set_input_curve(
-        (math.radians(0), math.radians(90)),
+    plotter.set_target_curve(
+        TargetCurve.from_points(
+            (math.radians(0), math.radians(90)),
+            (math.radians(10), math.radians(80)),
+        ),
     )
     html = plotter.build_html()
     match = re.search(
@@ -268,8 +267,11 @@ def test_build_html_embeds_json():
 def test_write_creates_file(tmp_path):
     output = tmp_path / "result.html"
     plotter = CurvePlotter(title="Test")
-    plotter.set_input_curve(
-        (math.radians(0), math.radians(90)),
+    plotter.set_target_curve(
+        TargetCurve.from_points(
+            (math.radians(0), math.radians(90)),
+            (math.radians(10), math.radians(80)),
+        ),
     )
     path = plotter.write(output)
     assert path == output
@@ -316,3 +318,61 @@ def test_lever_colors_cycled(
         for lever in state.levers
     ]
     assert len(set(colors)) == 4
+
+
+def test_mechanism_state_contains_rods(
+    example_mechanism_csv,
+):
+    mechanism, _ = _build_mechanism(
+        example_mechanism_csv,
+    )
+    state = (
+        MechanismPlotState.from_mechanism(
+            mechanism,
+            lever_angles={},
+        )
+    )
+    assert len(state.rods) == 3
+    assert state.rods[0].name == "Koppelstange 1"
+    for rod in state.rods:
+        assert rod.length > 0
+
+
+def test_rods_connect_lever_endpoints(
+    example_mechanism_csv,
+):
+    mechanism, _ = _build_mechanism(
+        example_mechanism_csv,
+    )
+    state = (
+        MechanismPlotState.from_mechanism(
+            mechanism,
+            lever_angles={},
+        )
+    )
+    levers = state.levers
+    rods = state.rods
+    assert rods[0].start == levers[0].end
+    assert rods[0].end == levers[1].end
+    assert rods[1].start == levers[1].end
+    assert rods[1].end == levers[2].end
+
+
+def test_build_data_contains_rods(
+    example_mechanism_csv,
+):
+    mechanism, _ = _build_mechanism(
+        example_mechanism_csv,
+    )
+    plotter = CurvePlotter()
+    plotter.add_mechanism_state(
+        MechanismPlotState.from_mechanism(
+            mechanism,
+            lever_angles={},
+        )
+    )
+    data = plotter.build_data()
+    rods = data["mechanism_states"][0]["rods"]
+    assert len(rods) == 3
+    assert rods[0]["name"] == "Koppelstange 1"
+    assert "length" in rods[0]

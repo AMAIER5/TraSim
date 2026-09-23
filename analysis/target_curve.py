@@ -16,6 +16,9 @@ from pathlib import Path
 from analysis.transfer_curve import (
     TransferCurve,
 )
+from mechanism_io.csv_convention import (
+    detect_convention,
+)
 
 
 # Tolerance for matching a queried input angle against an exact
@@ -429,13 +432,17 @@ def _read_csv_points(
     output_angles: list[float] = []
     weights: list[float] = []
 
+    convention = detect_convention(path)
     with open(
         path,
         newline="",
         encoding="utf-8",
     ) as file:
 
-        reader = csv.DictReader(file)
+        reader = csv.DictReader(
+            file,
+            delimiter=convention.delimiter,
+        )
 
         required = {
             "input_angle",
@@ -475,7 +482,11 @@ def _read_csv_points(
             if has_weights:
                 weight_raw = row["weight"]
                 weights.append(
-                    float(weight_raw) if weight_raw else 1.0
+                    convention.parse_float(
+                        weight_raw
+                    )
+                    if weight_raw
+                    else 1.0
                 )
             else:
                 weights.append(1.0)

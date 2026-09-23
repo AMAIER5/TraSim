@@ -12,6 +12,10 @@ import csv
 import math
 from pathlib import Path
 
+from mechanism_io.csv_convention import (
+    CsvConvention,
+    INTERNATIONAL,
+)
 from model.mechanism_definition import MechanismDefinition
 from model.simulation_config import SimulationConfig
 
@@ -20,24 +24,37 @@ class CsvWriter:
     CSV writer for simulation and mechanism definitions.
 
     Note: All angle values are written as DEGREES.
+
+    By default files are written in the international
+    convention (comma as column separator, dot as
+    decimal separator).  Pass ``convention=GERMAN``
+    to write files in the German convention
+    (semicolon as column separator, comma as decimal
+    separator).
     """
 
     @staticmethod
     def write_simulation(
         config: SimulationConfig,
         path: str | Path,
+        *,
+        convention: CsvConvention = INTERNATIONAL,
     ) -> None:
         """
         Write simulation configuration to CSV.
 
-        All angle values (motion_start, motion_end, motion_step) are written in DEGREES.
+        All angle values (motion_start, motion_end,
+        motion_step) are written in DEGREES.
         """
         with Path(path).open(
             "w",
             newline="",
             encoding="utf-8",
         ) as file:
-            writer = csv.writer(file)
+            writer = csv.writer(
+                file,
+                delimiter=convention.delimiter,
+            )
 
             writer.writerow(
                 (
@@ -50,56 +67,80 @@ class CsvWriter:
             writer.writerow(
                 (
                     "population_size",
-                    config.population_size,
+                    convention.format_float(
+                        config.population_size
+                    ),
                 )
             )
             writer.writerow(
                 (
                     "children_per_generation",
-                    config.children_per_generation,
+                    convention.format_float(
+                        config.children_per_generation,
+                    ),
                 )
             )
             writer.writerow(
                 (
                     "generations",
-                    config.generations,
+                    convention.format_float(
+                        config.generations
+                    ),
                 )
             )
             writer.writerow(
                 (
                     "target_error",
-                    config.target_error,
+                    convention.format_float(
+                        config.target_error
+                    ),
                 )
             )
             writer.writerow(
                 (
                     "mutation_rate",
-                    config.mutation_rate,
+                    convention.format_float(
+                        config.mutation_rate
+                    ),
                 )
             )
             writer.writerow(
                 (
                     "elite_size",
-                    config.elite_size,
+                    convention.format_float(
+                        config.elite_size
+                    ),
                 )
             )
             # Convert motion angles from radians to degrees
             writer.writerow(
                 (
                     "motion_start",
-                    math.degrees(config.motion_start),
+                    convention.format_float(
+                        math.degrees(
+                            config.motion_start
+                        )
+                    ),
                 )
             )
             writer.writerow(
                 (
                     "motion_end",
-                    math.degrees(config.motion_end),
+                    convention.format_float(
+                        math.degrees(
+                            config.motion_end
+                        )
+                    ),
                 )
             )
             writer.writerow(
                 (
                     "motion_step",
-                    math.degrees(config.motion_step),
+                    convention.format_float(
+                        math.degrees(
+                            config.motion_step
+                        )
+                    ),
                 )
             )
 
@@ -107,18 +148,24 @@ class CsvWriter:
     def write_mechanism(
         mechanism: MechanismDefinition,
         path: str | Path,
+        *,
+        convention: CsvConvention = INTERNATIONAL,
     ) -> None:
         """
         Write mechanism definition to CSV.
 
-        All angle values (angle_min, angle_max, angle_start) are written in DEGREES.
+        All angle values (angle_min, angle_max,
+        angle_start) are written in DEGREES.
         """
         with Path(path).open(
             "w",
             newline="",
             encoding="utf-8",
         ) as file:
-            writer = csv.writer(file)
+            writer = csv.writer(
+                file,
+                delimiter=convention.delimiter,
+            )
 
             writer.writerow(
                 (
@@ -151,22 +198,63 @@ class CsvWriter:
                 writer.writerow(
                     (
                         lever.id,
-                        lever.length_min,
-                        lever.length_max,
-                        lever.length_start,
-                        math.degrees(lever.angle_min),
-                        math.degrees(lever.angle_max),
-                        math.degrees(lever.angle_start),
-                        lever.pivot.x,
-                        lever.pivot.y,
-                        lever.pivot.z,
-                        lever.axis.x,
-                        lever.axis.y,
-                        lever.axis.z,
-                        "" if ref is None else ref.x,
-                        "" if ref is None else ref.y,
-                        "" if ref is None else ref.z,
-                        "" if lever.driver is None else lever.driver,
-                        "" if lever.coupled is None else lever.coupled,
+                        convention.format_float(
+                            lever.length_min
+                        ),
+                        convention.format_float(
+                            lever.length_max
+                        ),
+                        convention.format_float(
+                            lever.length_start
+                        ),
+                        convention.format_float(
+                            math.degrees(
+                                lever.angle_min
+                            )
+                        ),
+                        convention.format_float(
+                            math.degrees(
+                                lever.angle_max
+                            )
+                        ),
+                        convention.format_float(
+                            math.degrees(
+                                lever.angle_start
+                            )
+                        ),
+                        convention.format_float(
+                            lever.pivot.x
+                        ),
+                        convention.format_float(
+                            lever.pivot.y
+                        ),
+                        convention.format_float(
+                            lever.pivot.z
+                        ),
+                        convention.format_float(
+                            lever.axis.x
+                        ),
+                        convention.format_float(
+                            lever.axis.y
+                        ),
+                        convention.format_float(
+                            lever.axis.z
+                        ),
+                        "" if ref is None
+                        else convention.format_float(
+                            ref.x
+                        ),
+                        "" if ref is None
+                        else convention.format_float(
+                            ref.y
+                        ),
+                        "" if ref is None
+                        else convention.format_float(
+                            ref.z
+                        ),
+                        "" if lever.driver is None
+                        else lever.driver,
+                        "" if lever.coupled is None
+                        else lever.coupled,
                     )
                 )
