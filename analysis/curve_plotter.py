@@ -8,10 +8,13 @@ with two diagrams:
 1. A three-dimensional diagram showing every lever of
    the mechanism as a line in three positions: at the
    minimum, the middle and the maximum drive angle of
-   the first (driving) lever.
-2. A two-dimensional diagram showing the input curve,
-   the desired output curve (Soll) and the achieved
-   output curve (Ist).
+   the first (driving) lever.  The coupling rods
+   connecting the levers are drawn as lines between
+   the lever endpoints; torsion shafts between coupled
+   levers are not drawn.
+2. A two-dimensional diagram showing the desired
+   output curve (Soll) and the achieved output curve
+   (Ist) over the drive angle.
 
 All angles are passed in radians (internal unit) and
 converted to degrees for display.  Lengths are shown
@@ -79,6 +82,19 @@ class LeverPlotLine:
 
 
 @dataclass(frozen=True, slots=True)
+class RodPlotLine:
+    """
+    One coupling rod drawn as a line between the
+    endpoints of two levers.
+    """
+
+    name: str
+    start: Point3D
+    end: Point3D
+    length: float
+
+
+@dataclass(frozen=True, slots=True)
 class MechanismPlotState:
     """
     Snapshots of all levers of a mechanism at one
@@ -93,6 +109,7 @@ class MechanismPlotState:
     position_label: str
     position_angle: float
     levers: tuple[LeverPlotLine, ...]
+    rods: tuple[RodPlotLine, ...] = ()
 
     @classmethod
     def from_mechanism(
@@ -124,12 +141,15 @@ class MechanismPlotState:
         colors = lever_colors or {}
         ordered_levers = _ordered_levers(mechanism)
         levers: list[LeverPlotLine] = []
+        endpoints: dict[int, Point3D] = {}
         for index, entry in enumerate(ordered_levers):
             lever_id = index + 1
             angle = lever_angles.get(
                 lever_id,
                 entry.reference_angle,
             )
+            end = entry.lever.end_position(angle)
+            endpoints[lever_id] = end
             levers.append(
                 LeverPlotLine(
                     name=names.get(
@@ -137,7 +157,7 @@ class MechanismPlotState:
                         f"Lever {lever_id}",
                     ),
                     pivot=entry.lever.pivot,
-                    end=entry.lever.end_position(angle),
+                    end=end,
                     angle=angle,
                     color=colors.get(
                         lever_id,
@@ -148,10 +168,15 @@ class MechanismPlotState:
                     ),
                 ),
             )
+        rods = _stage_rods(
+            mechanism,
+            endpoints,
+        )
         return cls(
             position_label=position_label,
             position_angle=position_angle,
             levers=tuple(levers),
+            rods=tuple(rods),
         )
 
 
@@ -198,6 +223,49 @@ def _ordered_levers(
     return tuple(result)
 
 
+def _stage_rods(
+    mechanism: Mechanism,
+    endpoints: dict[int, Point3D],
+) -> list[RodPlotLine]:
+    """
+    Coupling rods of the mechanism for one snapshot.
+
+    Every stage contributes one rod from the endpoint
+    of its input lever to the endpoint of its output
+    lever.  Torsion shafts between coupled levers are
+    not drawn.
+    """
+    ordered_levers = _ordered_levers(mechanism)
+    lever_ids: dict[int, int] = {
+        id(entry.lever): index + 1
+        for index, entry in enumerate(
+            ordered_levers,
+        )
+    }
+    rods: list[RodPlotLine] = []
+    for index, stage in enumerate(
+        mechanism.stages,
+        start=1,
+    ):
+        input_id = lever_ids[
+            id(stage.input_lever)
+        ]
+        output_id = lever_ids[
+            id(stage.output_lever)
+        ]
+        rods.append(
+            RodPlotLine(
+                name=(
+                    f"Koppelstange {index}"
+                ),
+                start=endpoints[input_id],
+                end=endpoints[output_id],
+                length=stage.rod_length,
+            ),
+        )
+    return rods
+
+
 @dataclass(frozen=True, slots=True)
 class CurvePlotSeries:
     """
@@ -222,9 +290,9 @@ class CurvePlotter:
     -----
     1. Add the mechanism states (three positions of
        all levers) with ``add_mechanism_state``.
-    2. Add the input curve, the target curve and one
-       or more actual curves with ``set_input_curve``,
-       ``set_target_curve`` and ``add_actual_curve``.
+    2. Add the target curve and one or more actual
+       curves with ``set_target_curve`` and
+       ``add_actual_curve``.
     3. Write the document with ``write``.
     """
 
@@ -237,9 +305,6 @@ class CurvePlotter:
         self._mechanism_states: list[
             MechanismPlotState
         ] = []
-        self._input_curve: (
-            CurvePlotSeries | None
-        ) = None
         self._target_curve: (
             CurvePlotSeries | None
         ) = None
@@ -255,21 +320,6 @@ class CurvePlotter:
         Add one mechanism snapshot to the 3D diagram.
         """
         self._mechanism_states.append(state)
-
-    def set_input_curve(
-        self,
-        input_angles: tuple[float, ...],
-    ) -> None:
-        """
-        Set the input curve (drive angle over drive
-        angle, radians).
-        """
-        self._input_curve = CurvePlotSeries(
-            input_angles=input_angles,
-            output_angles=input_angles,
-            label="Eingangskurve",
-            color="#1f77b4",
-        )
 
     def set_target_curve(
         self,
@@ -377,6 +427,15 @@ class CurvePlotter:
                 }
                 for lever in state.levers
             ]
+            rods = [
+                {
+                    "name": rod.name,
+                    "start": _point(rod.start),
+                    "end": _point(rod.end),
+                    "length": rod.length,
+                }
+                for rod in state.rods
+            ]
             mechanism_states.append(
                 {
                     "position_label": (
@@ -388,6 +447,7 @@ class CurvePlotter:
                         )
                     ),
                     "levers": levers,
+                    "rods": rods,
                 }
             )
         return {
@@ -406,7 +466,6 @@ class CurvePlotter:
         self,
     ) -> list[CurvePlotSeries | None]:
         return [
-            self._input_curve,
             self._target_curve,
             *self._actual_curves,
         ]
@@ -651,17 +710,17 @@ p {{
 <h1 id="title"></h1>
 <p>
 Hebeldarstellung in drei Positionen (minimaler / mittlerer /
-maximaler Antriebswinkel des ersten Hebels) sowie Eingangs-,
-Soll- und Ist-&Uuml;bertragungskurve.
+maximaler Antriebswinkel des ersten Hebels) mit Koppelstangen
+sowie Soll- und Ist-&Uuml;bertragungskurve.
 Winkel in Grad, L&auml;ngen in Millimetern.
 </p>
 
-<h2>Hebel in drei Positionen (3D)</h2>
+<h2>Hebel und Koppelstangen in drei Positionen (3D)</h2>
 <div class="plot-container">
     <div id="lever-plot"></div>
 </div>
 
-<h2>Eingangs-, Soll- und Ist-Kurve</h2>
+<h2>Soll- und Ist-Kurve</h2>
 <div class="plot-container">
     <div id="curve-plot"></div>
 </div>
@@ -684,10 +743,32 @@ const POSITION_DASH = {{
     "max": "dash"
 }};
 
+const ROD_COLOR = "#7f7f7f";
+
 function leverTraces() {{
     const traces = [];
     for (const state of data.mechanism_states) {{
         const dash = POSITION_DASH[state.position_label] || "solid";
+        for (const rod of state.rods || []) {{
+            traces.push({{
+                type: "scatter3d",
+                mode: "lines",
+                x: [rod.start.x, rod.end.x],
+                y: [rod.start.y, rod.end.y],
+                z: [rod.start.z, rod.end.z],
+                name: rod.name + " (" + state.position_label + ")",
+                legendgroup: rod.name,
+                showlegend: state.position_label === "min",
+                line: {{
+                    color: ROD_COLOR,
+                    width: 6,
+                    dash: dash
+                }},
+                hovertemplate: rod.name +
+                    "<br>L&auml;nge: " + rod.length.toFixed(1) + " mm" +
+                    "<extra></extra>"
+            }});
+        }}
         for (const lever of state.levers) {{
             traces.push({{
                 type: "scatter3d",
