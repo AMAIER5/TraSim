@@ -124,6 +124,26 @@ class AngleSolver:
         state: SolverState,
     ) -> SolverResult:
 
+        # Countermeasure for intermediate levers leaving their
+        # admissible lever-angle segment: the input angle is a
+        # lever angle of the stage's input lever, so it must lie
+        # inside the stage's input limits.  A solution computed
+        # from an inadmissible input angle would move that lever
+        # outside its build space; the step is blocked instead.
+        if not self.stage.accepts_input_angle(
+            input_angle
+        ):
+
+            self.stats["blocked"] += 1
+
+            return SolverResult(
+                success=False,
+                angle=float("nan"),
+                residual=float("inf"),
+                iterations=0,
+                reason="input_angle_limit",
+            )
+
         residual = create_stage_objective(
             self.stage,
             input_angle,

@@ -601,9 +601,13 @@ Search strategy (in order):
 2. **Local search** — search around predicted position
 3. **Full-range fallback** — only if no brackets found above
 
+Guards:
+
+- An input angle outside `[input_angle_min, input_angle_max]` blocks the step with reason `input_angle_limit` (the input lever would leave its build space)
+- `_filter_to_allowed_range()` — filters fast-path brackets to stage output limits
+
 Features:
 
-- `_filter_to_allowed_range()` — filters fast-path brackets to stage output limits
 - `_select_branch()` — selects physically continuous branch using prediction distance, output jump, velocity change, and direction penalty
 - Performance statistics tracking (`stats` dict with adaptive, local, fallback, bracket, and brent counters)
 - Configurable search window, reuse factor, and reuse min/max windows
@@ -668,7 +672,7 @@ Common interface for all motion angle providers.
 
 ### ResultMotionProvider (simulation/result\_motion\_provider.py)
 
-Provides the output angles of a previous simulation stage as input for the next stage. Immutable and re-iterable.
+Provides the output angles of a previous simulation stage as input for the next stage. Immutable and re-iterable. An optional `angle_offset` shifts the previous stage's output angles into the following stage's input lever-angle frame; the mechanism simulator uses it for coupled intermediate levers, whose lever angle differs from the previous output lever's angle by the constant coupling offset. Without the offset, a coupled lever would be simulated (and drawn) in the wrong frame and could leave its admissible lever-angle segment unnoticed.
 
 ### SimulationResult (simulation/simulation\_result.py)
 
@@ -715,7 +719,7 @@ MechanismSimulator
 
 `simulate(mechanism)` → `tuple[SimulationResult, ...]`:
 
-- Chains stages: each stage's output becomes the next stage's input via `ResultMotionProvider`
+- Chains stages: each stage's output becomes the next stage's input via `ResultMotionProvider`; when the next stage's input lever is a different (coupled) lever, the coupling offset (`following.input_angle - current.output_angle`) is applied so the next stage receives angles in its own lever-angle frame
 - Optionally limits to first N stages
 
 ### MechanismMotionSimulator (simulation/mechanism\_motion\_simulator.py)
