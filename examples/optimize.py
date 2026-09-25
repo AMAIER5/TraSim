@@ -212,7 +212,7 @@ def _worker_evaluator_factory():
     target_input_deg, _ = read_target_curve(
         TARGET_FILE,
     )
-    target_curve = TargetCurve.from_csv(
+    target_curve = TargetCurve.from_csv_strict(
         TARGET_FILE,
     )
 
@@ -365,6 +365,7 @@ def _print_lever_overview(definition) -> None:
 def _print_target_curve(
     target_input_angles_deg,
     target_output_angles_deg,
+    target_weights,
 ) -> None:
     print("\n" + "=" * 80)
     print("LOADING TARGET CURVE")
@@ -373,11 +374,19 @@ def _print_target_curve(
         f"\nTarget curve: "
         f"{len(target_input_angles_deg)} points",
     )
-    for inp, out in zip(
+    print(
+        "  (weight ist die Gewichtung des"
+        " Stuetzpunkts in der Fitness)",
+    )
+    for inp, out, weight in zip(
         target_input_angles_deg,
         target_output_angles_deg,
+        target_weights,
     ):
-        print(f"  {inp:.1f}deg -> {out:.1f}deg")
+        print(
+            f"  {inp:.1f}deg -> {out:.1f}deg"
+            f"  (weight={weight:g})",
+        )
 
 
 def _print_simulation_setup(
@@ -709,7 +718,7 @@ def main() -> None:
         target_input_angles_deg,
         target_output_angles_deg,
     ) = read_target_curve(TARGET_FILE)
-    target_curve = TargetCurve.from_csv(
+    target_curve = TargetCurve.from_csv_strict(
         TARGET_FILE,
     )
 
@@ -725,6 +734,7 @@ def main() -> None:
     _print_target_curve(
         target_input_angles_deg,
         target_output_angles_deg,
+        target_curve.weights,
     )
 
     # -------------------------------------------------
