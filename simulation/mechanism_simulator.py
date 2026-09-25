@@ -7,6 +7,7 @@ Simulation of complete mechanisms.
 from __future__ import annotations
 
 from mechanics.mechanism import Mechanism
+from mechanics.stage import Stage
 from simulation.motion_provider import MotionProvider
 from simulation.motion_range import MotionRange
 from simulation.result_motion_provider import ResultMotionProvider
@@ -115,7 +116,7 @@ class MechanismSimulator:
 
         motion: MotionProvider = self._motion
 
-        for stage in stages:
+        for index, stage in enumerate(stages):
 
             result = self._stage_simulator.run(
                 stage=stage,
@@ -126,6 +127,52 @@ class MechanismSimulator:
 
             motion = ResultMotionProvider(
                 result,
+                angle_offset=(
+                    self._coupling_offset(
+                        stages,
+                        index,
+                    )
+                ),
             )
 
         return tuple(results)
+
+    @staticmethod
+    def _coupling_offset(
+        stages: tuple[Stage, ...],
+        index: int,
+    ) -> float:
+        """
+        Lever-angle offset between stage ``index`` and the
+        following stage.
+
+        The input lever of the following stage is either the
+        same physical lever as the current stage's output lever
+        (plain chain, offset 0) or a lever coupled to it.  For a
+        coupled lever the lever angle differs from the coupled
+        lever's angle by a constant: the difference of the two
+        reference lever angles.  The offset shifts the current
+        stage's output angles into the following stage's input
+        lever-angle frame, so angle limits and kinematics of
+        the following stage are evaluated in the correct frame.
+        Without the offset, a coupled intermediate lever would
+        be simulated (and drawn) at the wrong angle and could
+        leave its admissible lever-angle segment unnoticed.
+        """
+
+        if index + 1 >= len(stages):
+            return 0.0
+
+        current = stages[index]
+        following = stages[index + 1]
+
+        if (
+            following.input_lever
+            is current.output_lever
+        ):
+            return 0.0
+
+        return (
+            following.input_angle
+            - current.output_angle
+        )
