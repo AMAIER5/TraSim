@@ -67,6 +67,7 @@ neither Python nor a repository checkout.
    pip install pyinstaller
    pyinstaller --onefile --name TraSim ^
      --collect-all streamlit ^
+     --add-data "gui;gui" ^
      run_trasim.py
    ```
 
