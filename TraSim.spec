@@ -1,11 +1,28 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 datas = [('gui', 'gui')]
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('streamlit')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
+# gui/app.py is bundled as data, so PyInstaller's static analysis never
+# follows its imports.  Bundle the local packages it needs explicitly.
+local_packages = [
+    'analysis',
+    'core',
+    'mechanics',
+    'mechanism_io',
+    'model',
+    'optimization',
+    'simulation',
+    'validation',
+]
+hiddenimports += local_packages
+for package in local_packages:
+    submodules = collect_submodules(package)
+    hiddenimports += submodules
 
 
 a = Analysis(
