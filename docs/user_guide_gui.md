@@ -18,6 +18,16 @@ users need no Python knowledge.
      angle_start, pivot_x, pivot_y, pivot_z,
      axis_x, axis_y, axis_z, driver, coupled`
      (angles in degrees).
+   - Optional columns: `ref_x, ref_y, ref_z`
+     (explicit reference direction of the lever;
+     when all three are empty it is selected
+     automatically) and `pivot_on` (mixer lever:
+     `lever_id@angle_deg` moves the lever's pivot
+     onto the endpoint of the referenced lever
+     at the given lever angle; see
+     `docs/Architecture.md`, section *pivot_on
+     Relationship*, and the example
+     `examples/mechanism_optimized.csv`).
    - `targetcurve.csv`: columns `input_angle,
      output_angle` (degrees), optional third column
      `weight` for per-support-point fitness
