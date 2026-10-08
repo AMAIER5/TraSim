@@ -441,23 +441,32 @@ with st.expander(
         example_dir = st.session_state[
             "mixer_loaded"
         ]
-        mixer_file = example_dir / (
-            "mixed_brake_mechanism.csv"
-        )
-        unbraked_file = example_dir / (
-            "target_curve_unbraked.csv"
-        )
-        braked_file = example_dir / (
-            "target_curve_braked.csv"
-        )
+        mixer_file = (
+            example_dir
+            / "mixed_brake_mechanism.csv"
+        ).read_text(encoding="utf-8")
+        unbraked_file = (
+            example_dir
+            / "target_curve_unbraked.csv"
+        ).read_text(encoding="utf-8")
+        braked_file = (
+            example_dir
+            / "target_curve_braked.csv"
+        ).read_text(encoding="utf-8")
     elif (
         mechanism_upload_mixer is not None
         and unbraked_upload is not None
         and braked_upload is not None
     ):
-        mixer_file = mechanism_upload_mixer
-        unbraked_file = unbraked_upload
-        braked_file = braked_upload
+        mixer_file = mechanism_upload_mixer \
+            .getvalue() \
+            .decode("utf-8")
+        unbraked_file = unbraked_upload \
+            .getvalue() \
+            .decode("utf-8")
+        braked_file = braked_upload \
+            .getvalue() \
+            .decode("utf-8")
     else:
         mixer_file = None
 

@@ -39,9 +39,9 @@ BRAKED_FILE = (
 @pytest.fixture
 def inputs():
     return load_mixed_brake_inputs(
-        MECHANISM_FILE,
-        UNBRAKED_FILE,
-        BRAKED_FILE,
+        MECHANISM_FILE.read_text(encoding="utf-8"),
+        UNBRAKED_FILE.read_text(encoding="utf-8"),
+        BRAKED_FILE.read_text(encoding="utf-8"),
     )
 
 
@@ -79,9 +79,9 @@ def test_load_inputs_rejects_mechanism_without_pivot_on(
     )
     with pytest.raises(WorkflowError):
         load_mixed_brake_inputs(
-            mechanism,
-            UNBRAKED_FILE,
-            BRAKED_FILE,
+            mechanism.read_text(encoding="utf-8"),
+            UNBRAKED_FILE.read_text(encoding="utf-8"),
+            BRAKED_FILE.read_text(encoding="utf-8"),
         )
 
 

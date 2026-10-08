@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import math
 import random
+import tempfile
+from pathlib import Path
 from dataclasses import (
     dataclass,
     field,
@@ -44,7 +46,10 @@ from analysis.transmission_angle import (
     TransmissionAngleConstraint,
     min_transmission_angle,
 )
-from gui.workflow import WorkflowError
+from gui.workflow import (
+    WorkflowError,
+    _text_to_temp_file,
+)
 from mechanics.mechanism import Mechanism
 from mechanics.mixed_brake_builder import (
     MixedBrakeBuilder,
@@ -137,18 +142,64 @@ class MixedBrakeResult:
 
 
 def load_mixed_brake_inputs(
-    mechanism_path,
-    unbraked_path,
-    braked_path,
+    mechanism_csv: str,
+    unbraked_csv: str,
+    braked_csv: str,
     *,
     motion_start_deg: float = -10.0,
     motion_travel_deg: float = 20.0,
     motion_step_deg: float = 2.0,
 ) -> MixedBrakeInputs:
-    """Load and validate the mixed brake inputs from file
-    paths.  Raises WorkflowError with a user-facing message
+    """Load and validate the mixed brake inputs from CSV
+    text.
+
+    Raises WorkflowError with a user-facing message
     on invalid input.
     """
+    try:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            mechanism_path = _text_to_temp_file(
+                directory,
+                "mechanism.csv",
+                mechanism_csv,
+            )
+            unbraked_path = _text_to_temp_file(
+                directory,
+                "target_curve_unbraked.csv",
+                unbraked_csv,
+            )
+            braked_path = _text_to_temp_file(
+                directory,
+                "target_curve_braked.csv",
+                braked_csv,
+            )
+            return _load_mixed_brake_inputs(
+                mechanism_path,
+                unbraked_path,
+                braked_path,
+                motion_start_deg=motion_start_deg,
+                motion_travel_deg=motion_travel_deg,
+                motion_step_deg=motion_step_deg,
+            )
+    except WorkflowError:
+        raise
+    except Exception as error:
+        raise WorkflowError(
+            f"Eingabedatei konnte nicht gelesen "
+            f"werden: {error}",
+        ) from error
+
+
+def _load_mixed_brake_inputs(
+    mechanism_path,
+    unbraked_path,
+    braked_path,
+    *,
+    motion_start_deg: float,
+    motion_travel_deg: float,
+    motion_step_deg: float,
+) -> MixedBrakeInputs:
     try:
         definition = CsvReader.read_mechanism(
             mechanism_path,
