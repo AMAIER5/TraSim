@@ -1,9 +1,49 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from core.vector3d import Vector3D
 from core.point3d import Point3D
+
+
+_PIVOT_REFERENCE_PATTERN = re.compile(
+    r"^(?:lever)?(?P<lever_id>-?\d+)"
+    r"@(?P<angle_deg>-?\d+(?:\.\d+)?)$"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class PivotReference:
+    """
+    Parsed ``pivot_on`` reference: the pivot of the referencing
+    lever sits on the endpoint of lever ``lever_id`` at lever
+    angle ``angle_deg`` (degrees).
+    """
+
+    lever_id: int
+    angle_deg: float
+
+
+def parse_pivot_reference(value: str) -> PivotReference:
+    """
+    Parse a ``pivot_on`` reference of the form
+    ``lever_id@angle_deg`` (e.g. ``lever3@180`` or
+    ``3@180``; an optional ``lever`` prefix is accepted).
+
+    Raises ``ValueError`` for anything else.
+    """
+    match = _PIVOT_REFERENCE_PATTERN.match(value.strip())
+    if match is None:
+        raise ValueError(
+            f"invalid pivot_on reference {value!r}: "
+            "expected 'lever_id@angle_deg', "
+            "e.g. 'lever3@180'."
+        )
+    return PivotReference(
+        lever_id=int(match.group("lever_id")),
+        angle_deg=float(match.group("angle_deg")),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +82,17 @@ class LeverDefinition:
 
     driver: int | None = None
     coupled: int | None = None
+    pivot_on: str | None = None
+
+    @property
+    def pivot_reference(self) -> PivotReference | None:
+        """
+        Parsed ``pivot_on`` reference, or ``None`` when the
+        lever has a fixed pivot.
+        """
+        if self.pivot_on is None:
+            return None
+        return parse_pivot_reference(self.pivot_on)
 
     @property
     def is_driver(self) -> bool:

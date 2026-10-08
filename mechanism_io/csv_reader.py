@@ -19,7 +19,10 @@ from mechanism_io.csv_convention import (
     INTERNATIONAL,
     detect_convention,
 )
-from model.lever_definition import LeverDefinition
+from model.lever_definition import (
+    LeverDefinition,
+    parse_pivot_reference,
+)
 from model.mechanism_definition import MechanismDefinition
 from model.simulation_config import SimulationConfig
 
@@ -166,6 +169,9 @@ class CsvReader:
         """
         coupled = CsvReader._parse_optional_int(row.get("coupled", ""))
         driver = CsvReader._parse_optional_int(row.get("driver", ""))
+        pivot_on = CsvReader._parse_optional_pivot_on(
+            row.get("pivot_on", "")
+        )
 
         # Coupled has priority over driver
         if coupled is not None:
@@ -217,7 +223,24 @@ class CsvReader:
 
             driver=driver,
             coupled=coupled,
+            pivot_on=pivot_on,
         )
+
+    @staticmethod
+    def _parse_optional_pivot_on(
+        value: str | None,
+    ) -> str | None:
+        """
+        Parse the optional ``pivot_on`` column.
+
+        Empty or missing cells become ``None`` (fixed pivot);
+        any other value is validated against the
+        ``lever_id@angle_deg`` reference format.
+        """
+        if value is None or value.strip() == "":
+            return None
+        parse_pivot_reference(value)
+        return value.strip()
 
     @staticmethod
     def _parse_optional_int(
