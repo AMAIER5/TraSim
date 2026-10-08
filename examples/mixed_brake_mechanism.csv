@@ -1,0 +1,4 @@
+id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,driver,coupled,pivot_on
+1,40,100,60,-12,12,0,0,0,0,0,0,1,,,lever3@180
+2,40,200,100,-120,120,0,100,60,0,0,0,1,1,,
+3,40,100,60,170,190,180,0,0,0,0,0,1,,
