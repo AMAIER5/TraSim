@@ -68,6 +68,14 @@ neither Python nor a repository checkout.
    pyinstaller --onefile --name TraSim ^
      --collect-all streamlit ^
      --add-data "gui;gui" ^
+     --hidden-import analysis ^
+     --hidden-import core ^
+     --hidden-import mechanics ^
+     --hidden-import mechanism_io ^
+     --hidden-import model ^
+     --hidden-import optimization ^
+     --hidden-import simulation ^
+     --hidden-import validation ^
      run_trasim.py
    ```
 
