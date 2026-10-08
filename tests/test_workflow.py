@@ -104,8 +104,12 @@ def test_parameter_template_matches_definition(
     assert names == {
         "lever.1.length",
         "lever.1.angle",
+        "lever.1.pivot.x",
+        "lever.1.pivot.y",
         "lever.2.length",
         "lever.2.angle",
+        "lever.2.pivot.x",
+        "lever.2.pivot.y",
     }
 
 
