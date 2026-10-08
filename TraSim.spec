@@ -1,5 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all, collect_submodules
+
+# PyInstaller does not add the project root to sys.path when executing
+# this spec.  Without this, collect_submodules() below silently returns
+# an empty list for the local packages and their modules never reach
+# the bundle (ModuleNotFoundError at runtime for e.g.
+# analysis.brake_curve_fitness).
+sys.path.insert(0, str(Path(SPECPATH).resolve()))
 
 datas = [('gui', 'gui'), ('examples', 'examples')]
 binaries = []
