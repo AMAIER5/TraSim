@@ -23,6 +23,7 @@ Run with:
 from __future__ import annotations
 
 import math
+import sys
 from pathlib import Path
 
 import streamlit as st
@@ -387,8 +388,12 @@ if result is not None:
 
 
 def _mixed_brake_example_dir():
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass is not None:
+        return Path(meipass) / "examples"
     return (
-        Path(__file__).parent.parent / "examples"
+        Path(__file__).resolve().parent.parent
+        / "examples"
     )
 
 
