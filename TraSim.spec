@@ -21,6 +21,10 @@ local_packages = [
 ]
 hiddenimports += local_packages
 for package in local_packages:
+    # Ship the local packages as plain source files, exactly like gui/.
+    # They are imported at runtime by gui/app.py, which PyInstaller's
+    # static analysis never sees.
+    datas.append((package, package))
     submodules = collect_submodules(package)
     hiddenimports += submodules
 

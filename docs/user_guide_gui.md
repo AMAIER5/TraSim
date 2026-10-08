@@ -65,7 +65,7 @@ neither Python nor a repository checkout.
 
    ```powershell
    pip install pyinstaller
-   pyinstaller --onefile --name TraSim --collect-all streamlit --add-data "gui;gui" --collect-submodules analysis --collect-submodules core --collect-submodules mechanics --collect-submodules mechanism_io --collect-submodules model --collect-submodules optimization --collect-submodules simulation --collect-submodules validation run_trasim.py
+   pyinstaller --onefile --name TraSim --collect-all streamlit --add-data "gui;gui" --add-data "analysis;analysis" --add-data "core;core" --add-data "mechanics;mechanics" --add-data "mechanism_io;mechanism_io" --add-data "model;model" --add-data "optimization;optimization" --add-data "simulation;simulation" --add-data "validation;validation" run_trasim.py
    ```
 
    Note: use this single-line form or the `TraSim.spec` file
