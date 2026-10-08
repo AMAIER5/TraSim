@@ -37,10 +37,20 @@ import random
 from pathlib import Path
 
 from analysis.brake_curve_fitness import BrakeCurveFitness
+from analysis.brake_grid import (
+    BrakeGridSettings,
+    blend_target_curves,
+    make_brake_grid,
+)
 from analysis.endpoint_constraint import EndpointConstraint
 from analysis.target_curve import TargetCurve
-from mechanism_io.csv_reader import CsvReader
+from analysis.transmission_angle import (
+    MIN_TRANSMISSION_ANGLE,
+    TransmissionAngleConstraint,
+    min_transmission_angle,
+)
 from mechanics.mixed_brake_builder import MixedBrakeBuilder
+from mechanism_io.csv_reader import CsvReader
 from optimization.csv_parameter_factory import (
     CsvParameterFactory,
 )
@@ -71,7 +81,11 @@ TARGET_BRAKED_FILE = (
     BASE_DIR / "target_curve_braked.csv"
 )
 
-BRAKE_POSITIONS_DEG = (180.0, 190.0)
+BRAKE_POSITION_COUNT = 5
+MIN_TRANSMISSION_ANGLE_DEG = math.degrees(
+    MIN_TRANSMISSION_ANGLE
+)
+TRANSMISSION_WEIGHT = 1.0
 
 MOTION_START_DEG = -10.0
 MOTION_TRAVEL_DEG = 20.0
@@ -113,18 +127,32 @@ def main() -> None:
             f"{pivot_on}"
         )
 
-    targets = (
-        TargetCurve.from_csv(TARGET_UNBRAKED_FILE),
-        TargetCurve.from_csv(TARGET_BRAKED_FILE),
+    unbraked = TargetCurve.from_csv(
+        TARGET_UNBRAKED_FILE,
     )
-    brake_positions = tuple(
-        math.radians(beta)
-        for beta in BRAKE_POSITIONS_DEG
+    braked = TargetCurve.from_csv(
+        TARGET_BRAKED_FILE,
     )
-
+    brake_lever = next(
+        lever
+        for lever in definition.levers
+        if lever.pivot_on is not None
+    )
+    brake = definition.get_lever(
+        brake_lever.pivot_reference.lever_id
+    )
+    grid = BrakeGridSettings(
+        brake_min_deg=(
+            brake_lever.pivot_reference.angle_deg
+        ),
+        brake_max_deg=math.degrees(
+            brake.angle_max
+        ),
+        position_count=BRAKE_POSITION_COUNT,
+    )
     print(
-        f"\nBrake positions (deg): "
-        f"{BRAKE_POSITIONS_DEG}"
+        "\nBrake grid (deg): "
+        f"{grid.brake_positions_deg}"
     )
     print(f"Target unbraked: {TARGET_UNBRAKED_FILE.name}")
     print(f"Target braked:   {TARGET_BRAKED_FILE.name}")
@@ -134,17 +162,29 @@ def main() -> None:
         max_angle=math.radians(MOTION_TRAVEL_DEG),
         step=math.radians(MOTION_STEP_DEG),
     )
+    input_angles = tuple(angle for angle in motion)
+    brake_positions = make_brake_grid(grid)
+    targets = blend_target_curves(
+        unbraked,
+        braked,
+        grid.fractions,
+        input_angles=input_angles,
+    )
     simulator = MechanismSimulator(motion=motion)
-
     fitness = BrakeCurveFitness(
-        weights=(1.0, 1.0),
+        weights=tuple(1.0 for _ in brake_positions),
         max_weight=1.0,
         endpoint_constraint=EndpointConstraint(
             end_angle=0.0,
             weight=1.0,
         ),
     )
-
+    transmission_constraint = TransmissionAngleConstraint(
+        minimum_angle=math.radians(
+            MIN_TRANSMISSION_ANGLE_DEG
+        ),
+        weight=TRANSMISSION_WEIGHT,
+    )
     optimizer = MixedBrakeOptimizer(
         builder=builder,
         simulator=simulator,
@@ -152,8 +192,10 @@ def main() -> None:
         definition=definition,
         brake_positions=brake_positions,
         targets=targets,
+        transmission_angle_constraint=(
+            transmission_constraint
+        ),
     )
-
     template = CsvParameterFactory.create(definition)
     print(f"\nParameters: {len(template.parameters)}")
     for param in template.parameters:
@@ -248,7 +290,7 @@ def main() -> None:
     print(f"Generations run: {generations}")
 
     stats = optimizer.get_cache_stats()
-    print(f"\nCache statistics:")
+    print("\nCache statistics:")
     for key, value in stats.items():
         print(f"  {key:>15}: {value}")
 
@@ -275,14 +317,21 @@ def main() -> None:
         )
 
     print("\nSIMULATED CURVES OF BEST CANDIDATE")
-    for beta_deg, target in zip(
-        BRAKE_POSITIONS_DEG,
-        targets,
+    mechanisms = []
+    for fraction, beta_deg in zip(
+        grid.fractions,
+        grid.brake_positions_deg,
     ):
         result = optimizer._cached_simulation(
             engine.best_candidate,
             math.radians(beta_deg),
         )
+        mechanism = optimizer._cached_mechanism(
+            engine.best_candidate,
+            math.radians(beta_deg),
+        )
+        if mechanism is not None:
+            mechanisms.append(mechanism)
         if result is None:
             print(
                 f"\n  brake={beta_deg:.1f}\u00b0: "
@@ -291,7 +340,8 @@ def main() -> None:
             continue
         print(
             f"\n  brake={beta_deg:.1f}\u00b0 "
-            f"(success={result.success}):"
+            f"({100 * fraction:.0f} %, "
+            f"success={result.success}):"
         )
         for angle, output in zip(
             result.input_angles,
@@ -301,6 +351,18 @@ def main() -> None:
                 f"    {math.degrees(angle):7.2f}\u00b0"
                 f" -> {math.degrees(output):8.3f}\u00b0"
             )
+    if mechanisms:
+        minimum = min(
+            min_transmission_angle(mechanism)
+            for mechanism in mechanisms
+        )
+        print(
+            "\nMin transmission angle of best "
+            "candidate: "
+            f"{math.degrees(minimum):.2f}\u00b0 "
+            f"(soft criterion: "
+            f"{MIN_TRANSMISSION_ANGLE_DEG:.1f}\u00b0)"
+        )
 
 
 if __name__ == "__main__":

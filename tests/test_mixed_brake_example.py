@@ -19,14 +19,22 @@ import pytest
 from analysis.brake_curve_fitness import (
     BrakeCurveFitness,
 )
+from analysis.brake_grid import (
+    BrakeGridSettings,
+    blend_target_curves,
+    make_brake_grid,
+)
 from analysis.endpoint_constraint import (
     EndpointConstraint,
 )
 from analysis.target_curve import TargetCurve
-from mechanism_io.csv_reader import CsvReader
+from analysis.transmission_angle import (
+    min_transmission_angle,
+)
 from mechanics.mixed_brake_builder import (
     MixedBrakeBuilder,
 )
+from mechanism_io.csv_reader import CsvReader
 from optimization.csv_parameter_factory import (
     CsvParameterFactory,
 )
@@ -62,6 +70,7 @@ TARGET_BRAKED_FILE = (
 )
 
 BRAKE_POSITIONS_DEG = (180.0, 190.0)
+BRAKE_POSITION_COUNT = 5
 
 
 @pytest.fixture
@@ -160,6 +169,109 @@ def _simulator() -> MechanismSimulator:
         step=math.radians(2.0),
     )
     return MechanismSimulator(motion=motion)
+
+
+def test_brake_grid_five_positions():
+    grid = BrakeGridSettings(
+        brake_min_deg=180.0,
+        brake_max_deg=190.0,
+        position_count=BRAKE_POSITION_COUNT,
+    )
+    assert grid.fractions == (
+        0.0,
+        0.25,
+        0.5,
+        0.75,
+        1.0,
+    )
+    assert grid.brake_positions_deg == (
+        180.0,
+        182.5,
+        185.0,
+        187.5,
+        190.0,
+    )
+    radians_grid = make_brake_grid(grid)
+    assert len(radians_grid) == BRAKE_POSITION_COUNT
+    assert radians_grid[0] == pytest.approx(
+        math.radians(180.0)
+    )
+
+
+def test_blended_targets_are_shifted_derivatives(
+    example_targets,
+):
+    unbraked, braked = example_targets
+    grid = BrakeGridSettings(
+        brake_min_deg=180.0,
+        brake_max_deg=190.0,
+        position_count=BRAKE_POSITION_COUNT,
+    )
+    inputs = tuple(
+        math.radians(angle)
+        for angle in (
+            -10.0,
+            -5.0,
+            0.0,
+            5.0,
+            10.0,
+        )
+    )
+    targets = blend_target_curves(
+        unbraked,
+        braked,
+        grid.fractions,
+        input_angles=inputs,
+    )
+    assert len(targets) == BRAKE_POSITION_COUNT
+    for fraction, target in zip(
+        grid.fractions,
+        targets,
+    ):
+        for angle in inputs:
+            blended = target.evaluate(angle)
+            expected = (
+                (1.0 - fraction)
+                * unbraked.evaluate(angle)
+                + fraction
+                * braked.evaluate(angle)
+            )
+            assert blended == pytest.approx(
+                expected
+            )
+    braked_end = targets[-1].evaluate(
+        inputs[-1]
+    )
+    assert braked_end == pytest.approx(
+        0.0,
+        abs=1e-9,
+    )
+    starts = [
+        abs(target.evaluate(inputs[0]))
+        for target in targets
+    ]
+    assert starts == sorted(starts)
+
+
+def test_grid_positions_build_and_transmit(
+    example_definition,
+):
+    builder = MixedBrakeBuilder(
+        example_definition
+    )
+    grid = BrakeGridSettings(
+        brake_min_deg=180.0,
+        brake_max_deg=190.0,
+        position_count=BRAKE_POSITION_COUNT,
+    )
+    for beta_deg in grid.brake_positions_deg:
+        mechanism = builder.build(
+            math.radians(beta_deg)
+        )
+        assert (
+            min_transmission_angle(mechanism)
+            > 0.0
+        )
 
 
 def test_both_brake_positions_build_and_simulate(

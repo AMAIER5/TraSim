@@ -32,7 +32,11 @@ from analysis.brake_curve_fitness import (
     BrakeCurveFitness,
 )
 from analysis.target_curve import TargetCurve
+from analysis.transmission_angle import (
+    TransmissionAngleConstraint,
+)
 from core.point3d import Point3D
+from mechanics.mechanism import Mechanism
 from mechanics.mixed_brake_builder import (
     MechanismBuildError,
     MixedBrakeBuilder,
@@ -88,6 +92,9 @@ class MixedBrakeOptimizer:
         definition: MechanismDefinition,
         brake_positions: tuple[float, ...],
         targets: tuple[TargetCurve, ...],
+        transmission_angle_constraint: (
+            TransmissionAngleConstraint | None
+        ) = None,
     ) -> None:
         if len(brake_positions) == 0:
             raise ValueError(
@@ -104,9 +111,16 @@ class MixedBrakeOptimizer:
         self._definition = definition
         self._brake_positions = tuple(brake_positions)
         self._targets = tuple(targets)
+        self._transmission_constraint = (
+            transmission_angle_constraint
+        )
         self._cache: dict[
             tuple[ParameterSet, float],
             SimulationResult,
+        ] = {}
+        self._mechanism_cache: dict[
+            tuple[ParameterSet, float],
+            Mechanism,
         ] = {}
         self._cache_hits = 0
         self._cache_misses = 0
@@ -125,6 +139,7 @@ class MixedBrakeOptimizer:
         """
         self._evaluations += 1
         pairs = []
+        mechanisms = []
         for beta, target in zip(
             self._brake_positions,
             self._targets,
@@ -142,7 +157,44 @@ class MixedBrakeOptimizer:
                 )
                 return PENALTY_MAX_BLOCKING
             pairs.append((result, target))
-        return self._fitness.evaluate(pairs)
+            if self._transmission_constraint is not None:
+                mechanism = self._cached_mechanism(
+                    parameters,
+                    beta,
+                )
+                if mechanism is not None:
+                    mechanisms.append(mechanism)
+        fitness = self._fitness.evaluate(pairs)
+        if self._transmission_constraint is not None:
+            fitness += (
+                self._transmission_constraint.evaluate(
+                    mechanisms
+                )
+            )
+        return fitness
+
+    def _cached_mechanism(
+        self,
+        parameters: ParameterSet,
+        beta: float,
+    ) -> Mechanism | None:
+        """Return the cached built mechanism for
+        (candidate, beta) or build it.  None signals a
+        build error.
+        """
+        key = (parameters, beta)
+        cached = self._mechanism_cache.get(key)
+        if cached is not None:
+            return cached
+        try:
+            builder = self._builder_for(parameters)
+            mechanism = builder.build(
+                self._clamp_mixer_angle(beta)
+            )
+        except MechanismBuildError:
+            return None
+        self._mechanism_cache[key] = mechanism
+        return mechanism
 
     def _cached_simulation(
         self,
@@ -284,6 +336,7 @@ class MixedBrakeOptimizer:
     def clear_cache(self) -> None:
         """Remove all cached simulations."""
         self._cache.clear()
+        self._mechanism_cache.clear()
         self._cache_hits = 0
         self._cache_misses = 0
         self._evaluations = 0
