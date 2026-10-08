@@ -187,6 +187,7 @@ class CsvWriter:
                     "ref_z",
                     "driver",
                     "coupled",
+                    "pivot_on",
                 )
             )
 
@@ -256,5 +257,7 @@ class CsvWriter:
                         else lever.driver,
                         "" if lever.coupled is None
                         else lever.coupled,
+                        "" if lever.pivot_on is None
+                        else lever.pivot_on,
                     )
                 )

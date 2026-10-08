@@ -23,9 +23,16 @@ Run with:
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import streamlit as st
 
+from gui.mixed_brake_workflow import (
+    MixedBrakeSettings,
+    load_mixed_brake_inputs,
+    mixed_brake_parameter_template,
+    run_mixed_brake_optimization,
+)
 from gui.workflow import (
     LoadedInputs,
     OptimizationResult,
@@ -372,3 +379,200 @@ if result is not None:
             height=900,
             scrolling=True,
         )
+
+
+# ----------------------------------------------------------------------
+# Mixer (mixed brake) mode
+# ----------------------------------------------------------------------
+
+
+def _mixed_brake_example_dir():
+    return (
+        Path(__file__).parent.parent / "examples"
+    )
+
+
+with st.expander(
+    "Mischer-Modus (Mixed Brake, 5 Bremsstellungen)"
+):
+    st.caption(
+        "Optimierung eines Mischerhebels "
+        "(pivot_on) über 5 Bremsstellungen "
+        "(0/25/50/75/100 % Bremsweg) mit "
+        "interpolierten Zielkurven und weichem "
+        "Minimum-Übertragungswinkel-Kriterium."
+    )
+    mechanism_upload_mixer = st.file_uploader(
+        "Mechanismus (mixed_brake_mechanism.csv)",
+        type=["csv"],
+        key="mechanism_mixer",
+    )
+    unbraked_upload = st.file_uploader(
+        "Zielkurve ungebremst",
+        type=["csv"],
+        key="target_unbraked",
+    )
+    braked_upload = st.file_uploader(
+        "Zielkurve voll gebremst",
+        type=["csv"],
+        key="target_braked",
+    )
+    load_examples = st.button(
+        "Beispiel-Dateien laden"
+    )
+    if (
+        load_examples
+        or "mixer_loaded" in st.session_state
+    ):
+        if load_examples:
+            example_dir = _mixed_brake_example_dir()
+            st.session_state["mixer_loaded"] = (
+                example_dir
+            )
+        st.session_state.setdefault(
+            "mixer_loaded",
+            _mixed_brake_example_dir(),
+        )
+        example_dir = st.session_state[
+            "mixer_loaded"
+        ]
+        mixer_file = example_dir / (
+            "mixed_brake_mechanism.csv"
+        )
+        unbraked_file = example_dir / (
+            "target_curve_unbraked.csv"
+        )
+        braked_file = example_dir / (
+            "target_curve_braked.csv"
+        )
+    elif (
+        mechanism_upload_mixer is not None
+        and unbraked_upload is not None
+        and braked_upload is not None
+    ):
+        mixer_file = mechanism_upload_mixer
+        unbraked_file = unbraked_upload
+        braked_file = braked_upload
+    else:
+        mixer_file = None
+
+    if mixer_file is None:
+        st.info(
+            "Beispiel-Dateien laden oder drei "
+            "CSVs hochladen."
+        )
+    else:
+        brake_positions = st.slider(
+            "Bremsstellungen",
+            min_value=3,
+            max_value=5,
+            value=5,
+            step=1,
+        )
+        transmission_angle = st.slider(
+            "Min. Übertragungswinkel (°)",
+            min_value=0.0,
+            max_value=45.0,
+            value=20.0,
+            step=1.0,
+        )
+        start_mixer = st.button(
+            "Mischer-Optimierung starten",
+            type="primary",
+        )
+        if start_mixer:
+            try:
+                mixer_inputs = (
+                    load_mixed_brake_inputs(
+                        mixer_file,
+                        unbraked_file,
+                        braked_file,
+                    )
+                )
+            except WorkflowError as error:
+                st.error(str(error))
+                st.stop()
+            template_mixer = (
+                mixed_brake_parameter_template(
+                    mixer_inputs,
+                )
+            )
+            mixer_settings = MixedBrakeSettings(
+                brake_positions=int(
+                    brake_positions
+                ),
+                transmission_angle_deg=(
+                    float(transmission_angle)
+                ),
+            )
+            progress_mixer = st.progress(
+                0.0,
+                text=(
+                    "Mischer-Optimierung läuft …"
+                ),
+            )
+
+            def report_mixer(
+                generation: int,
+                best_score: float,
+            ) -> None:
+                progress_mixer.progress(
+                    min(
+                        generation
+                        / mixer_settings.max_generations,
+                        1.0,
+                    ),
+                    text=(
+                        f"Generation {generation} · "
+                        f"Fitness {best_score:.6f}"
+                    ),
+                )
+
+            try:
+                mixer_result = (
+                    run_mixed_brake_optimization(
+                        mixer_inputs,
+                        template_mixer,
+                        mixer_settings,
+                        progress=report_mixer,
+                    )
+                )
+            except WorkflowError as error:
+                st.error(str(error))
+                st.stop()
+            progress_mixer.empty()
+            st.write(
+                f"**Stopgrund:** "
+                f"{mixer_result.stop_reason} · "
+                f"**Beste Fitness:** "
+                f"{mixer_result.best_score:.8f} · "
+                f"**Generationen:** "
+                f"{mixer_result.generations} · "
+                f"**Min. Übertragungswinkel:** "
+                f"{mixer_result.min_transmission_angle_deg:.1f}°"
+            )
+            st.line_chart(
+                {
+                    "Beste Fitness": (
+                        list(
+                            mixer_result.fitness_history,
+                        )
+                    ),
+                },
+                x_label="Generation",
+                y_label="Fitness",
+            )
+            st.components.v1.html(
+                mixer_result.html,
+                height=900,
+                scrolling=True,
+            )
+            st.download_button(
+                "Mischer-Ergebnis-HTML "
+                "herunterladen",
+                data=mixer_result.html,
+                file_name=(
+                    "mixed_brake_result.html"
+                ),
+                mime="text/html",
+            )
