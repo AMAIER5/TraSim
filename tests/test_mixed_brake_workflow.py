@@ -132,6 +132,31 @@ def test_short_optimization_over_grid(inputs):
     assert "<html" in result.html.lower() or (
         "TraSim" in result.html
     )
+    payload = _plot_data(result.html)
+    assert len(payload["mechanism_states"]) == 3
+    assert payload["mechanism_states"][0]["levers"]
+    labels = [
+        series["label"]
+        for series in payload["curves"]
+    ]
+    assert "Soll Bremse 0 %" in labels
+    assert "Soll Bremse 100 %" in labels
+    assert "Bremse 0 %" in labels
+    assert "Bremse 100 %" in labels
+
+
+def _plot_data(html: str) -> dict:
+    import json
+    import re
+
+    match = re.search(
+        r'<script id="plot-data" '
+        r'type="application/json">(.*?)</script>',
+        html,
+        re.S,
+    )
+    assert match is not None
+    return json.loads(match.group(1))
 
 
 def test_progress_callback_is_called(inputs):

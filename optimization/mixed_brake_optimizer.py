@@ -196,6 +196,23 @@ class MixedBrakeOptimizer:
         self._mechanism_cache[key] = mechanism
         return mechanism
 
+    def simulate_stages(
+        self,
+        parameters: ParameterSet,
+        beta: float,
+    ) -> tuple[SimulationResult, ...] | None:
+        """
+        Simulate every stage of the built mechanism for
+        (candidate, beta).  Returns None on a build error.
+        """
+        mechanism = self._cached_mechanism(
+            parameters,
+            beta,
+        )
+        if mechanism is None:
+            return None
+        return self._simulator.simulate(mechanism)
+
     def _cached_simulation(
         self,
         parameters: ParameterSet,

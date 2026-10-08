@@ -305,9 +305,9 @@ class CurvePlotter:
         self._mechanism_states: list[
             MechanismPlotState
         ] = []
-        self._target_curve: (
-            CurvePlotSeries | None
-        ) = None
+        self._target_curves: list[
+            CurvePlotSeries
+        ] = []
         self._actual_curves: list[
             CurvePlotSeries
         ] = []
@@ -370,11 +370,35 @@ class CurvePlotter:
                 output_angles = (
                     sampled.output_angles
                 )
-        self._target_curve = CurvePlotSeries(
+        series = CurvePlotSeries(
             input_angles=input_angles,
             output_angles=output_angles,
             label="Soll-Ausgangskurve",
             color="#2ca02c",
+        )
+        self._target_curves = [series]
+
+    def add_target_curve(
+        self,
+        input_angles: tuple[float, ...],
+        output_angles: tuple[float, ...],
+        *,
+        label: str = "Soll-Ausgangskurve",
+        color: str = "#2ca02c",
+    ) -> None:
+        """
+        Add one additional desired output curve (Soll).
+
+        Labels starting with ``"Soll"`` are drawn as
+        dotted target curves in the 2D diagram.
+        """
+        self._target_curves.append(
+            CurvePlotSeries(
+                input_angles=input_angles,
+                output_angles=output_angles,
+                label=label,
+                color=color,
+            ),
         )
 
     def add_actual_curve(
@@ -466,7 +490,7 @@ class CurvePlotter:
         self,
     ) -> list[CurvePlotSeries | None]:
         return [
-            self._target_curve,
+            *self._target_curves,
             *self._actual_curves,
         ]
 

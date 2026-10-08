@@ -32,7 +32,10 @@ from analysis.brake_grid import (
     blend_target_curves,
     make_brake_grid,
 )
-from analysis.curve_plotter import CurvePlotter
+from analysis.curve_plotter import (
+    CurvePlotter,
+    mechanism_states_from_results,
+)
 from analysis.endpoint_constraint import (
     EndpointConstraint,
 )
@@ -69,6 +72,9 @@ from optimization.population_factory import (
 from optimization.reproduction import Reproduction
 from simulation.mechanism_simulator import (
     MechanismSimulator,
+)
+from simulation.simulation_result import (
+    SimulationResult,
 )
 from simulation.motion_range import MotionRange
 
@@ -205,10 +211,19 @@ def _simulate_best(
     optimizer: MixedBrakeOptimizer,
     best: ParameterSet,
     grid: BrakeGridSettings,
+    *,
+    targets: tuple[TargetCurve, ...],
+    input_angles: tuple[float, ...],
 ) -> tuple[str, float]:
     """Build the HTML report of the best candidate over all
     brake positions and determine its minimum transmission
-    angle."""
+    angle.
+
+    For every brake position the blended target curve
+    (Soll) and the achieved output curve (Ist) are drawn,
+    together with three mechanism snapshots of the middle
+    brake position.
+    """
     plotter = CurvePlotter(
         title=(
             "TraSim — Mischer-Optimierung "
@@ -216,29 +231,60 @@ def _simulate_best(
         ),
     )
     mechanisms: list[Mechanism] = []
+    middle_mechanism: Mechanism | None = None
+    middle_results: (
+        tuple[SimulationResult, ...] | None
+    ) = None
     for index, beta_deg in enumerate(
         grid.brake_positions_deg
     ):
-        result = optimizer._cached_simulation(
+        beta = math.radians(beta_deg)
+        results = optimizer.simulate_stages(
             best,
-            math.radians(beta_deg),
+            beta,
         )
-        if result is None:
+        if results is None:
             continue
-        mechanisms.append(
-            optimizer._cached_mechanism(
-                best,
-                math.radians(beta_deg),
-            )
+        mechanism = optimizer._cached_mechanism(
+            best,
+            beta,
         )
+        if mechanism is None:
+            continue
+        mechanisms.append(mechanism)
+        if index == len(grid.fractions) // 2:
+            middle_mechanism = mechanism
+            middle_results = results
         fraction = grid.fractions[index]
-        label = (
-            f"Bremse {100 * fraction:.0f} %"
+        plotter.add_target_curve(
+            input_angles,
+            targets[index].sample(
+                input_angles,
+            ).output_angles,
+            label=(
+                f"Soll Bremse {100 * fraction:.0f} %"
+            ),
         )
         plotter.add_actual_curve(
-            result.input_angles,
-            result.output_angles,
-            label=label,
+            results[-1].input_angles,
+            results[-1].output_angles,
+            label=(
+                f"Bremse {100 * fraction:.0f} %"
+            ),
+        )
+    if (
+        middle_mechanism is not None
+        and middle_results is not None
+    ):
+        for state in mechanism_states_from_results(
+            middle_mechanism,
+            middle_results,
+        ):
+            plotter.add_mechanism_state(state)
+    if not mechanisms:
+        return (
+            plotter.build_html(),
+            float("inf"),
         )
     minimum = min(
         min_transmission_angle(mechanism)
@@ -378,6 +424,8 @@ def run_mixed_brake_optimization(
         optimizer,
         best,
         grid,
+        targets=targets,
+        input_angles=input_angles,
     )
     return MixedBrakeResult(
         best_score=engine.best_score,
