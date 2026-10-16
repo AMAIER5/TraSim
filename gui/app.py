@@ -28,6 +28,9 @@ from pathlib import Path
 
 import streamlit as st
 
+from analysis.target_curve import (
+    MAX_WEIGHT,
+)
 from gui.mixed_brake_workflow import (
     MixedBrakeSettings,
     load_mixed_brake_inputs,
@@ -45,6 +48,7 @@ from gui.workflow import (
     parameter_template,
     preview,
     run_optimization,
+    with_target_points,
 )
 
 st.set_page_config(
@@ -144,6 +148,105 @@ st.success(
     f"{len(inputs.definition.levers)} Hebel · "
     f"Zielkurve: {inputs.point_count} Stützpunkte"
 )
+
+st.header("Zielkurve")
+st.caption(
+    "Die eingelesenen Stützpunkte der Zielkurve "
+    "können hier direkt bearbeitet, ergänzt und "
+    "gelöscht werden. Eingabewinkel müssen "
+    "aufsteigend und eindeutig sein; Gewichte "
+    "werden auf "
+    f"{MAX_WEIGHT:.0f} begrenzt. Die Diagramme "
+    "zeigen immer die aktuellen Werte."
+)
+
+target_rows = [
+    {
+        "Eingabewinkel (°)": math.degrees(
+            angle,
+        ),
+        "Ausgangswinkel (°)": math.degrees(
+            output,
+        ),
+        "Gewicht": weight,
+    }
+    for angle, output, weight in zip(
+        inputs.input_angles,
+        inputs.output_angles,
+        inputs.target_curve.weights,
+    )
+]
+
+edited_target = st.data_editor(
+    target_rows,
+    num_rows="dynamic",
+    use_container_width=True,
+    key="target_curve_editor",
+)
+
+edited_target = sorted(
+    edited_target,
+    key=lambda row: row[
+        "Eingabewinkel (°)"
+    ],
+)
+
+try:
+    inputs = with_target_points(
+        inputs,
+        [
+            row["Eingabewinkel (°)"]
+            for row in edited_target
+        ],
+        [
+            row["Ausgangswinkel (°)"]
+            for row in edited_target
+        ],
+        [
+            row["Gewicht"]
+            for row in edited_target
+        ],
+    )
+except WorkflowError as error:
+    st.error(str(error))
+    st.stop()
+
+curve_column, weight_column = st.columns(2)
+with curve_column:
+    st.subheader("Zielkurve")
+    st.line_chart(
+        {
+            "Eingabewinkel (°)": [
+                math.degrees(angle)
+                for angle in inputs.input_angles
+            ],
+            "Ausgangswinkel (°)": [
+                math.degrees(angle)
+                for angle in inputs.output_angles
+            ],
+        },
+        x="Eingabewinkel (°)",
+        y="Ausgangswinkel (°)",
+        x_label="Eingabewinkel (°)",
+        y_label="Ausgangswinkel (°)",
+    )
+with weight_column:
+    st.subheader("Gewichte")
+    st.bar_chart(
+        {
+            "Eingabewinkel (°)": [
+                math.degrees(angle)
+                for angle in inputs.input_angles
+            ],
+            "Gewicht": list(
+                inputs.target_curve.weights,
+            ),
+        },
+        x="Eingabewinkel (°)",
+        y="Gewicht",
+        x_label="Eingabewinkel (°)",
+        y_label="Gewicht",
+    )
 
 template = parameter_template(inputs)
 

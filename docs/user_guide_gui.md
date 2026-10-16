@@ -35,7 +35,21 @@ users need no Python knowledge.
    - Both international (comma/dot) and German
      (semicolon/comma) CSV conventions are
      detected automatically from the header line.
-2. **Review optimization parameters**
+2. **Review and edit the target curve**
+   - After uploading, the target-curve support
+     points are shown in an editable table
+     (input angle, output angle, weight).
+   - Values can be changed; rows can be added and
+     deleted. Input angles must be unique and
+     are sorted ascending automatically; weights
+     must be non-negative (clamped to 100).
+   - Two charts next to the table always show the
+     current target curve and the per-point
+     weights; they update immediately after each
+     edit.
+   - The edited curve is used for the preview,
+     the optimization and the HTML report.
+3. **Review optimization parameters**
    - After uploading both files, the app derives
      one length parameter (mm) and one angle
      parameter (degrees) per lever from the CSV
@@ -44,14 +58,14 @@ users need no Python knowledge.
    - The **Vorschau** tab simulates the start
      mechanism and shows it together with the
      target curve in the usual HTML representation.
-3. **Start the optimization**
+4. **Start the optimization**
    - Population size, generations, children per
      generation, mutation strength and seed are
      configured in the sidebar.
    - Live progress shows the current generation
      and the best fitness; a line chart tracks the
      fitness history.
-4. **Download the result**
+5. **Download the result**
    - `simulation_result.html`: the usual result
      document (3D lever diagram + Soll/Ist curve).
    - `mechanism_optimized.csv`: the optimized

@@ -22,7 +22,10 @@ import csv
 import math
 import random
 import tempfile
-from collections.abc import Callable
+from collections.abc import (
+    Callable,
+    Sequence,
+)
 from dataclasses import (
     dataclass,
     field,
@@ -297,6 +300,57 @@ def load_inputs(
         input_angles=tuple(input_deg),
         output_angles=tuple(output_deg),
         point_count=len(input_deg),
+    )
+
+
+def with_target_points(
+    inputs: LoadedInputs,
+    input_angles_deg: Sequence[float],
+    output_angles_deg: Sequence[float],
+    weights: Sequence[float],
+) -> LoadedInputs:
+    """Return a copy of ``inputs`` with the target
+    curve replaced by user-edited support points.
+
+    Angles are given in DEGREES (user units) and
+    converted to radians; weights are non-negative
+    and clamped to ``MAX_WEIGHT``.
+
+    Raises :class:`WorkflowError` with a user-facing
+    message when the points are invalid (fewer than
+    two points, unsorted input angles, negative
+    weights).
+    """
+
+    try:
+        target_curve = (
+            TargetCurve.from_points_strict(
+                tuple(
+                    math.radians(angle)
+                    for angle in input_angles_deg
+                ),
+                tuple(
+                    math.radians(angle)
+                    for angle in output_angles_deg
+                ),
+                tuple(
+                    float(weight)
+                    for weight in weights
+                ),
+            )
+        )
+    except ValueError as error:
+        raise WorkflowError(
+            f"Ungültige Zielkurve: {error}",
+        ) from error
+    return replace(
+        inputs,
+        target_curve=target_curve,
+        input_angles=target_curve.input_angles,
+        output_angles=target_curve.output_angles,
+        point_count=len(
+            target_curve.input_angles,
+        ),
     )
 
 
