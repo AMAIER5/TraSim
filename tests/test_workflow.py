@@ -10,6 +10,10 @@ import math
 
 import pytest
 
+from analysis.target_curve import (
+    DiscreteTargetCurve,
+)
+
 from gui.workflow import (
     OptimizationSettings,
     WorkflowError,
@@ -69,6 +73,66 @@ def test_load_inputs_rejects_single_point_target():
             MECHANISM_CSV,
             "input_angle,output_angle\n60,90\n",
         )
+
+
+def test_load_inputs_defaults_weights_to_one(inputs):
+    assert isinstance(
+        inputs.target_curve,
+        DiscreteTargetCurve,
+    )
+    assert inputs.target_curve.weights == (
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+    )
+
+
+def test_load_inputs_reads_target_weights():
+    weighted_target = (
+        "input_angle,output_angle,weight\n"
+        "60,90,100\n"
+        "70,100,1\n"
+        "80,110,1\n"
+        "90,120,100\n"
+        "100,130,1\n"
+        "110,140,1\n"
+        "120,150,100\n"
+    )
+    loaded = load_inputs(
+        MECHANISM_CSV,
+        weighted_target,
+    )
+    assert loaded.target_curve.weights == (
+        100.0,
+        1.0,
+        1.0,
+        100.0,
+        1.0,
+        1.0,
+        100.0,
+    )
+
+
+def test_load_inputs_reads_partial_weights():
+    weighted_target = (
+        "input_angle,output_angle,weight\n"
+        "60,90,\n"
+        "70,100,5\n"
+        "80,110,\n"
+    )
+    loaded = load_inputs(
+        MECHANISM_CSV,
+        weighted_target,
+    )
+    assert loaded.target_curve.weights == (
+        1.0,
+        5.0,
+        1.0,
+    )
 
 
 def test_load_inputs_detects_german_convention():
