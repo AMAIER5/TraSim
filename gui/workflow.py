@@ -39,6 +39,7 @@ from analysis.curve_plotter import (
 )
 from analysis.target_curve import (
     TargetCurve,
+    DiscreteTargetCurve,
 )
 from mechanics.csv_mechanism_builder import (
     CsvMechanismBuilder,
@@ -119,7 +120,7 @@ class LoadedInputs:
     target_convention: CsvConvention
     output_convention: CsvConvention
     definition: MechanismDefinition
-    target_curve: TargetCurve
+    target_curve: DiscreteTargetCurve
     input_angles: tuple[float, ...]
     output_angles: tuple[float, ...]
     point_count: int
@@ -156,9 +157,14 @@ def _text_to_temp_file(
 def _read_target_points(
     path: Path,
     convention: CsvConvention,
-) -> tuple[list[float], list[float]]:
+) -> tuple[
+    list[float],
+    list[float],
+    list[float],
+]:
     input_angles: list[float] = []
     output_angles: list[float] = []
+    weights: list[float] = []
     with path.open(
         newline="",
         encoding="utf-8",
@@ -166,6 +172,10 @@ def _read_target_points(
         reader = csv.DictReader(
             file,
             delimiter=convention.delimiter,
+        )
+        has_weights = (
+            reader.fieldnames is not None
+            and "weight" in reader.fieldnames
         )
         for row in reader:
             input_angles.append(
@@ -182,12 +192,23 @@ def _read_target_points(
                     ),
                 ),
             )
+            if has_weights:
+                weight_raw = row["weight"]
+                weights.append(
+                    convention.parse_float(
+                        weight_raw,
+                    )
+                    if weight_raw
+                    else 1.0
+                )
+            else:
+                weights.append(1.0)
     if len(input_angles) < 2:
         raise WorkflowError(
             "Die Zielkurve benötigt mindestens "
             "zwei Stützpunkte.",
         )
-    return input_angles, output_angles
+    return input_angles, output_angles, weights
 
 
 def load_inputs(
@@ -227,9 +248,11 @@ def load_inputs(
             definition = CsvReader.read_mechanism(
                 mechanism_path,
             )
-            input_deg, output_deg = _read_target_points(
-                target_path,
-                target_convention,
+            input_deg, output_deg, weights = (
+                _read_target_points(
+                    target_path,
+                    target_convention,
+                )
             )
             if not definition.levers:
                 raise WorkflowError(
@@ -239,9 +262,12 @@ def load_inputs(
                     "(Spalten wie id, length_min, "
                     "…, driver, coupled).",
                 )
-            target_curve = TargetCurve.from_points(
-                tuple(input_deg),
-                tuple(output_deg),
+            target_curve = (
+                TargetCurve.from_points_strict(
+                    tuple(input_deg),
+                    tuple(output_deg),
+                    tuple(weights),
+                )
             )
     except WorkflowError:
         raise
