@@ -23,6 +23,7 @@ from gui.workflow import (
     parameter_template,
     preview,
     run_optimization,
+    with_target_points,
 )
 
 MECHANISM_CSV = """\
@@ -132,6 +133,61 @@ def test_load_inputs_reads_partial_weights():
         1.0,
         5.0,
         1.0,
+    )
+
+
+def test_with_target_points_replaces_curve(inputs):
+    edited = with_target_points(
+        inputs,
+        [60.0, 75.0, 90.0],
+        [95.0, 105.0, 125.0],
+        [2.0, 0.0, 5.0],
+    )
+    assert edited.point_count == 3
+    assert edited.input_angles[0] == (
+        math.radians(60.0)
+    )
+    assert edited.output_angles[2] == (
+        math.radians(125.0)
+    )
+    assert edited.target_curve.weights == (
+        2.0,
+        0.0,
+        5.0,
+    )
+    assert edited.definition is inputs.definition
+
+
+def test_with_target_points_rejects_unsorted_angles(inputs):
+    with pytest.raises(WorkflowError):
+        with_target_points(
+            inputs,
+            [60.0, 50.0],
+            [90.0, 80.0],
+            [1.0, 1.0],
+        )
+
+
+def test_with_target_points_rejects_negative_weight(inputs):
+    with pytest.raises(WorkflowError):
+        with_target_points(
+            inputs,
+            [60.0, 70.0],
+            [90.0, 100.0],
+            [1.0, -1.0],
+        )
+
+
+def test_with_target_points_clamps_large_weight(inputs):
+    edited = with_target_points(
+        inputs,
+        [60.0, 70.0],
+        [90.0, 100.0],
+        [1.0, 1000.0],
+    )
+    assert edited.target_curve.weights == (
+        1.0,
+        100.0,
     )
 
 
