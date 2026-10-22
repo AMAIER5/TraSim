@@ -641,3 +641,89 @@ def test_fast_path_respects_output_limits(monkeypatch):
         <= result.angle
         <= math.radians(10)
     )
+
+# ---------------------------------------------------------------------------
+# Search window must cover lever-angle segments beyond +/-180 degrees
+# ---------------------------------------------------------------------------
+
+
+def _create_parallelogram_stage() -> Stage:
+    """
+    Parallelogram stage with a 1:1 ratio and lever-angle
+    limits 110..250 degrees on both levers (as in the
+    reported simple mechanism CSV).
+    """
+
+    input_lever = Lever(
+        pivot=Point3D(0, 0, 500),
+        axis=Vector3D(0, 0, 1),
+        length=75,
+    )
+
+    output_lever = Lever(
+        pivot=Point3D(0, 0, 10),
+        axis=Vector3D(0, 0, 1),
+        length=75,
+    )
+
+    reference = math.radians(117)
+
+    return Stage.from_reference_position(
+        input_lever=input_lever,
+        output_lever=output_lever,
+        input_angle=reference,
+        output_angle=reference,
+        input_angle_min=math.radians(110),
+        input_angle_max=math.radians(250),
+        output_angle_min=math.radians(110),
+        output_angle_max=math.radians(250),
+        validate_reference=False,
+    )
+
+
+def test_angle_solver_covers_output_segment_beyond_180_deg():
+    """
+    A valid solution at an output lever angle beyond 180
+    degrees must be found: the default search window is
+    derived from the stage limits instead of the fixed
+    [-180, 180] window.
+    """
+
+    stage = _create_parallelogram_stage()
+
+    solver = AngleSolver(stage)
+
+    assert solver.search_min <= math.radians(110)
+    assert solver.search_max >= math.radians(250)
+
+    state = SolverState(
+        last_input_angle=math.radians(145),
+        last_output_angle=math.radians(145),
+        direction=1,
+    )
+
+    result = solver.solve(
+        input_angle=math.radians(181),
+        state=state,
+    )
+
+    assert result.success is True
+    assert abs(math.degrees(result.angle) - 181.0) < 1e-6
+
+
+def test_angle_solver_explicit_search_window_still_respected():
+    """
+    Explicitly passed search bounds override the derived
+    defaults.
+    """
+
+    stage = _create_parallelogram_stage()
+
+    solver = AngleSolver(
+        stage,
+        search_min=math.radians(-180),
+        search_max=math.radians(180),
+    )
+
+    assert solver.search_min == math.radians(-180)
+    assert solver.search_max == math.radians(180)
