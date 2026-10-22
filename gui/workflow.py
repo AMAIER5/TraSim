@@ -24,6 +24,7 @@ import random
 import tempfile
 from collections.abc import (
     Callable,
+    Mapping,
     Sequence,
 )
 from dataclasses import (
@@ -57,6 +58,16 @@ from mechanism_io.csv_reader import (
 )
 from mechanism_io.csv_writer import (
     CsvWriter,
+)
+from core.point3d import (
+    Point3D,
+)
+from core.vector3d import (
+    Vector3D,
+)
+from model.lever_definition import (
+    LeverDefinition,
+    parse_pivot_reference,
 )
 from model.mechanism_definition import (
     MechanismDefinition,
@@ -351,6 +362,187 @@ def with_target_points(
         point_count=len(
             target_curve.input_angles,
         ),
+    )
+
+
+def with_mechanism_levers(
+    inputs: LoadedInputs,
+    lever_rows: Sequence[Mapping[str, object]],
+) -> LoadedInputs:
+    """Return a copy of ``inputs`` with the mechanism
+    definition replaced by user-edited lever rows.
+
+    Each row is a mapping with the keys ``id``,
+    ``length_min``, ``length_max``, ``length_start``,
+    ``angle_min``, ``angle_max``, ``angle_start``,
+    ``pivot_x``, ``pivot_y``, ``pivot_z``, ``axis_x``,
+    ``axis_y``, ``axis_z`` and optionally ``ref_x``,
+    ``ref_y``, ``ref_z``, ``driver``, ``coupled`` and
+    ``pivot_on``.
+
+    Lengths are in millimetres, angles in DEGREES
+    (user units) and are converted to radians.
+    ``driver``/``coupled`` accept integers or ``None``;
+    ``ref_x``/``ref_y``/``ref_z`` accept floats or
+    ``None`` (automatic reference direction).  Empty
+    cells from an editable UI table arrive as ``None``
+    and are treated as absent.
+
+    Raises :class:`WorkflowError` with a user-facing
+    message when a row is invalid (missing values,
+    malformed integers, unknown pivot_on reference,
+    duplicate lever ids).
+    """
+
+    def _number(
+        row: Mapping[str, object],
+        key: str,
+    ) -> float:
+        value = row.get(key)
+        if value is None or (
+            isinstance(value, str)
+            and not value.strip()
+        ):
+            raise WorkflowError(
+                f"Hebel {row.get('id', '?')}: "
+                f"Feld {key!r} fehlt."
+            )
+        try:
+            return float(value)
+        except (TypeError, ValueError) as error:
+            raise WorkflowError(
+                f"Hebel {row.get('id', '?')}: "
+                f"Feld {key!r} ist keine Zahl "
+                f"({value!r})."
+            ) from error
+
+    def _optional_int(
+        row: Mapping[str, object],
+        key: str,
+    ) -> int | None:
+        value = row.get(key)
+        if value is None or (
+            isinstance(value, str)
+            and not value.strip()
+        ):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError) as error:
+            raise WorkflowError(
+                f"Hebel {row.get('id', '?')}: "
+                f"Feld {key!r} ist keine ganze "
+                f"Zahl ({value!r})."
+            ) from error
+
+    def _pivot_on(
+        row: Mapping[str, object],
+    ) -> str | None:
+        value = row.get("pivot_on")
+        if value is None or (
+            isinstance(value, str)
+            and not value.strip()
+        ):
+            return None
+        try:
+            parse_pivot_reference(str(value))
+        except ValueError as error:
+            raise WorkflowError(
+                f"Hebel {row.get('id', '?')}: "
+                f"{error}"
+            ) from error
+        return str(value).strip()
+
+    levers = []
+    for row in lever_rows:
+        reference = None
+        if not all(
+            row.get(key) is None
+            or (
+                isinstance(row.get(key), str)
+                and not str(row.get(key)).strip()
+            )
+            for key in ("ref_x", "ref_y", "ref_z")
+        ):
+            reference = Vector3D(
+                x=_number(row, "ref_x"),
+                y=_number(row, "ref_y"),
+                z=_number(row, "ref_z"),
+            )
+        lever_id = _optional_int(row, "id")
+        if lever_id is None:
+            raise WorkflowError(
+                "Jeder Hebel benötigt eine "
+                "numerische id."
+            )
+        coupled = _optional_int(row, "coupled")
+        driver = _optional_int(row, "driver")
+        if coupled is not None:
+            driver = None
+        try:
+            levers.append(
+                LeverDefinition(
+                    id=lever_id,
+                    pivot=Point3D(
+                        x=_number(row, "pivot_x"),
+                        y=_number(row, "pivot_y"),
+                        z=_number(row, "pivot_z"),
+                    ),
+                    length_min=_number(
+                        row,
+                        "length_min",
+                    ),
+                    length_max=_number(
+                        row,
+                        "length_max",
+                    ),
+                    length_start=_number(
+                        row,
+                        "length_start",
+                    ),
+                    angle_min=math.radians(
+                        _number(row, "angle_min")
+                    ),
+                    angle_max=math.radians(
+                        _number(row, "angle_max")
+                    ),
+                    angle_start=math.radians(
+                        _number(row, "angle_start")
+                    ),
+                    axis=Vector3D(
+                        x=_number(row, "axis_x"),
+                        y=_number(row, "axis_y"),
+                        z=_number(row, "axis_z"),
+                    ),
+                    reference_direction=reference,
+                    driver=driver,
+                    coupled=coupled,
+                    pivot_on=_pivot_on(row),
+                )
+            )
+        except ValueError as error:
+            raise WorkflowError(
+                f"Ungültige Mechanikdefinition: "
+                f"{error}"
+            ) from error
+
+    try:
+        definition = MechanismDefinition(
+            tuple(levers)
+        )
+    except ValueError as error:
+        raise WorkflowError(
+            f"Ungültige Mechanikdefinition: {error}"
+        ) from error
+    if not definition.levers:
+        raise WorkflowError(
+            "Die Mechanikdefinition benötigt "
+            "mindestens einen Hebel."
+        )
+
+    return replace(
+        inputs,
+        definition=definition,
     )
 
 

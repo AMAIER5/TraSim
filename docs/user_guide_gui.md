@@ -49,8 +49,21 @@ users need no Python knowledge.
      edit.
    - The edited curve is used for the preview,
      the optimization and the HTML report.
-3. **Review optimization parameters**
-   - After uploading both files, the app derives
+3. **Review and edit the mechanism**
+   - After uploading, the mechanism definition is
+     shown as an editable table with one row per
+     lever (id, lengths, angles in degrees, pivot,
+     axis, optional reference direction, driver,
+     coupled, pivot_on).
+   - Values can be changed; levers can be added
+     and deleted on the fly for fast iteration.
+     Invalid input (missing values, duplicate ids,
+     malformed pivot_on) is rejected with a clear
+     message.
+   - The optimization parameters below and the
+     preview update automatically after each edit.
+4. **Review optimization parameters**
+   - The app derives
      one length parameter (mm) and one angle
      parameter (degrees) per lever from the CSV
      ranges. Values and bounds are editable.
@@ -58,14 +71,14 @@ users need no Python knowledge.
    - The **Vorschau** tab simulates the start
      mechanism and shows it together with the
      target curve in the usual HTML representation.
-4. **Start the optimization**
+5. **Start the optimization**
    - Population size, generations, children per
      generation, mutation strength and seed are
      configured in the sidebar.
    - Live progress shows the current generation
      and the best fitness; a line chart tracks the
      fitness history.
-5. **Download the result**
+6. **Download the result**
    - `simulation_result.html`: the usual result
      document (3D lever diagram + Soll/Ist curve).
    - `mechanism_optimized.csv`: the optimized

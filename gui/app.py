@@ -48,6 +48,7 @@ from gui.workflow import (
     parameter_template,
     preview,
     run_optimization,
+    with_mechanism_levers,
     with_target_points,
 )
 
@@ -248,14 +249,95 @@ with weight_column:
         y_label="Gewicht",
     )
 
-template = parameter_template(inputs)
-
-st.header("Optimierungsparameter")
+st.header("Parameter des Startmechanismus")
 st.caption(
-    "Längen in mm, Winkel in Grad. Startwert und "
-    "Grenzen können angepasst werden; gleiche "
-    "Min-/Max-Grenzen fixieren einen Parameter."
+    "Diese Tabelle wird automatisch aus der "
+    "Mechanikdefinition erzeugt und aktualisiert "
+    "sich nach jeder Änderung der Tabelle oben. "
+    "Startwert und Grenzen können angepasst "
+    "werden; gleiche Min-/Max-Grenzen fixieren "
+    "einen Parameter."
 )
+
+mechanism_rows = [
+    {
+        "id": lever.id,
+        "length_min": lever.length_min,
+        "length_max": lever.length_max,
+        "length_start": lever.length_start,
+        "angle_min": math.degrees(
+            lever.angle_min,
+        ),
+        "angle_max": math.degrees(
+            lever.angle_max,
+        ),
+        "angle_start": math.degrees(
+            lever.angle_start,
+        ),
+        "pivot_x": lever.pivot.x,
+        "pivot_y": lever.pivot.y,
+        "pivot_z": lever.pivot.z,
+        "axis_x": lever.axis.x,
+        "axis_y": lever.axis.y,
+        "axis_z": lever.axis.z,
+        "ref_x": (
+            lever.reference_direction.x
+            if lever.reference_direction
+            else None
+        ),
+        "ref_y": (
+            lever.reference_direction.y
+            if lever.reference_direction
+            else None
+        ),
+        "ref_z": (
+            lever.reference_direction.z
+            if lever.reference_direction
+            else None
+        ),
+        "driver": lever.driver,
+        "coupled": lever.coupled,
+        "pivot_on": lever.pivot_on,
+    }
+    for lever in inputs.definition.levers
+]
+
+edited_mechanism = st.data_editor(
+    mechanism_rows,
+    num_rows="dynamic",
+    use_container_width=True,
+    key="mechanism_editor",
+    column_config={
+        "id": st.column_config.NumberColumn(
+            "id",
+            help="Eindeutige Hebel-ID (erster Hebel = Antrieb)",
+        ),
+        "angle_min": st.column_config.NumberColumn(
+            "angle_min (°)",
+        ),
+        "angle_max": st.column_config.NumberColumn(
+            "angle_max (°)",
+        ),
+        "angle_start": st.column_config.NumberColumn(
+            "angle_start (°)",
+        ),
+        "pivot_on": st.column_config.TextColumn(
+            "pivot_on",
+            help="lever_id@angle_deg (z. B. lever3@180), leer = fester Drehpunkt",
+        ),
+    },
+)
+
+try:
+    inputs = with_mechanism_levers(
+        inputs,
+        edited_mechanism,
+    )
+except WorkflowError as error:
+    st.error(str(error))
+    st.stop()
+
+template = parameter_template(inputs)
 
 rows = []
 for parameter in template.parameters:
