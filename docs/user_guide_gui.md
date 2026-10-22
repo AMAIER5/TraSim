@@ -71,14 +71,25 @@ users need no Python knowledge.
    - The **Vorschau** tab simulates the start
      mechanism and shows it together with the
      target curve in the usual HTML representation.
-5. **Start the optimization**
+5. **Adopt optimized values**
+   - After an optimization run, the parameter table
+     shows an **Optimiert** column with the values
+     of the last run next to the original start
+     values.
+   - A per-parameter **Übernehmen** button (and an
+     **Alle optimierten Werte als Startwert
+     übernehmen** button for all parameters at once)
+     copies the optimized value into the start value
+     column, so the next iteration starts from the
+     optimized mechanism.
+6. **Start the optimization**
    - Population size, generations, children per
      generation, mutation strength and seed are
      configured in the sidebar.
    - Live progress shows the current generation
      and the best fitness; a line chart tracks the
      fitness history.
-6. **Download the result**
+7. **Download the result**
    - `simulation_result.html`: the usual result
      document (3D lever diagram + Soll/Ist curve).
    - `mechanism_optimized.csv`: the optimized

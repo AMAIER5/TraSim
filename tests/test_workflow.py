@@ -20,6 +20,7 @@ from gui.workflow import (
     apply_parameter_overrides,
     load_inputs,
     mechanism_csv_text,
+    optimized_values,
     parameter_template,
     preview,
     run_optimization,
@@ -359,6 +360,33 @@ def test_with_mechanism_levers_preserves_coupled_priority(inputs):
     lever = edited.definition.levers[0]
     assert lever.coupled == 3
     assert lever.driver is None
+
+
+def test_optimized_values_maps_definition(inputs):
+    values = optimized_values(
+        inputs.definition,
+    )
+    assert values == {
+        "lever.1.length": 50.0,
+        "lever.1.angle": math.radians(90.0),
+        "lever.1.pivot.x": 0.0,
+        "lever.1.pivot.y": 0.0,
+        "lever.2.length": 60.0,
+        "lever.2.angle": math.radians(90.0),
+        "lever.2.pivot.x": 100.0,
+        "lever.2.pivot.y": 0.0,
+    }
+
+
+def test_optimized_values_matches_template_names(inputs):
+    template = parameter_template(inputs)
+    values = optimized_values(
+        inputs.definition,
+    )
+    assert set(values) == set(
+        parameter.name
+        for parameter in template.parameters
+    )
 
 
 def test_load_inputs_detects_german_convention():

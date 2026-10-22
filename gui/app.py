@@ -47,6 +47,7 @@ from gui.workflow import (
     load_inputs,
     parameter_template,
     preview,
+    optimized_values,
     run_optimization,
     with_mechanism_levers,
     with_target_points,
@@ -339,12 +340,65 @@ except WorkflowError as error:
 
 template = parameter_template(inputs)
 
+result = st.session_state.get("result")
+optimized_map: dict[str, float] = {}
+if result is not None:
+    optimized_map = optimized_values(
+        result.optimized_definition,
+    )
+
+# Pending single-parameter adoptions requested via
+# the per-parameter buttons below.  They survive the
+# rerun triggered by the button click.
+if "adopted_params" not in st.session_state:
+    st.session_state["adopted_params"] = set()
+
+adopt_all = (
+    st.session_state.get(
+        "adopt_all_pressed",
+        False,
+    )
+)
+if adopt_all and result is not None:
+    st.session_state[
+        "adopted_params"
+    ] = set(optimized_map)
+if adopt_all:
+    st.session_state["adopt_all_pressed"] = (
+        False
+    )
+
+if optimized_map:
+    st.caption(
+        "✅ Optimierungsergebnis vorhanden — die "
+        "Spalte „Optimiert“ zeigt die Werte des "
+        "letzten Optimierungslaufs."
+    )
+    adopt_all_pressed = st.button(
+        "Alle optimierten Werte als Startwert übernehmen",
+        key="adopt_all_button",
+    )
+    if adopt_all_pressed:
+        st.session_state["adopt_all_pressed"] = (
+            True
+        )
+        st.rerun()
+
 rows = []
 for parameter in template.parameters:
     angle = is_angle_parameter(parameter)
     factor = (
         180.0 / math.pi if angle else 1.0
     )
+    start_value = parameter.value
+    if (
+        parameter.name
+        in st.session_state["adopted_params"]
+        and parameter.name in optimized_map
+    ):
+        start_value = optimized_map[
+            parameter.name
+        ]
     rows.append(
         {
             "Parameter": parameter.name,
@@ -360,7 +414,16 @@ for parameter in template.parameters:
                 parameter.maximum * factor
             ),
             "Startwert": (
-                parameter.value * factor
+                start_value * factor
+            ),
+            "Optimiert": (
+                optimized_map.get(
+                    parameter.name,
+                )
+                * factor
+                if parameter.name
+                in optimized_map
+                else None
             ),
             "Optimieren": (
                 not parameter.is_fixed
@@ -372,7 +435,11 @@ edited = st.data_editor(
     rows,
     num_rows="fixed",
     use_container_width=True,
-    disabled=["Parameter", "Typ"],
+    disabled=[
+        "Parameter",
+        "Typ",
+        "Optimiert",
+    ],
 )
 
 overrides: dict[
@@ -401,6 +468,38 @@ for row, parameter in zip(
         maximum,
         value,
     )
+
+if optimized_map:
+    st.subheader(
+        "Optimierten Wert als Startwert übernehmen"
+    )
+    for parameter in template.parameters:
+        if parameter.name not in optimized_map:
+            continue
+        column_name, column_button = (
+            st.columns([0.7, 0.3])
+        )
+        with column_name:
+            angle = is_angle_parameter(
+                parameter,
+            )
+            unit = "°" if angle else " mm"
+            st.write(
+                f"**{parameter.name}** → "
+                f"{optimized_map[parameter.name]:.4f}"
+                f"{unit}"
+            )
+        with column_button:
+            if st.button(
+                "Übernehmen",
+                key=(
+                    f"adopt_{parameter.name}"
+                ),
+            ):
+                st.session_state[
+                    "adopted_params"
+                ].add(parameter.name)
+                st.rerun()
 
 try:
     active_template = (
