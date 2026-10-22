@@ -47,8 +47,8 @@ class AngleSolver:
         stage: Stage,
         *,
         precision: SolverPrecision | None = None,
-        search_min: float = math.radians(-180),
-        search_max: float = math.radians(180),
+        search_min: float | None = None,
+        search_max: float | None = None,
         bracket_step: float | None = None,
         search_window: float | None = None,
         tolerance: float | None = None,
@@ -94,8 +94,16 @@ class AngleSolver:
             )
 
         self.precision = precision
-        self.search_min = search_min
-        self.search_max = search_max
+        self.search_min = (
+            search_min
+            if search_min is not None
+            else self._default_search_min(stage)
+        )
+        self.search_max = (
+            search_max
+            if search_max is not None
+            else self._default_search_max(stage)
+        )
 
         self.reuse_factor = reuse_factor
         self.reuse_min_window = reuse_min_window
@@ -117,6 +125,41 @@ class AngleSolver:
             "blocked": 0,
             "brent_iterations": 0,
         }
+
+    @staticmethod
+    def _default_search_min(stage: Stage) -> float:
+        """
+        Default lower search bound.
+
+        The classical default window ``[-180\u00b0, +180\u00b0]`` cut
+        off lever angles outside that range: a stage whose output
+        lever angle segment lies beyond 180\u00b0 (e.g. 110\u00b0..250\u00b0)
+        could never be solved, even though the geometry was
+        perfectly valid.  The default window therefore always
+        spans at least the full circle ``[-360\u00b0, +360\u00b0]`` around
+        zero, which covers every admissible lever angle segment
+        reachable from a reference position within one turn.
+        """
+
+        limit = stage.output_angle_min
+
+        if limit == float("-inf"):
+            return math.radians(-360)
+
+        return min(math.radians(-360), limit)
+
+    @staticmethod
+    def _default_search_max(stage: Stage) -> float:
+        """
+        Default upper search bound (see ``_default_search_min``).
+        """
+
+        limit = stage.output_angle_max
+
+        if limit == float("inf"):
+            return math.radians(360)
+
+        return max(math.radians(360), limit)
 
     def solve(
         self,
