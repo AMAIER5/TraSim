@@ -72,16 +72,19 @@ users need no Python knowledge.
      mechanism and shows it together with the
      target curve in the usual HTML representation.
 5. **Adopt optimized values**
-   - After an optimization run, the parameter table
-     shows an **Optimiert** column with the values
-     of the last run next to the original start
-     values.
-   - A per-parameter **Übernehmen** button (and an
-     **Alle optimierten Werte als Startwert
-     übernehmen** button for all parameters at once)
-     copies the optimized value into the start value
-     column, so the next iteration starts from the
-     optimized mechanism.
+   - After an optimization run, an additional table
+     lists the start values next to the **Optimiert**
+     values of the last run.
+   - Clicking a cell in the **Optimiert** column
+     adopts that single value as the new start
+     value; the **Alle optimierten Werte als
+     Startwert übernehmen** button adopts all of
+     them at once, so the next iteration starts
+     from the optimized mechanism.
+   - The **Vorschau** always simulates the current
+     start values (including adopted optimized
+     values); press **Vorschau aktualisieren** to
+     rebuild it after edits.
 6. **Start the optimization**
    - Population size, generations, children per
      generation, mutation strength and seed are

@@ -698,14 +698,20 @@ def build_report_html(
 
 def preview(
     inputs: LoadedInputs,
+    template: ParameterSet | None = None,
 ) -> str:
     """Simulate the start mechanism and return the
-    HTML report of the unoptimized state."""
+    HTML report of the unoptimized state.
+
+    ``template`` overrides the parameter template
+    derived from the definition (e.g. to honour
+    user-edited start values and bounds)."""
 
     builder = CsvMechanismBuilder(
         inputs.definition,
     )
-    template = parameter_template(inputs)
+    if template is None:
+        template = parameter_template(inputs)
     mechanism, simulator, results = _simulate(
         builder,
         template,
