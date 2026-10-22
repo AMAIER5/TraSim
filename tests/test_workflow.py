@@ -23,6 +23,7 @@ from gui.workflow import (
     parameter_template,
     preview,
     run_optimization,
+    with_mechanism_levers,
     with_target_points,
 )
 
@@ -189,6 +190,175 @@ def test_with_target_points_clamps_large_weight(inputs):
         1.0,
         100.0,
     )
+
+
+def test_with_mechanism_levers_replaces_definition(inputs):
+    edited = with_mechanism_levers(
+        inputs,
+        [
+            {
+                "id": 1,
+                "length_min": 60.0,
+                "length_max": 160.0,
+                "length_start": 70.0,
+                "angle_min": 50.0,
+                "angle_max": 130.0,
+                "angle_start": 80.0,
+                "pivot_x": 0.0,
+                "pivot_y": 0.0,
+                "pivot_z": 0.0,
+                "axis_x": 0.0,
+                "axis_y": 0.0,
+                "axis_z": 1.0,
+            },
+            {
+                "id": 2,
+                "length_min": 50.0,
+                "length_max": 150.0,
+                "length_start": 60.0,
+                "angle_min": 60.0,
+                "angle_max": 120.0,
+                "angle_start": 90.0,
+                "pivot_x": 100.0,
+                "pivot_y": 0.0,
+                "pivot_z": 0.0,
+                "axis_x": 0.0,
+                "axis_y": 0.0,
+                "axis_z": 1.0,
+                "coupled": 1,
+            },
+        ],
+    )
+    assert len(edited.definition.levers) == 2
+    lever1 = edited.definition.levers[0]
+    assert lever1.length_start == 70.0
+    assert lever1.angle_min == math.radians(50.0)
+    assert edited.target_curve is inputs.target_curve
+
+
+def test_with_mechanism_levers_roundtrip_via_csv(inputs):
+    rows = [
+        {
+            "id": lever.id,
+            "length_min": lever.length_min,
+            "length_max": lever.length_max,
+            "length_start": lever.length_start,
+            "angle_min": math.degrees(lever.angle_min),
+            "angle_max": math.degrees(lever.angle_max),
+            "angle_start": math.degrees(lever.angle_start),
+            "pivot_x": lever.pivot.x,
+            "pivot_y": lever.pivot.y,
+            "pivot_z": lever.pivot.z,
+            "axis_x": lever.axis.x,
+            "axis_y": lever.axis.y,
+            "axis_z": lever.axis.z,
+            "ref_x": (
+                lever.reference_direction.x
+                if lever.reference_direction
+                else None
+            ),
+            "ref_y": (
+                lever.reference_direction.y
+                if lever.reference_direction
+                else None
+            ),
+            "ref_z": (
+                lever.reference_direction.z
+                if lever.reference_direction
+                else None
+            ),
+            "driver": lever.driver,
+            "coupled": lever.coupled,
+            "pivot_on": lever.pivot_on,
+        }
+        for lever in inputs.definition.levers
+    ]
+    edited = with_mechanism_levers(inputs, rows)
+    assert edited.definition.levers == (
+        inputs.definition.levers
+    )
+
+
+def test_with_mechanism_levers_rejects_duplicate_ids(inputs):
+    row = {
+        "id": 1,
+        "length_min": 50.0,
+        "length_max": 150.0,
+        "length_start": 50.0,
+        "angle_min": 60.0,
+        "angle_max": 120.0,
+        "angle_start": 90.0,
+        "pivot_x": 0.0,
+        "pivot_y": 0.0,
+        "pivot_z": 0.0,
+        "axis_x": 0.0,
+        "axis_y": 0.0,
+        "axis_z": 1.0,
+    }
+    with pytest.raises(WorkflowError):
+        with_mechanism_levers(inputs, [row, dict(row)])
+
+
+def test_with_mechanism_levers_rejects_missing_value(inputs):
+    row = {
+        "id": 1,
+        "length_min": 50.0,
+    }
+    with pytest.raises(WorkflowError):
+        with_mechanism_levers(inputs, [row])
+
+
+def test_with_mechanism_levers_rejects_invalid_pivot_on(inputs):
+    row = {
+        "id": 1,
+        "length_min": 50.0,
+        "length_max": 150.0,
+        "length_start": 50.0,
+        "angle_min": 60.0,
+        "angle_max": 120.0,
+        "angle_start": 90.0,
+        "pivot_x": 0.0,
+        "pivot_y": 0.0,
+        "pivot_z": 0.0,
+        "axis_x": 0.0,
+        "axis_y": 0.0,
+        "axis_z": 1.0,
+        "pivot_on": "not-a-reference",
+    }
+    with pytest.raises(WorkflowError):
+        with_mechanism_levers(inputs, [row])
+
+
+def test_with_mechanism_levers_rejects_empty_definition(inputs):
+    with pytest.raises(WorkflowError):
+        with_mechanism_levers(inputs, [])
+
+
+def test_with_mechanism_levers_preserves_coupled_priority(inputs):
+    row = {
+        "id": 1,
+        "length_min": 50.0,
+        "length_max": 150.0,
+        "length_start": 50.0,
+        "angle_min": 60.0,
+        "angle_max": 120.0,
+        "angle_start": 90.0,
+        "pivot_x": 0.0,
+        "pivot_y": 0.0,
+        "pivot_z": 0.0,
+        "axis_x": 0.0,
+        "axis_y": 0.0,
+        "axis_z": 1.0,
+        "driver": 2,
+        "coupled": 3,
+    }
+    edited = with_mechanism_levers(
+        inputs,
+        [row],
+    )
+    lever = edited.definition.levers[0]
+    assert lever.coupled == 3
+    assert lever.driver is None
 
 
 def test_load_inputs_detects_german_convention():
