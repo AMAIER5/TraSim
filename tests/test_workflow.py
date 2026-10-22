@@ -494,6 +494,38 @@ def test_preview_produces_html(inputs):
     assert "Soll-Ausgangskurve" in html
 
 
+def test_preview_honours_overridden_template(inputs):
+    template = parameter_template(inputs)
+    overrides = {
+        "lever.1.length": (
+            50.0,
+            150.0,
+            60.0,
+        ),
+    }
+    overridden = apply_parameter_overrides(
+        template,
+        overrides,
+    )
+    html = preview(
+        inputs,
+        overridden,
+    )
+    assert "<html" in html
+    assert (
+        math.degrees(
+            overridden.get(
+                "lever.1.length",
+            ).value,
+        )
+        != math.degrees(
+            template.get(
+                "lever.1.length",
+            ).value,
+        )
+    )
+
+
 def test_run_optimization_returns_result(inputs):
     settings = OptimizationSettings(
         population_size=20,

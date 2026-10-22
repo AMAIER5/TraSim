@@ -347,41 +347,80 @@ if result is not None:
         result.optimized_definition,
     )
 
-# Pending single-parameter adoptions requested via
-# the per-parameter buttons below.  They survive the
-# rerun triggered by the button click.
+# Start values adopted from the last optimization
+# run.  A set in session state survives reruns.
 if "adopted_params" not in st.session_state:
     st.session_state["adopted_params"] = set()
 
-adopt_all = (
-    st.session_state.get(
-        "adopt_all_pressed",
-        False,
-    )
-)
-if adopt_all and result is not None:
-    st.session_state[
-        "adopted_params"
-    ] = set(optimized_map)
-if adopt_all:
-    st.session_state["adopt_all_pressed"] = (
-        False
-    )
-
 if optimized_map:
     st.caption(
-        "✅ Optimierungsergebnis vorhanden — die "
-        "Spalte „Optimiert“ zeigt die Werte des "
-        "letzten Optimierungslaufs."
+        "✅ Optimierungsergebnis vorhanden — Klick "
+        "auf einen Wert in der Spalte „Optimiert“ "
+        "der nächsten Tabelle übernimmt ihn als "
+        "Startwert."
     )
-    adopt_all_pressed = st.button(
-        "Alle optimierten Werte als Startwert übernehmen",
-        key="adopt_all_button",
+    selection = st.dataframe(
+        [
+            {
+                "Parameter": (
+                    parameter.name
+                ),
+                "Startwert": (
+                    parameter.value
+                    * (
+                        180.0 / math.pi
+                        if is_angle_parameter(
+                            parameter,
+                        )
+                        else 1.0
+                    )
+                ),
+                "Optimiert": (
+                    optimized_map[
+                        parameter.name
+                    ]
+                    * (
+                        180.0 / math.pi
+                        if is_angle_parameter(
+                            parameter,
+                        )
+                        else 1.0
+                    )
+                ),
+            }
+            for parameter in template.parameters
+            if parameter.name in optimized_map
+        ],
+        use_container_width=True,
+        hide_index=True,
+        key="optimized_selection",
+        on_select="rerun",
+        selection_mode="single-cell",
     )
-    if adopt_all_pressed:
-        st.session_state["adopt_all_pressed"] = (
-            True
+    selectable_names = [
+        parameter.name
+        for parameter in template.parameters
+        if parameter.name in optimized_map
+    ]
+    for (
+        row_index,
+        column,
+    ) in selection.selection.cells:
+        if column != "Optimiert":
+            continue
+        st.session_state[
+            "adopted_params"
+        ].add(
+            selectable_names[row_index]
         )
+    if st.button(
+        "Alle optimierten Werte als "
+        "Startwert übernehmen",
+        key="adopt_all_button",
+    ):
+        st.session_state[
+            "adopted_params"
+        ] = set(optimized_map)
         st.rerun()
 
 rows = []
@@ -435,6 +474,7 @@ edited = st.data_editor(
     rows,
     num_rows="fixed",
     use_container_width=True,
+    key="parameter_editor",
     disabled=[
         "Parameter",
         "Typ",
@@ -469,38 +509,6 @@ for row, parameter in zip(
         value,
     )
 
-if optimized_map:
-    st.subheader(
-        "Optimierten Wert als Startwert übernehmen"
-    )
-    for parameter in template.parameters:
-        if parameter.name not in optimized_map:
-            continue
-        column_name, column_button = (
-            st.columns([0.7, 0.3])
-        )
-        with column_name:
-            angle = is_angle_parameter(
-                parameter,
-            )
-            unit = "°" if angle else " mm"
-            st.write(
-                f"**{parameter.name}** → "
-                f"{optimized_map[parameter.name]:.4f}"
-                f"{unit}"
-            )
-        with column_button:
-            if st.button(
-                "Übernehmen",
-                key=(
-                    f"adopt_{parameter.name}"
-                ),
-            ):
-                st.session_state[
-                    "adopted_params"
-                ].add(parameter.name)
-                st.rerun()
-
 try:
     active_template = (
         apply_parameter_overrides(
@@ -524,10 +532,21 @@ with preview_tab:
         "Simulation des Startmechanismus mit der "
         "geladenen Zielkurve."
     )
-    if st.button("Vorschau aktualisieren"):
+    refresh_preview = st.button(
+        "Vorschau aktualisieren",
+        key="refresh_preview_button",
+    )
+    if refresh_preview:
         try:
-            preview_html = preview(inputs)
+            preview_html = preview(
+                inputs,
+                active_template,
+            )
         except WorkflowError as error:
+            st.session_state.pop(
+                "preview_html",
+                None,
+            )
             st.error(str(error))
         else:
             st.session_state["preview_html"] = (
@@ -554,6 +573,7 @@ with result_tab:
     start_pressed = st.button(
         "Optimierung starten",
         type="primary",
+        key="start_optimization_button",
     )
     if start_pressed:
         settings = OptimizationSettings(
@@ -612,24 +632,27 @@ with result_tab:
 
         progress_bar.empty()
         st.session_state["result"] = result
+        st.session_state["adopted_params"] = set()
         history = (
             result.fitness_history
         )
         if history:
-            finite = [
-                score
-                if math.isfinite(score)
-                else float("nan")
-                for score in history
-            ]
             status_text.empty()
             score_chart.line_chart(
                 {
-                    "Beste Fitness": finite,
+                    "Beste Fitness": [
+                        score
+                        if math.isfinite(
+                            score
+                        )
+                        else float("nan")
+                        for score in history
+                    ],
                 },
                 x_label="Generation",
                 y_label="Fitness",
             )
+        st.rerun()
 
 result = st.session_state.get("result")
 if result is not None:
@@ -642,6 +665,18 @@ if result is not None:
             f"**Generationen:** "
             f"{result.generations}"
         )
+        if result.fitness_history:
+            st.line_chart(
+                {
+                    "Beste Fitness": (
+                        list(
+                            result.fitness_history,
+                        )
+                    ),
+                },
+                x_label="Generation",
+                y_label="Fitness",
+            )
         st.download_button(
             "Ergebnis-HTML herunterladen",
             data=result.html,
