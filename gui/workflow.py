@@ -546,6 +546,37 @@ def with_mechanism_levers(
     )
 
 
+def optimized_values(
+    definition: MechanismDefinition,
+) -> dict[str, float]:
+    """Map optimization parameter names to the values
+    of a mechanism definition (INTERNAL units:
+    radians for angles, millimetres for lengths).
+
+    The keys match the names produced by
+    ``CsvParameterFactory`` (``lever.<id>.length`` and
+    ``lever.<id>.angle``), so an optimized definition
+    can be compared with the start template
+    parameter by parameter.
+    """
+
+    values: dict[str, float] = {}
+    for lever in definition.levers:
+        values[
+            f"lever.{lever.id}.length"
+        ] = lever.length_start
+        values[
+            f"lever.{lever.id}.angle"
+        ] = lever.angle_start
+        values[
+            f"lever.{lever.id}.pivot.x"
+        ] = lever.pivot.x
+        values[
+            f"lever.{lever.id}.pivot.y"
+        ] = lever.pivot.y
+    return values
+
+
 def parameter_template(
     inputs: LoadedInputs,
 ) -> ParameterSet:
