@@ -214,3 +214,81 @@ def test_read_international_target_curve(
     assert math.degrees(
         curve.evaluate(math.radians(0)),
     ) == pytest.approx(0)
+
+
+def test_read_mechanism_with_whitespace(
+    tmp_path,
+):
+    """Whitespace and empty lines are trimmed (#60)."""
+    path = tmp_path / "mechanism.csv"
+    path.write_text(
+        "\n"
+        "﻿id; length_min ;length_max;length_start;"
+        "angle_min;angle_max;angle_start;"
+        "pivot_x;pivot_y;pivot_z;"
+        "axis_x;axis_y;axis_z;driver;coupled\n"
+        " 1 ; 40 ;100; 60,5 ;-40;40;0;0;0;0;0;0;1;;\n"
+        "2;30,5;90;45;-60;60;0;100,25;0;0;0;0;1;; 1 \n"
+        "   \n"
+        "\n",
+        encoding="utf-8",
+    )
+    definition = CsvReader.read_mechanism(path)
+    assert definition.lever_count == 2
+    assert definition.levers[0].length_min == (
+        pytest.approx(40.0)
+    )
+    assert definition.levers[0].length_start == (
+        pytest.approx(60.5)
+    )
+    assert definition.levers[1].coupled == 1
+
+
+def test_read_mechanism_with_empty_lines(
+    tmp_path,
+):
+    """Empty and whitespace-only lines are skipped (#60)."""
+    path = tmp_path / "mechanism.csv"
+    path.write_text(
+        "\n\n"
+        "id;length_min;length_max;length_start;"
+        "angle_min;angle_max;angle_start;"
+        "pivot_x;pivot_y;pivot_z;"
+        "axis_x;axis_y;axis_z;driver;coupled\n"
+        "1;40;100;60;-40;40;0;0;0;0;0;0;1;;\n"
+        "\n"
+        "   \n"
+        "2;30;90;45;-60;60;0;100;0;0;0;0;1;1;\n"
+        "\n",
+        encoding="utf-8",
+    )
+    definition = CsvReader.read_mechanism(path)
+    assert definition.lever_count == 2
+    assert definition.levers[1].driver == 1
+
+
+def test_read_target_curve_with_whitespace(
+    tmp_path,
+):
+    """Whitespace in the target curve is trimmed (#60)."""
+    path = tmp_path / "target.csv"
+    path.write_text(
+        "\n"
+        " input_angle ; output_angle \n"
+        " -40 ; -30 \n"
+        "0;0\n"
+        "   \n"
+        "40; 30 \n"
+        "\n",
+        encoding="utf-8",
+    )
+    curve = TargetCurve.from_csv(path)
+    assert curve.function(
+        math.radians(-40)
+    ) == pytest.approx(math.radians(-30))
+    assert curve.function(
+        math.radians(0)
+    ) == pytest.approx(math.radians(0))
+    assert curve.function(
+        math.radians(40)
+    ) == pytest.approx(math.radians(30))

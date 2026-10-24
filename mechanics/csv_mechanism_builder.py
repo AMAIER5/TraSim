@@ -23,7 +23,10 @@ from __future__ import annotations
 from dataclasses import replace
 
 from mechanics.lever import Lever
-from mechanics.mechanism import Mechanism
+from mechanics.mechanism import (
+    Mechanism,
+    MechanismLever,
+)
 from mechanics.stage import Stage
 from model.mechanism_definition import MechanismDefinition
 from optimization.mechanism_builder import MechanismBuilder
@@ -80,6 +83,22 @@ class CsvMechanismBuilder(MechanismBuilder):
             levers,
         )
 
+        mechanism_levers = tuple(
+            MechanismLever(
+                lever=levers[lever.id],
+                reference_angle=lever.angle_start,
+                coupled_to=(
+                    self._lever_index(
+                        definition,
+                        lever.coupled,
+                    )
+                    if lever.coupled is not None
+                    else None
+                ),
+            )
+            for lever in definition.levers
+        )
+
         self._validation_results = []
 
         for index, stage in enumerate(stages):
@@ -91,7 +110,29 @@ class CsvMechanismBuilder(MechanismBuilder):
 
             self._validation_results.append(result)
 
-        return Mechanism(stages=tuple(stages))
+        return Mechanism(
+            stages=tuple(stages),
+            levers=mechanism_levers,
+        )
+
+    @staticmethod
+    def _lever_index(
+        definition: MechanismDefinition,
+        lever_id: int,
+    ) -> int:
+        """
+        One-based index of a lever within the lever
+        list of the definition.
+        """
+
+        for index, lever in enumerate(
+            definition.levers,
+        ):
+            if lever.id == lever_id:
+                return index + 1
+        raise ValueError(
+            f"Unknown lever id: {lever_id}"
+        )
 
     def _apply_parameters(
         self,

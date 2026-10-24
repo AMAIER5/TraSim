@@ -18,6 +18,7 @@ from mechanism_io.csv_convention import (
     CsvConvention,
     INTERNATIONAL,
     detect_convention,
+    open_reader,
 )
 from model.lever_definition import (
     LeverDefinition,
@@ -61,11 +62,11 @@ class CsvReader:
         with Path(path).open(
             "r",
             newline="",
-            encoding="utf-8",
+            encoding="utf-8-sig",
         ) as file:
-            reader = csv.DictReader(
+            reader = open_reader(
                 file,
-                delimiter=convention.delimiter,
+                convention=convention,
             )
 
             for row in reader:
@@ -138,11 +139,11 @@ class CsvReader:
         with Path(path).open(
             "r",
             newline="",
-            encoding="utf-8",
+            encoding="utf-8-sig",
         ) as file:
-            reader = csv.DictReader(
+            reader = open_reader(
                 file,
-                delimiter=convention.delimiter,
+                convention=convention,
             )
 
             for row in reader:

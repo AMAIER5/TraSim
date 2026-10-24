@@ -110,10 +110,14 @@ def detect_convention(
     """
     with Path(path).open(
         "r",
-        encoding="utf-8",
+        encoding="utf-8-sig",
         newline="",
     ) as file:
-        first_line = file.readline()
+        first_line = ""
+        for line in file:
+            if line.strip():
+                first_line = line
+                break
     if ";" in first_line:
         return GERMAN
     return INTERNATIONAL
@@ -134,6 +138,48 @@ def sniff_delimiter(
     return ","
 
 
+def read_csv_lines(
+    file: io.TextIOBase,
+    *,
+    convention: CsvConvention,
+) -> list[str]:
+    """
+    Read all lines of a CSV file, ignoring blank lines
+    and stripping whitespace from every cell.
+
+    Empty lines and lines containing only whitespace are
+    skipped.  Whitespace around a cell value (often added
+    accidentally by spreadsheet exports) is removed so it
+    does not break parsing.  The returned lines can be fed
+    to ``csv.DictReader``.
+    """
+    rows = csv.reader(
+        file,
+        delimiter=convention.delimiter,
+    )
+    lines: list[str] = []
+    writer = csv.writer(
+        io.StringIO(),
+        delimiter=convention.delimiter,
+    )
+    for row in rows:
+        cells = [
+            cell.strip().lstrip("\ufeff")
+            for cell in row
+        ]
+        if not any(cells):
+            continue
+        buffer = io.StringIO()
+        csv.writer(
+            buffer,
+            delimiter=convention.delimiter,
+        ).writerow(cells)
+        lines.append(
+            buffer.getvalue().rstrip("\r\n")
+        )
+    return lines
+
+
 def open_reader(
     file: io.TextIOBase,
     *,
@@ -141,9 +187,15 @@ def open_reader(
 ) -> csv.DictReader:
     """
     Create a DictReader for the given convention.
+
+    Blank lines are skipped and whitespace is stripped
+    from every cell.
     """
     return csv.DictReader(
-        file,
+        read_csv_lines(
+            file,
+            convention=convention,
+        ),
         delimiter=convention.delimiter,
     )
 

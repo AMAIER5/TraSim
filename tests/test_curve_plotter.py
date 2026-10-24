@@ -443,3 +443,77 @@ def test_build_data_contains_rods(
     assert len(rods) == 3
     assert rods[0]["name"] == "Koppelstange 1"
     assert "length" in rods[0]
+
+
+@pytest.fixture
+def coupled_drive_lever_csv(tmp_path):
+    """
+    Mechanism whose first lever drives the chain only
+    through a torsion coupling (appears in no stage), as
+    in issue #61.
+    """
+    path = tmp_path / "coupled_drive_lever.csv"
+    path.write_text(
+        """id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,driver,coupled
+1,50,150,50,60,120,90,0,0,0,0,0,1,,
+2,50,150,60,60,120,90,100,0,0,0,0,1,,1
+3,50,150,70,60,120,90,100,0,100,0,0,1,2,
+4,50,150,70,60,120,90,200,0,100,0,0,1,3,
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_state_contains_levers_without_stage(
+    coupled_drive_lever_csv,
+):
+    """Levers that appear in no stage are drawn (#61)."""
+    mechanism, _ = _build_mechanism(
+        coupled_drive_lever_csv,
+    )
+    assert mechanism.levers is not None
+    assert len(mechanism.levers) == 4
+    state = MechanismPlotState.from_mechanism(
+        mechanism,
+        lever_angles={},
+    )
+    assert len(state.levers) == 4
+    assert state.levers[0].name == "Lever 1"
+
+
+def test_coupled_lever_follows_partner_angle(
+    coupled_drive_lever_csv,
+):
+    """A coupled lever is drawn at its partner's angle
+    shifted by the constant coupling offset (#61)."""
+    mechanism, _ = _build_mechanism(
+        coupled_drive_lever_csv,
+    )
+    state = MechanismPlotState.from_mechanism(
+        mechanism,
+        lever_angles={2: math.radians(75)},
+    )
+    lever1 = state.levers[0]
+    lever2 = state.levers[1]
+    assert lever2.angle == pytest.approx(
+        math.radians(75)
+    )
+    assert lever1.angle == pytest.approx(
+        math.radians(75)
+    )
+
+
+def test_html_shows_curve_before_mechanism():
+    """The transfer function is the upper diagram (#59)."""
+    plotter = CurvePlotter(title="Test")
+    plotter.set_target_curve(
+        TargetCurve.from_points(
+            (math.radians(0), math.radians(90)),
+            (math.radians(10), math.radians(80)),
+        ),
+    )
+    html = plotter.build_html()
+    curve_pos = html.find('id="curve-plot"')
+    lever_pos = html.find('id="lever-plot"')
+    assert 0 <= curve_pos < lever_pos
