@@ -563,3 +563,59 @@ def test_run_optimization_returns_result(inputs):
     assert len(
         result.fitness_history
     ) == result.generations + 1
+
+
+def test_run_optimization_parallel_matches_sequential(inputs):
+    """Parallel evaluation (workers > 1) must produce the same
+    best score as sequential evaluation for the same seed
+    (issue #62)."""
+    common = dict(
+        population_size=20,
+        children_count=20,
+        selection_count=6,
+        max_generations=5,
+        seed=7,
+    )
+
+    sequential = run_optimization(
+        inputs,
+        parameter_template(inputs),
+        OptimizationSettings(
+            workers=1,
+            **common,
+        ),
+    )
+
+    parallel = run_optimization(
+        inputs,
+        parameter_template(inputs),
+        OptimizationSettings(
+            workers=2,
+            **common,
+        ),
+    )
+
+    assert math.isclose(
+        sequential.best_score,
+        parallel.best_score,
+        rel_tol=1e-12,
+    )
+
+
+def test_run_optimization_gradient_weight_setting(inputs):
+    """gradient_weight=0 must disable the gradient term and
+    still produce a valid result (issue #65)."""
+    result = run_optimization(
+        inputs,
+        parameter_template(inputs),
+        OptimizationSettings(
+            population_size=20,
+            children_count=20,
+            selection_count=6,
+            max_generations=5,
+            seed=7,
+            workers=1,
+            gradient_weight=0.0,
+        ),
+    )
+    assert math.isfinite(result.best_score)

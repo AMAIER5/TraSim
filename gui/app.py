@@ -93,6 +93,13 @@ with st.sidebar:
         max_value=500,
         value=100,
         step=10,
+        help=(
+            "Anzahl der Mechanismus-Kandidaten "
+            "pro Generation. Größere "
+            "Populationen durchsuchen den "
+            "Parameterraum breiter, erhöhen "
+            "aber die Rechenzeit pro Generation."
+        ),
     )
     max_generations = st.number_input(
         "Maximale Generationen",
@@ -100,6 +107,12 @@ with st.sidebar:
         max_value=5000,
         value=200,
         step=50,
+        help=(
+            "Obere Grenze der Optimierungs-"
+            "generationen. Die Optimierung "
+            "endet spätestens nach dieser "
+            "Anzahl an Generationen."
+        ),
     )
     children_count = st.number_input(
         "Kinder pro Generation",
@@ -107,6 +120,11 @@ with st.sidebar:
         max_value=500,
         value=100,
         step=10,
+        help=(
+            "Anzahl der Nachkommen, die pro "
+            "Generation aus den ausgewählten "
+            "Kandidaten erzeugt werden."
+        ),
     )
     mutation_strength = st.slider(
         "Mutationsstärke",
@@ -115,11 +133,71 @@ with st.sidebar:
         value=0.01,
         step=0.001,
         format="%.3f",
+        help=(
+            "Stärke der zufälligen "
+            "Parameteränderung bei der "
+            "Erzeugung von Nachkommen. Kleine "
+            "Werte feinern Suchen, größere "
+            "springen weiter im Parameterraum."
+        ),
+    )
+    stagnation_limit = st.number_input(
+        "Stagnationslimit (Generationen)",
+        min_value=1,
+        max_value=1000,
+        value=100,
+        step=10,
+        help=(
+            "Anzahl aufeinanderfolgender "
+            "Generationen ohne relevante "
+            "Verbesserung, nach denen die "
+            "Optimierung vorzeitig abgebrochen "
+            "wird (Stoppgrund: "
+            "stagnation_limit_reached)."
+        ),
+    )
+    gradient_weight_input = st.slider(
+        "Gradientengewicht",
+        min_value=0.0,
+        max_value=2.0,
+        value=0.5,
+        step=0.1,
+        format="%.1f",
+        help=(
+            "Gewichtung der Steigungsabweichung "
+            "(Gradient) zusätzlich zum "
+            "Stützpunktvergleich. Ein Wert "
+            "von 0 vergleicht nur die "
+            "Stützpunkte selbst; höhere "
+            "Werte bestrafen Kurvenverläufe, "
+            "die zwischen den Stützpunkten vom "
+            "Zielverlauf abweichen."
+        ),
+    )
+    workers_input = st.number_input(
+        "Worker-Prozesse",
+        min_value=0,
+        max_value=64,
+        value=0,
+        step=1,
+        help=(
+            "Anzahl der Parallelprozesse für "
+            "die Fitness-Bewertung. 0 = "
+            "automatisch alle verfügbaren "
+            "CPU-Kerne nutzen (Empfehlung). 1 = "
+            "sequenzielle Berechnung in einem "
+            "Prozess."
+        ),
     )
     seed = st.number_input(
         "Zufallsseed",
         min_value=0,
         value=42,
+        help=(
+            "Startwert des Zufallsgenerators. "
+            "Gleiche Seed-Werte liefern "
+            "reproduzierbare Optimierungsläufe."
+        ),
     )
 
 if (
@@ -583,6 +661,13 @@ with result_tab:
                 float(mutation_strength)
             ),
             max_generations=int(max_generations),
+            stagnation_limit=(
+                int(stagnation_limit)
+            ),
+            gradient_weight=(
+                float(gradient_weight_input)
+            ),
+            workers=int(workers_input),
             seed=int(seed),
         )
         progress_bar = st.progress(
