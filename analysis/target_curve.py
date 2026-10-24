@@ -18,6 +18,7 @@ from analysis.transfer_curve import (
 )
 from mechanism_io.csv_convention import (
     detect_convention,
+    open_reader,
 )
 
 
@@ -436,12 +437,12 @@ def _read_csv_points(
     with open(
         path,
         newline="",
-        encoding="utf-8",
+        encoding="utf-8-sig",
     ) as file:
 
-        reader = csv.DictReader(
+        reader = open_reader(
             file,
-            delimiter=convention.delimiter,
+            convention=convention,
         )
 
         required = {

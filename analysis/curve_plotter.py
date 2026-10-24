@@ -130,21 +130,45 @@ class MechanismPlotState:
         Create a snapshot from a mechanism.
 
         ``lever_angles`` maps lever ids to lever angles
-        in radians; levers without an entry are drawn
-        at their stage reference angle.  Lever ids are
-        assigned by first appearance in the stage
-        chain (input lever of the first stage is 1),
-        which matches the CSV lever ids of chain
-        mechanisms.
+        in radians.  Lever ids follow the mechanism's
+        lever list (CSV order), which matches the stage
+        chain order of chain mechanisms.  Levers
+        without an entry are drawn at their reference
+        angle, except levers that are torsion-coupled
+        to a lever with a known angle: their angle is
+        derived from the coupling (constant angle
+        offset between the coupled levers).
         """
         names = lever_names or {}
         colors = lever_colors or {}
         ordered_levers = _ordered_levers(mechanism)
+        resolved: dict[int, float] = dict(lever_angles)
+        coupling: dict[int, int] = {}
+        for index, entry in enumerate(ordered_levers):
+            if entry.coupled_to is not None:
+                coupling[index + 1] = entry.coupled_to
+                coupling[entry.coupled_to] = index + 1
+        for lever_id in coupling:
+            if lever_id in resolved:
+                continue
+            partner_id = coupling[lever_id]
+            partner = resolved.get(partner_id)
+            if partner is None:
+                continue
+            resolved[lever_id] = (
+                partner
+                + ordered_levers[
+                    lever_id - 1
+                ].reference_angle
+                - ordered_levers[
+                    partner_id - 1
+                ].reference_angle
+            )
         levers: list[LeverPlotLine] = []
         endpoints: dict[int, Point3D] = {}
         for index, entry in enumerate(ordered_levers):
             lever_id = index + 1
-            angle = lever_angles.get(
+            angle = resolved.get(
                 lever_id,
                 entry.reference_angle,
             )
@@ -185,19 +209,40 @@ class _OrderedLever:
     """
     A lever of the mechanism together with the lever
     angle of its stage reference position.
+
+    ``coupled_to`` is the one-based index of the lever
+    this lever is torsion-coupled to, or ``None``.
     """
 
     lever: Lever
     reference_angle: float
+    coupled_to: int | None = None
 
 
 def _ordered_levers(
     mechanism: Mechanism,
 ) -> tuple[_OrderedLever, ...]:
     """
-    Return all distinct levers of a mechanism in stage
-    chain order.
+    Return all levers of a mechanism.
+
+    When the mechanism carries its full lever list
+    (``Mechanism.levers``), that list is used so levers
+    that appear in no stage (for example a drive lever
+    that is only torsion-coupled to the first stage's
+    input lever) are included.  Otherwise the levers
+    are derived from the stages in chain order.
     """
+    if mechanism.levers is not None:
+        return tuple(
+            _OrderedLever(
+                lever=entry.lever,
+                reference_angle=(
+                    entry.reference_angle
+                ),
+                coupled_to=entry.coupled_to,
+            )
+            for entry in mechanism.levers
+        )
     result: list[_OrderedLever] = []
     seen: set[int] = set()
     for stage in mechanism.stages:
@@ -760,14 +805,14 @@ sowie Soll- und Ist-&Uuml;bertragungskurve.
 Winkel in Grad, L&auml;ngen in Millimetern.
 </p>
 
-<h2>Hebel und Koppelstangen in drei Positionen (3D)</h2>
-<div class="plot-container">
-    <div id="lever-plot"></div>
-</div>
-
 <h2>Soll- und Ist-Kurve</h2>
 <div class="plot-container">
     <div id="curve-plot"></div>
+</div>
+
+<h2>Hebel und Koppelstangen in drei Positionen (3D)</h2>
+<div class="plot-container">
+    <div id="lever-plot"></div>
 </div>
 
 <script id="plot-data" type="application/json">{data_json}</script>

@@ -52,6 +52,7 @@ from mechanism_io.csv_convention import (
     GERMAN,
     CsvConvention,
     detect_convention,
+    open_reader,
 )
 from mechanism_io.csv_reader import (
     CsvReader,
@@ -181,11 +182,11 @@ def _read_target_points(
     weights: list[float] = []
     with path.open(
         newline="",
-        encoding="utf-8",
+        encoding="utf-8-sig",
     ) as file:
-        reader = csv.DictReader(
+        reader = open_reader(
             file,
-            delimiter=convention.delimiter,
+            convention=convention,
         )
         has_weights = (
             reader.fieldnames is not None
