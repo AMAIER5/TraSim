@@ -16,6 +16,7 @@ app script itself is included as data
 
 from __future__ import annotations
 
+import multiprocessing
 import sys
 from pathlib import Path
 
@@ -52,4 +53,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     raise SystemExit(main())
