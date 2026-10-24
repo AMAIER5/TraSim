@@ -28,6 +28,7 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
+from functools import partial
 from dataclasses import (
     dataclass,
     field,
@@ -753,6 +754,51 @@ def mechanism_csv_text(
         )
 
 
+def _build_optimizer(
+    inputs: LoadedInputs,
+    settings: OptimizationSettings,
+) -> Callable[[ParameterSet], float]:
+    """
+    Build a fresh evaluator (builder/simulator/fitness)
+    in the calling process.
+
+    In parallel mode this runs once per worker
+    process as the pool initializer's
+    evaluator_factory; in sequential mode it is
+    used directly.  It must live at module level
+    so Windows spawn can pickle it.
+    """
+
+    builder = CsvMechanismBuilder(
+        inputs.definition,
+    )
+    simulator = MechanismSimulator(
+        motion=PointMotion(
+            angles=inputs.input_angles,
+        ),
+        stage_simulator=StageSimulator(),
+        stage_limit=None,
+    )
+    fitness = CurveFitness(
+        target_curve=inputs.target_curve,
+        motion_start=(
+            inputs.input_angles[0]
+        ),
+        motion_range=(
+            inputs.input_angles[-1]
+            - inputs.input_angles[0]
+        ),
+        gradient_weight=(
+            settings.gradient_weight
+        ),
+    )
+    return MechanismOptimizer(
+        builder=builder,
+        simulator=simulator,
+        fitness=fitness,
+    ).evaluate
+
+
 def run_optimization(
     inputs: LoadedInputs,
     template: ParameterSet,
@@ -780,46 +826,10 @@ def run_optimization(
         worker_count = multiprocessing.cpu_count()
     worker_count = max(1, worker_count)
 
-    def build_optimizer():
-        """
-        Build a fresh evaluator (builder/simulator/fitness)
-        inside the calling process.
-
-        In parallel mode this runs once per worker process
-        (as the pool initializer's evaluator_factory); in
-        sequential mode it is used directly.
-        """
-
-        builder = CsvMechanismBuilder(
-            inputs.definition,
-        )
-        simulator = MechanismSimulator(
-            motion=PointMotion(
-                angles=inputs.input_angles,
-            ),
-            stage_simulator=StageSimulator(),
-            stage_limit=None,
-        )
-        fitness = CurveFitness(
-            target_curve=inputs.target_curve,
-            motion_start=(
-                inputs.input_angles[0]
-            ),
-            motion_range=(
-                inputs.input_angles[-1]
-                - inputs.input_angles[0]
-            ),
-            gradient_weight=(
-                settings.gradient_weight
-            ),
-        )
-        return MechanismOptimizer(
-            builder=builder,
-            simulator=simulator,
-            fitness=fitness,
-        ).evaluate
-
-    evaluator = build_optimizer()
+    evaluator = _build_optimizer(
+        inputs,
+        settings,
+    )
 
     rng = random.Random(settings.seed)
     population = PopulationFactory(
@@ -832,7 +842,11 @@ def run_optimization(
         population=population,
         evaluator=evaluator if worker_count == 1 else None,
         evaluator_factory=(
-            build_optimizer
+            partial(
+                _build_optimizer,
+                inputs,
+                settings,
+            )
             if worker_count > 1
             else None
         ),
