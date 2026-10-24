@@ -250,6 +250,7 @@ def test_fitness_punishes_only_a_deviation_at_a_support_point():
 
     fitness = CurveFitness(
         target_curve=make_discrete_target(),
+        gradient_weight=0.0,
     )
 
     outputs = list(support_outputs_rad())
@@ -275,6 +276,7 @@ def test_fitness_call_punishes_only_a_deviation_at_a_support_point():
 
     fitness = CurveFitness(
         target_curve=make_discrete_target(),
+        gradient_weight=0.0,
     )
 
     outputs = list(support_outputs_rad())
@@ -482,7 +484,10 @@ def test_weighted_fitness_is_weighted_mean_absolute_error():
         support_outputs_rad(),
         weights=tuple(weights),
     )
-    fitness = CurveFitness(target_curve=curve)
+    fitness = CurveFitness(
+        target_curve=curve,
+        gradient_weight=0.0,
+    )
     outputs = list(support_outputs_rad())
     deviation = math.radians(5.0)
     outputs[3] += deviation
@@ -508,7 +513,10 @@ def test_weighted_fitness_call_is_weighted_mean_absolute_error():
         support_outputs_rad(),
         weights=tuple(weights),
     )
-    fitness = CurveFitness(target_curve=curve)
+    fitness = CurveFitness(
+        target_curve=curve,
+        gradient_weight=0.0,
+    )
     outputs = list(support_outputs_rad())
     deviation = math.radians(4.0)
     outputs[5] += deviation
@@ -570,7 +578,10 @@ def test_zero_weight_support_point_is_ignored_in_fitness():
         support_outputs_rad(),
         weights=tuple(weights),
     )
-    fitness = CurveFitness(target_curve=curve)
+    fitness = CurveFitness(
+        target_curve=curve,
+        gradient_weight=0.0,
+    )
     outputs = list(support_outputs_rad())
     deviation = math.radians(5.0)
     outputs[3] += deviation  # large deviation, but weight 0

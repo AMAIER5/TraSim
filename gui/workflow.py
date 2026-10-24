@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import csv
 import math
+import multiprocessing
 import random
 import tempfile
 from collections.abc import (
@@ -36,6 +37,7 @@ from pathlib import Path
 
 from analysis.curve_fitness import (
     CurveFitness,
+    GRADIENT_WEIGHT,
 )
 from analysis.curve_plotter import (
     CurvePlotter,
@@ -124,6 +126,8 @@ class OptimizationSettings:
     stagnation_limit: int = 100
     stagnation_tolerance: float = 1e-8
     target_fitness: float = 0.01
+    workers: int = 0
+    gradient_weight: float = GRADIENT_WEIGHT
     seed: int = 42
 
 
@@ -770,29 +774,52 @@ def run_optimization(
 
     if settings is None:
         settings = OptimizationSettings()
-    builder = CsvMechanismBuilder(
-        inputs.definition,
-    )
-    simulator = MechanismSimulator(
-        motion=PointMotion(
-            angles=inputs.input_angles,
-        ),
-        stage_simulator=StageSimulator(),
-        stage_limit=None,
-    )
-    fitness = CurveFitness(
-        target_curve=inputs.target_curve,
-        motion_start=inputs.input_angles[0],
-        motion_range=(
-            inputs.input_angles[-1]
-            - inputs.input_angles[0]
-        ),
-    )
-    optimizer = MechanismOptimizer(
-        builder=builder,
-        simulator=simulator,
-        fitness=fitness,
-    )
+
+    worker_count = settings.workers
+    if worker_count <= 0:
+        worker_count = multiprocessing.cpu_count()
+    worker_count = max(1, worker_count)
+
+    def build_optimizer():
+        """
+        Build a fresh evaluator (builder/simulator/fitness)
+        inside the calling process.
+
+        In parallel mode this runs once per worker process
+        (as the pool initializer's evaluator_factory); in
+        sequential mode it is used directly.
+        """
+
+        builder = CsvMechanismBuilder(
+            inputs.definition,
+        )
+        simulator = MechanismSimulator(
+            motion=PointMotion(
+                angles=inputs.input_angles,
+            ),
+            stage_simulator=StageSimulator(),
+            stage_limit=None,
+        )
+        fitness = CurveFitness(
+            target_curve=inputs.target_curve,
+            motion_start=(
+                inputs.input_angles[0]
+            ),
+            motion_range=(
+                inputs.input_angles[-1]
+                - inputs.input_angles[0]
+            ),
+            gradient_weight=(
+                settings.gradient_weight
+            ),
+        )
+        return MechanismOptimizer(
+            builder=builder,
+            simulator=simulator,
+            fitness=fitness,
+        ).evaluate
+
+    evaluator = build_optimizer()
 
     rng = random.Random(settings.seed)
     population = PopulationFactory(
@@ -803,7 +830,13 @@ def run_optimization(
     )
     engine = EvolutionEngine(
         population=population,
-        evaluator=optimizer.evaluate,
+        evaluator=evaluator if worker_count == 1 else None,
+        evaluator_factory=(
+            build_optimizer
+            if worker_count > 1
+            else None
+        ),
+        workers=worker_count,
         selection_count=settings.selection_count,
         reproduction=Reproduction(
             mutation=ParameterMutation(
@@ -812,6 +845,7 @@ def run_optimization(
                 ),
                 random_generator=rng,
             ),
+            random_generator=rng,
         ),
         target_fitness=settings.target_fitness,
         max_generations=(
@@ -879,8 +913,18 @@ def run_optimization(
         ),
     )
 
-    mechanism = builder.build(best)
-    results = simulator.simulate(mechanism)
+    final_builder = CsvMechanismBuilder(
+        inputs.definition,
+    )
+    final_simulator = MechanismSimulator(
+        motion=PointMotion(
+            angles=inputs.input_angles,
+        ),
+        stage_simulator=StageSimulator(),
+        stage_limit=None,
+    )
+    mechanism = final_builder.build(best)
+    results = final_simulator.simulate(mechanism)
     if not all(
         result.success for result in results
     ):
@@ -890,7 +934,7 @@ def run_optimization(
         )
     html = build_report_html(
         mechanism,
-        simulator,
+        final_simulator,
         results,
         inputs,
         title=(

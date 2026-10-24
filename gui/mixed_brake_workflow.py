@@ -433,6 +433,7 @@ def run_mixed_brake_optimization(
                 ),
                 random_generator=rng,
             ),
+            random_generator=rng,
         ),
         target_fitness=settings.target_fitness,
         max_generations=settings.max_generations,

@@ -51,6 +51,133 @@ PENALTY_INSUFFICIENT_POINTS = 100000.0  # Too few points for valid curve
 # because the term is strictly additive on top of PENALTY_BASE.
 PARTIAL_CURVE_WEIGHT = 50.0
 
+# Default weight of the gradient (slope) deviation term added to
+# the non-blocking fitness.  The position error alone can accept a
+# curve whose supporting points match the target while the curve
+# oscillates between them; comparing the slopes of consecutive
+# segments penalises such shapes (issue #65).
+GRADIENT_WEIGHT = 0.5
+
+
+def _segment_slopes(
+    input_angles: tuple[float, ...],
+    output_angles: tuple[float, ...],
+) -> tuple[float, ...]:
+    """
+    Slopes of the curve segments between consecutive points.
+    """
+
+    slopes: list[float] = []
+
+    for index in range(
+        1,
+        len(input_angles),
+    ):
+        delta_input = (
+            input_angles[index]
+            - input_angles[index - 1]
+        )
+
+        if delta_input == 0.0:
+            slopes.append(0.0)
+            continue
+
+        slopes.append(
+            (
+                output_angles[index]
+                - output_angles[index - 1]
+            )
+            / delta_input
+        )
+
+    return tuple(slopes)
+
+
+def gradient_deviation(
+    target: TargetCurve,
+    input_angles: tuple[float, ...],
+    output_angles: tuple[float, ...],
+) -> float:
+    """
+    Mean absolute deviation between the slopes of the actual
+    and the target transfer curve.
+
+    The slopes are compared segment by segment between
+    consecutive (matched) support points, so a curve that hits
+    every target point but zig-zags between them receives a
+    positive deviation while a straight run through the points
+    receives (nearly) zero.  Fewer than two points define no
+    segment, so the deviation is zero in that case.
+    """
+
+    if len(input_angles) < 2 or len(output_angles) < 2:
+        return 0.0
+
+    if len(input_angles) != len(output_angles):
+        return 0.0
+
+    if isinstance(target, DiscreteTargetCurve):
+
+        target_inputs: list[float] = []
+        actual_outputs: list[float] = []
+        target_outputs: list[float] = []
+
+        for input_angle, actual_output in zip(
+            input_angles,
+            output_angles,
+        ):
+            index = target.support_index(
+                input_angle,
+            )
+
+            if index is None:
+                continue
+
+            target_inputs.append(
+                input_angle,
+            )
+            actual_outputs.append(
+                actual_output,
+            )
+            target_outputs.append(
+                target.output_angles[index],
+            )
+
+    else:
+
+        target_inputs = list(input_angles)
+        actual_outputs = list(output_angles)
+        target_outputs = list(
+            target.sample(
+                tuple(input_angles),
+            ).output_angles,
+        )
+
+    if len(target_inputs) < 2:
+        return 0.0
+
+    actual_slopes = _segment_slopes(
+        tuple(target_inputs),
+        tuple(actual_outputs),
+    )
+
+    target_slopes = _segment_slopes(
+        tuple(target_inputs),
+        tuple(target_outputs),
+    )
+
+    total = 0.0
+
+    for actual_slope, target_slope in zip(
+        actual_slopes,
+        target_slopes,
+    ):
+        total += abs(
+            actual_slope - target_slope
+        )
+
+    return total / len(actual_slopes)
+
 
 def partial_curve_error(
     target: TargetCurve,
@@ -198,6 +325,7 @@ class CurveFitness(FitnessFunction):
         motion_start: float = 0.0,
         motion_range: float = 1.0,
         finer_gradient: bool = True,
+        gradient_weight: float = GRADIENT_WEIGHT,
     ) -> None:
         """
         Parameters
@@ -213,11 +341,19 @@ class CurveFitness(FitnessFunction):
             blocking penalties so the optimizer gets a smoother gradient
             inside the blocking region.  Set False for the plain
             position + missing-point penalty.
+        gradient_weight : float
+            Weight of the slope-deviation term in the non-blocking
+            fitness (issue #65).  Besides the point-wise absolute
+            error, the mean absolute deviation between the slopes
+            of consecutive support-point segments and the target
+            slopes is added, scaled by this weight.  Set to 0.0 to
+            restore the purely point-wise fitness.
         """
         self._target_curve = target_curve
         self._motion_start = motion_start
         self._motion_range = motion_range
         self._finer_gradient = finer_gradient
+        self._gradient_weight = gradient_weight
         self._cache: dict[tuple[float, ...], ErrorMetric] = {}
 
     def evaluate(
@@ -386,9 +522,19 @@ class CurveFitness(FitnessFunction):
 
             curve_fitness = total / weight_total
 
+            gradient_term = 0.0
+            if self._gradient_weight > 0.0:
+                gradient_term = self._gradient_weight * gradient_deviation(
+                    self._target_curve,
+                    first_result.input_angles,
+                    final_result.output_angles,
+                )
+                curve_fitness += gradient_term
+
             logger.debug(
-                "Non-blocking discrete solution: fitness=%s",
+                "Non-blocking discrete solution: fitness=%s (gradient term=%s)",
                 curve_fitness,
+                gradient_term,
             )
 
             return curve_fitness
@@ -408,6 +554,13 @@ class CurveFitness(FitnessFunction):
             self._cache[key] = ErrorMetric(target=self._target_curve.sample(key))
 
         curve_fitness = self._cache[key].calculate(transfer_curve)
+
+        if self._gradient_weight > 0.0:
+            curve_fitness += self._gradient_weight * gradient_deviation(
+                self._target_curve,
+                result.input_angles,
+                result.output_angles,
+            )
 
         logger.debug("Non-blocking solution: fitness=%s", curve_fitness)
 
@@ -445,7 +598,16 @@ class CurveFitness(FitnessFunction):
             if weight_total <= 0.0:
                 return PENALTY_INSUFFICIENT_POINTS
 
-            return total / weight_total
+            fitness = total / weight_total
+
+            if self._gradient_weight > 0.0:
+                fitness += self._gradient_weight * gradient_deviation(
+                    self._target_curve,
+                    transfer_curve.input_angles,
+                    transfer_curve.output_angles,
+                )
+
+            return fitness
 
         key = transfer_curve.input_angles
         if key not in self._cache:
