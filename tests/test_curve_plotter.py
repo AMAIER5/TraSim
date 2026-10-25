@@ -517,3 +517,51 @@ def test_html_shows_curve_before_mechanism():
     curve_pos = html.find('id="curve-plot"')
     lever_pos = html.find('id="lever-plot"')
     assert 0 <= curve_pos < lever_pos
+
+
+def test_build_data_contains_zero_positions(
+    example_mechanism_csv,
+):
+    mechanism, _ = _build_mechanism(
+        example_mechanism_csv,
+    )
+    state = MechanismPlotState.from_mechanism(
+        mechanism,
+        lever_angles={},
+    )
+    plotter = CurvePlotter(title="Nullage")
+    plotter.add_mechanism_state(state)
+    data = plotter.build_data()
+    levers = data["mechanism_states"][0][
+        "levers"
+    ]
+    assert all(
+        lever["zero_end"] is not None
+        for lever in levers
+    )
+    for lever in levers:
+        pivot = lever["pivot"]
+        zero_end = lever["zero_end"]
+        squared = (
+            zero_end["x"] - pivot["x"]
+        ) ** 2 + (
+            zero_end["y"] - pivot["y"]
+        ) ** 2
+        assert squared > 0.0
+
+
+def test_build_html_contains_zero_line_toggle(
+    example_mechanism_csv,
+):
+    mechanism, _ = _build_mechanism(
+        example_mechanism_csv,
+    )
+    state = MechanismPlotState.from_mechanism(
+        mechanism,
+        lever_angles={},
+    )
+    plotter = CurvePlotter(title="Nullage")
+    plotter.add_mechanism_state(state)
+    html = plotter.build_html()
+    assert "toggle-zero-lines" in html
+    assert "Nullage" in html

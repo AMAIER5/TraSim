@@ -320,6 +320,8 @@ id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pi
 
 The `angle_min`/`angle_max`/`angle_start` columns are **lever angles** measured relative to the lever's `reference_direction` (the `ref_x`/`ref_y`/`ref_z` columns) about its `axis`. They describe the lever's admissible lever-angle segment, i.e. its circular build space. The `ref_x`/`ref_y`/`ref_z` columns are optional; when all three are empty the lever selects a reference direction automatically, and the angle limits are then relative to that automatic choice.
 
+**Start angle semantics:** the initial start angle `angle_start` (before optimization) describes the position the lever occupies at the **middle position** of the prescribed target curve. The middle position is the n-th support position with n = (number of positions) / 2, mathematically rounded (round half up); for seven support positions at -30, -20, -10, 0, 10, 20, 30° the support position at 0° is the reference point for the start angle. The target curve's input angles are applied as angular offsets relative to that middle position, so the drive lever sits at its start angle at the middle support position and every other support point keeps its angular distance to the middle.
+
 ### Driver Relationship
 
 A driver defines a mechanical stage.

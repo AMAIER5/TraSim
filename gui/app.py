@@ -399,6 +399,12 @@ edited_mechanism = st.data_editor(
         ),
         "angle_start": st.column_config.NumberColumn(
             "angle_start (°)",
+            help=(
+                "Startwinkel: Position des Hebels bei der "
+                "mittleren Stützstelle der Zielkurve "
+                "(n-te Position, n = Anzahl / 2, "
+                "mathematisch gerundet)."
+            ),
         ),
         "pivot_on": st.column_config.TextColumn(
             "pivot_on",
