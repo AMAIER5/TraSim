@@ -43,6 +43,7 @@ from gui.workflow import (
     OptimizationResult,
     OptimizationSettings,
     WorkflowError,
+    adopt_single_optimized_values,
     apply_parameter_overrides,
     load_inputs,
     optimized_display_values,
@@ -261,7 +262,7 @@ target_rows = [
 edited_target = st.data_editor(
     target_rows,
     num_rows="dynamic",
-    use_container_width=True,
+    width="stretch",
     key="target_curve_editor",
 )
 
@@ -469,7 +470,7 @@ for row in display_rows:
 edited_mechanism = st.data_editor(
     display_rows,
     num_rows="dynamic",
-    use_container_width=True,
+    width="stretch",
     key=(
         "mechanism_editor_"
         + str(
