@@ -27,6 +27,7 @@ import logging
 from analysis.error_metric import ErrorMetric
 from analysis.target_curve import TargetCurve, DiscreteTargetCurve
 from analysis.transfer_curve import TransferCurve
+from core.tolerance import ANGLE_TOLERANCE
 from optimization.fitness_function import FitnessFunction
 from simulation.simulation_result import SimulationResult
 from validation.stage_validation_result import (
@@ -372,11 +373,14 @@ class CurveFitness(FitnessFunction):
         blocking detection: the simulation samples only a finite set of
         input angles, so it can miss a block that occurs between support
         points.  A stage is therefore treated as blocking when EITHER the
-        simulation reports a block OR the validation reports an invalid
-        stage (``valid`` is False).  When both are available, the earliest
-        block position wins; the validation's ``failed_at_input_angle``
-        is preferred over the simulation's ``blocked_at`` because it is
-        sampled over the full stage input range.
+        simulation reports a block OR the validation reports a failure
+        inside the stage's traversed input interval.  Validation failures
+        outside that interval are ignored: the validation sweeps the
+        stage's complete build-space lever-angle segment, large parts of
+        which are never traversed during the target motion (issue #71).
+        When a validation failure is relevant, its
+        ``failed_at_input_angle`` is preferred over the simulation's
+        ``blocked_at`` because it locates the block more precisely.
 
         Returns
         -------
@@ -401,6 +405,18 @@ class CurveFitness(FitnessFunction):
         # report success.  The validation samples the full stage input
         # range and therefore closes that gap using information that is
         # already computed during mechanism construction.
+        #
+        # The validation sweeps the stage's complete build-space
+        # lever-angle segment, which is typically much wider than the
+        # interval the stage actually traverses during the target
+        # motion (issue #71): a stage whose output lever segment is
+        # 60..300 deg can easily fail the full sweep while the motion
+        # only uses a fraction of it.  A validation failure therefore
+        # only counts as a block when it happens inside the stage's
+        # traversed input interval (first to last simulated input
+        # angle of the preceding stage, extended by one simulation
+        # step so a block just past the last sampled support point is
+        # still caught).
         all_success = True
         earliest_block_angle = None
         min_points = float('inf')
@@ -415,17 +431,34 @@ class CurveFitness(FitnessFunction):
             )
 
             if validation_result is not None and not validation_result.valid:
-                stage_blocked = True
+                if self._validation_failure_in_traversed_range(
+                    simulation,
+                    index,
+                    validation_result,
+                ):
+                    stage_blocked = True
 
             if stage_blocked:
                 all_success = False
 
-                # Prefer the validation's failed input angle: it is
-                # sampled over the full stage range and therefore more
-                # precise than the simulation's coarse support points.
+                # Prefer the validation's failed input angle when it
+                # lies inside the traversed range: it is sampled more
+                # finely than the simulation's support points and
+                # therefore locates the block more precisely.
                 block_angle = None
-                if validation_result is not None and validation_result.failed_at_input_angle is not None:
-                    block_angle = validation_result.failed_at_input_angle
+                validation_angle = (
+                    validation_result.failed_at_input_angle
+                    if validation_result is not None
+                    and self._validation_failure_in_traversed_range(
+                        simulation,
+                        index,
+                        validation_result,
+                    )
+                    and validation_result.failed_at_input_angle is not None
+                    else None
+                )
+                if validation_angle is not None:
+                    block_angle = validation_angle
                 elif result.blocked_at is not None:
                     block_angle = result.blocked_at
 
@@ -565,6 +598,106 @@ class CurveFitness(FitnessFunction):
         logger.debug("Non-blocking solution: fitness=%s", curve_fitness)
 
         return curve_fitness
+
+    @staticmethod
+    def _traversed_input_range(
+        simulation: tuple[SimulationResult, ...],
+        stage_index: int,
+    ) -> tuple[float, float] | None:
+        """
+        Input angle interval a stage actually traversed during
+        the simulation.
+
+        The input angles of a stage are the output angles produced
+        by the preceding stage, so the traversed interval of stage
+        ``stage_index`` is derived from that stage's simulated
+        output angles.  For the first stage the motion is external
+        and its own simulated input angles describe the interval.
+        """
+
+        source = (
+            simulation[stage_index - 1]
+            if stage_index > 0
+            else simulation[stage_index]
+        )
+
+        if stage_index > 0:
+            angles = source.output_angles
+        else:
+            angles = source.input_angles
+
+        if len(angles) == 0:
+            return None
+
+        return (
+            min(angles),
+            max(angles),
+        )
+
+    def _validation_failure_in_traversed_range(
+        self,
+        simulation: tuple[SimulationResult, ...],
+        stage_index: int,
+        validation_result: StageValidationResult,
+    ) -> bool:
+        """
+        Whether a validation failure happened inside the stage's
+        traversed input interval and therefore describes a block
+        the target motion actually runs into.
+
+        The validator sweeps the stage's complete build-space
+        lever-angle segment.  Failures outside the traversed
+        interval concern configurations the target motion never
+        reaches; treating them as blocking produced false
+        positives (issue #71).  Without a failure angle the
+        failure cannot be located, so the conservative choice is
+        to treat it as blocking.
+        """
+
+        if validation_result.valid:
+            return False
+
+        failed_at = validation_result.failed_at_input_angle
+
+        if failed_at is None:
+            return True
+
+        traversed = self._traversed_input_range(
+            simulation,
+            stage_index,
+        )
+
+        if traversed is None:
+            return True
+
+        low, high = traversed
+
+        margin = self._motion_step(simulation)
+
+        return (
+            low - margin - ANGLE_TOLERANCE
+            <= failed_at
+            <= high + margin + ANGLE_TOLERANCE
+        )
+
+    @staticmethod
+    def _motion_step(
+        simulation: tuple[SimulationResult, ...],
+    ) -> float:
+        """
+        Sampling step of the simulated motion, used as the
+        margin when deciding whether a validation failure lies
+        inside the traversed interval.
+        """
+
+        for result in simulation:
+            angles = result.input_angles
+            if len(angles) >= 2:
+                return abs(
+                    angles[1] - angles[0]
+                )
+
+        return 0.0
 
     def __call__(
         self,

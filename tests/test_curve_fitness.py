@@ -721,8 +721,9 @@ def test_validation_blocks_successful_simulation():
     reports an invalid stage must be treated as blocking and
     therefore score at least PENALTY_BASE.  This is the
     scenario from the reported example: the simulation never
-    sampled the blocking angle (-46 deg) because it was not
-    a support point of the target curve.
+    sampled the blocking angle because it was not a support
+    point of the target curve; the validation caught it inside
+    the traversed input interval.
     """
 
     fitness = CurveFitness(
@@ -742,7 +743,7 @@ def test_validation_blocks_successful_simulation():
     validation = StageValidationResult(
         valid=False,
         checked_steps=50,
-        failed_at_input_angle=4.0,
+        failed_at_input_angle=1.5,
         reason="blocked",
         stage_id=0,
     )
@@ -811,8 +812,8 @@ def test_validation_block_position_drives_position_penalty():
     )
 
     simulation = SimulationResult(
-        input_angles=(0.0,),
-        output_angles=(0.0,),
+        input_angles=(0.0, 2.0, 4.0, 6.0, 8.0, 10.0),
+        output_angles=(0.0, 2.0, 4.0, 6.0, 8.0, 10.0),
         success=True,
     )
 
@@ -826,6 +827,82 @@ def test_validation_block_position_drives_position_penalty():
     )
 
     assert early > late
+
+
+def test_validation_failure_outside_traversed_range_does_not_block():
+    """
+    A validation failure outside the input interval the stage
+    actually traversed during the simulation must NOT be
+    treated as blocking (issue #71): the validation sweeps
+    the stage's complete build-space lever-angle segment,
+    which is typically much wider than the traversed
+    interval, so such failures describe configurations the
+    target motion never reaches.
+    """
+
+    fitness = CurveFitness(
+        target_curve=TargetCurve(
+            function=lambda angle: angle,
+        ),
+        motion_start=0.0,
+        motion_range=10.0,
+    )
+
+    simulation = SimulationResult(
+        input_angles=(0.0, 1.0, 2.0),
+        output_angles=(0.0, 1.0, 2.0),
+        success=True,
+    )
+
+    validation = StageValidationResult(
+        valid=False,
+        checked_steps=50,
+        failed_at_input_angle=4.0,
+        reason="output_angle_limit",
+        stage_id=0,
+    )
+
+    assert fitness.evaluate(
+        (simulation,),
+        (validation,),
+    ) < PENALTY_BASE
+
+
+def test_validation_failure_just_beyond_traversed_range_blocks():
+    """
+    A validation failure located just past the last sampled
+    support point still counts as blocking: the margin of one
+    simulation step around the traversed interval closes the
+    gap of a block between the last support point and the end
+    of the motion.
+    """
+
+    fitness = CurveFitness(
+        target_curve=TargetCurve(
+            function=lambda angle: angle,
+        ),
+        motion_start=0.0,
+        motion_range=10.0,
+    )
+
+    simulation = SimulationResult(
+        input_angles=(0.0, 1.0, 2.0),
+        output_angles=(0.0, 1.0, 2.0),
+        success=True,
+    )
+
+    validation = StageValidationResult(
+        valid=False,
+        checked_steps=50,
+        failed_at_input_angle=2.5,
+        reason="blocked",
+        stage_id=0,
+    )
+
+    assert fitness.evaluate(
+        (simulation,),
+        (validation,),
+    ) >= PENALTY_BASE
 
 
 def test_validation_valid_does_not_block_successful_simulation():
