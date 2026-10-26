@@ -22,6 +22,7 @@ Run with:
 
 from __future__ import annotations
 
+import copy
 import math
 import sys
 from pathlib import Path
@@ -44,9 +45,10 @@ from gui.workflow import (
     WorkflowError,
     apply_parameter_overrides,
     load_inputs,
+    optimized_display_values,
+    optimized_values,
     parameter_template,
     preview,
-    optimized_values,
     run_optimization,
     with_mechanism_levers,
     with_target_points,
@@ -364,6 +366,7 @@ def _lever_rows(definition) -> list[dict]:
             "length_start": lever.length_start,
             "length_optimize": True,
             "length_optimized": None,
+            "length_adopt": False,
             "angle_min": math.degrees(
                 lever.angle_min,
             ),
@@ -375,6 +378,7 @@ def _lever_rows(definition) -> list[dict]:
             ),
             "angle_optimize": True,
             "angle_optimized": None,
+            "angle_adopt": False,
             "pivot_x": lever.pivot.x,
             "pivot_y": lever.pivot.y,
             "pivot_z": lever.pivot.z,
@@ -404,7 +408,9 @@ def _lever_rows(definition) -> list[dict]:
     ]
 
 
-mechanism_bytes = mechanism_upload.getvalue()
+mechanism_bytes = (
+    mechanism_upload.getvalue()
+)
 if (
     st.session_state.get(
         "mechanism_rows_source"
@@ -426,55 +432,42 @@ if (
         )
         + 1
     )
+    st.session_state.pop(
+        "last_edited_rows",
+        None,
+    )
 
 
-def _refresh_optimized_cells(
-    rows: list[dict],
-) -> list[dict]:
-    for row in rows:
-        if row.get("id") is None:
-            continue
-        lever_id = int(row["id"])
-        snapshot = optimized_snapshot.get(
-            lever_id,
-        )
-        row["length_optimized"] = (
-            optimized_map[
-                f"lever.{lever_id}.length"
-            ]
-            if snapshot is not None
-            and snapshot["length"]
-            == row["length_start"]
-            and (
-                f"lever.{lever_id}.length"
-                in optimized_map
-            )
-            else None
-        )
-        row["angle_optimized"] = (
-            math.degrees(
-                optimized_map[
-                    f"lever.{lever_id}.angle"
-                ],
-            )
-            if snapshot is not None
-            and snapshot["angle"]
-            == row["angle_start"]
-            and (
-                f"lever.{lever_id}.angle"
-                in optimized_map
-            )
-            else None
-        )
-    return rows
-
-
-mechanism_rows = _refresh_optimized_cells(
-    st.session_state["mechanism_rows"],
+base_rows = st.session_state[
+    "mechanism_rows"
+]
+reference_rows = st.session_state.get(
+    "last_edited_rows",
+    base_rows,
+)
+display_optimized = (
+    optimized_display_values(
+        reference_rows,
+        optimized_map,
+        optimized_snapshot,
+    )
 )
 
+display_rows = copy.deepcopy(
+    base_rows,
+)
+for row in display_rows:
+    if row.get("id") is None:
+        continue
+    (
+        row["length_optimized"],
+        row["angle_optimized"],
+    ) = display_optimized[
+        int(row["id"])
+    ]
+
 edited_mechanism = st.data_editor(
-    mechanism_rows,
+    display_rows,
     num_rows="dynamic",
     use_container_width=True,
     key=(
@@ -508,6 +501,13 @@ edited_mechanism = st.data_editor(
                 help="Ergebnis des letzten Optimierungslaufs; wird geleert, sobald der Startwert geändert oder übernommen wird",
             )
         ),
+        "length_adopt": (
+            st.column_config.CheckboxColumn(
+                "Übernehmen",
+                default=False,
+                help="Optimierten Wert als Startwert übernehmen",
+            )
+        ),
         "angle_min": st.column_config.NumberColumn(
             "angle_min (°)",
         ),
@@ -536,6 +536,13 @@ edited_mechanism = st.data_editor(
                 help="Ergebnis des letzten Optimierungslaufs; wird geleert, sobald der Startwert geändert oder übernommen wird",
             )
         ),
+        "angle_adopt": (
+            st.column_config.CheckboxColumn(
+                "Übernehmen",
+                default=False,
+                help="Optimierten Winkel als Startwert übernehmen",
+            )
+        ),
         "pivot_on": st.column_config.TextColumn(
             "pivot_on",
             help="lever_id@angle_deg (z. B. lever3@180), leer = fester Drehpunkt",
@@ -543,9 +550,43 @@ edited_mechanism = st.data_editor(
     },
 )
 
-st.session_state["mechanism_rows"] = (
+st.session_state["last_edited_rows"] = (
     edited_mechanism
 )
+
+adopt_single = (
+    adopt_single_optimized_values(
+        edited_mechanism,
+    )
+)
+if adopt_single:
+    st.session_state[
+        "mechanism_rows"
+    ] = edited_mechanism
+    st.session_state.pop(
+        "last_edited_rows",
+        None,
+    )
+    st.session_state[
+        "mechanism_rows_version"
+    ] = (
+        st.session_state.get(
+            "mechanism_rows_version",
+            0,
+        )
+        + 1
+    )
+    st.rerun()
+
+# Clear stale "Optimiert" cells as soon as the
+# corresponding start value no longer matches
+# the snapshot of the optimization run.
+if optimized_display_values(
+    edited_mechanism,
+    optimized_map,
+    optimized_snapshot,
+) != display_optimized:
+    st.rerun()
 
 try:
     inputs = with_mechanism_levers(
@@ -563,9 +604,7 @@ if optimized_map and st.button(
     "Startwerte übernehmen",
     key="adopt_all_button",
 ):
-    for row in st.session_state[
-        "mechanism_rows"
-    ]:
+    for row in edited_mechanism:
         if row.get("id") is None:
             continue
         lever_id = int(row["id"])
@@ -585,6 +624,15 @@ if optimized_map and st.button(
                     optimized_map[angle_key],
                 )
             )
+        row["length_adopt"] = False
+        row["angle_adopt"] = False
+    st.session_state[
+        "mechanism_rows"
+    ] = edited_mechanism
+    st.session_state.pop(
+        "last_edited_rows",
+        None,
+    )
     st.session_state[
         "mechanism_rows_version"
     ] = (

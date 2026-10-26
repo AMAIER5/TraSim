@@ -75,6 +75,9 @@ users need no Python knowledge.
      parameter for the optimization, enabled by
      default) and a read-only **Optimiert** value
      from the last optimization run.
+   - A click on the **Übernehmen** checkbox next
+     to an **Optimiert** value adopts that single
+     optimized value as the new start value.
    - A cleared checkbox fixes the parameter at
      its start value (minimum = maximum), so it
      is excluded from the optimization.
