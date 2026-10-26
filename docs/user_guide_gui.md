@@ -66,36 +66,44 @@ users need no Python knowledge.
      lever (id, lengths, angles in degrees, pivot,
      axis, optional reference direction, driver,
      coupled, pivot_on).
+   - This single table is the only place where
+     start values, bounds and the optimization
+     release of every lever property are
+     maintained. Next to `length_start` and
+     `angle_start` two columns each are shown:
+     an **Optimierung** checkbox (release of the
+     parameter for the optimization, enabled by
+     default) and a read-only **Optimiert** value
+     from the last optimization run.
+   - A cleared checkbox fixes the parameter at
+     its start value (minimum = maximum), so it
+     is excluded from the optimization.
+   - The **Optimiert** cells are cleared as soon
+     as the corresponding start value is edited
+     or adopted, so every displayed value is
+     always the value the diagrams are built
+     from.
    - Values can be changed; levers can be added
      and deleted on the fly for fast iteration.
      Invalid input (missing values, duplicate ids,
      malformed pivot_on) is rejected with a clear
      message.
-   - The optimization parameters below and the
-     preview update automatically after each edit.
-4. **Review optimization parameters**
-   - The app derives
-     one length parameter (mm) and one angle
-     parameter (degrees) per lever from the CSV
-     ranges. Values and bounds are editable.
-   - Equal minimum and maximum fix a parameter.
    - The **Vorschau** tab simulates the start
      mechanism and shows it together with the
-     target curve in the usual HTML representation.
-5. **Adopt optimized values**
-   - After an optimization run, an additional table
-     lists the start values next to the **Optimiert**
-     values of the last run.
-   - Clicking a cell in the **Optimiert** column
-     adopts that single value as the new start
-     value; the **Alle optimierten Werte als
-     Startwert übernehmen** button adopts all of
-     them at once, so the next iteration starts
+     target curve in the usual HTML representation;
+     press **Vorschau aktualisieren** to rebuild
+     it after edits.
+4. **Adopt optimized values**
+   - After an optimization run, the **Alle
+     optimierten Werte als Startwerte übernehmen**
+     button writes the optimized length and angle
+     values of the last run directly into the
+     `length_start` / `angle_start` cells of the
+     mechanism table, so the next iteration starts
      from the optimized mechanism.
-   - The **Vorschau** always simulates the current
-     start values (including adopted optimized
-     values); press **Vorschau aktualisieren** to
-     rebuild it after edits.
+   - Optimization of pivot positions and axis
+     orientations may be added later; today they
+     stay fixed.
 6. **Start the optimization**
    - Population size, generations, children per
      generation, mutation strength and seed are

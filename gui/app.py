@@ -43,7 +43,6 @@ from gui.workflow import (
     OptimizationSettings,
     WorkflowError,
     apply_parameter_overrides,
-    is_angle_parameter,
     load_inputs,
     parameter_template,
     preview,
@@ -330,66 +329,184 @@ with weight_column:
 
 st.header("Parameter des Startmechanismus")
 st.caption(
-    "Diese Tabelle wird automatisch aus der "
-    "Mechanikdefinition erzeugt und aktualisiert "
-    "sich nach jeder Änderung der Tabelle oben. "
-    "Startwert und Grenzen können angepasst "
-    "werden; gleiche Min-/Max-Grenzen fixieren "
-    "einen Parameter."
+    "Diese Tabelle ist die einzige Stelle, an der "
+    "Startwerte, Grenzen und Freigabe der "
+    "Optimierung gepflegt werden. Die Spalten "
+    "„Optimiert“ zeigen das Ergebnis des "
+    "letzten Optimierungslaufs und werden "
+    "geleert, sobald der zugehörige Startwert "
+    "geändert oder übernommen wird."
 )
 
-mechanism_rows = [
-    {
-        "id": lever.id,
-        "length_min": lever.length_min,
-        "length_max": lever.length_max,
-        "length_start": lever.length_start,
-        "angle_min": math.degrees(
-            lever.angle_min,
-        ),
-        "angle_max": math.degrees(
-            lever.angle_max,
-        ),
-        "angle_start": math.degrees(
-            lever.angle_start,
-        ),
-        "pivot_x": lever.pivot.x,
-        "pivot_y": lever.pivot.y,
-        "pivot_z": lever.pivot.z,
-        "axis_x": lever.axis.x,
-        "axis_y": lever.axis.y,
-        "axis_z": lever.axis.z,
-        "ref_x": (
-            lever.reference_direction.x
-            if lever.reference_direction
+result = st.session_state.get("result")
+optimized_map: dict[str, float] = {}
+optimized_snapshot: dict[
+    int,
+    dict[str, float],
+] = {}
+if result is not None:
+    optimized_map = optimized_values(
+        result.optimized_definition,
+    )
+    optimized_snapshot = (
+        st.session_state.get(
+            "optimized_snapshot",
+            {},
+        )
+    )
+
+def _lever_rows(definition) -> list[dict]:
+    return [
+        {
+            "id": lever.id,
+            "length_min": lever.length_min,
+            "length_max": lever.length_max,
+            "length_start": lever.length_start,
+            "length_optimize": True,
+            "length_optimized": None,
+            "angle_min": math.degrees(
+                lever.angle_min,
+            ),
+            "angle_max": math.degrees(
+                lever.angle_max,
+            ),
+            "angle_start": math.degrees(
+                lever.angle_start,
+            ),
+            "angle_optimize": True,
+            "angle_optimized": None,
+            "pivot_x": lever.pivot.x,
+            "pivot_y": lever.pivot.y,
+            "pivot_z": lever.pivot.z,
+            "axis_x": lever.axis.x,
+            "axis_y": lever.axis.y,
+            "axis_z": lever.axis.z,
+            "ref_x": (
+                lever.reference_direction.x
+                if lever.reference_direction
+                else None
+            ),
+            "ref_y": (
+                lever.reference_direction.y
+                if lever.reference_direction
+                else None
+            ),
+            "ref_z": (
+                lever.reference_direction.z
+                if lever.reference_direction
+                else None
+            ),
+            "driver": lever.driver,
+            "coupled": lever.coupled,
+            "pivot_on": lever.pivot_on,
+        }
+        for lever in definition.levers
+    ]
+
+
+mechanism_bytes = mechanism_upload.getvalue()
+if (
+    st.session_state.get(
+        "mechanism_rows_source"
+    )
+    != mechanism_bytes
+):
+    st.session_state["mechanism_rows"] = (
+        _lever_rows(inputs.definition)
+    )
+    st.session_state[
+        "mechanism_rows_source"
+    ] = mechanism_bytes
+    st.session_state[
+        "mechanism_rows_version"
+    ] = (
+        st.session_state.get(
+            "mechanism_rows_version",
+            0,
+        )
+        + 1
+    )
+
+
+def _refresh_optimized_cells(
+    rows: list[dict],
+) -> list[dict]:
+    for row in rows:
+        if row.get("id") is None:
+            continue
+        lever_id = int(row["id"])
+        snapshot = optimized_snapshot.get(
+            lever_id,
+        )
+        row["length_optimized"] = (
+            optimized_map[
+                f"lever.{lever_id}.length"
+            ]
+            if snapshot is not None
+            and snapshot["length"]
+            == row["length_start"]
+            and (
+                f"lever.{lever_id}.length"
+                in optimized_map
+            )
             else None
-        ),
-        "ref_y": (
-            lever.reference_direction.y
-            if lever.reference_direction
+        )
+        row["angle_optimized"] = (
+            math.degrees(
+                optimized_map[
+                    f"lever.{lever_id}.angle"
+                ],
+            )
+            if snapshot is not None
+            and snapshot["angle"]
+            == row["angle_start"]
+            and (
+                f"lever.{lever_id}.angle"
+                in optimized_map
+            )
             else None
-        ),
-        "ref_z": (
-            lever.reference_direction.z
-            if lever.reference_direction
-            else None
-        ),
-        "driver": lever.driver,
-        "coupled": lever.coupled,
-        "pivot_on": lever.pivot_on,
-    }
-    for lever in inputs.definition.levers
-]
+        )
+    return rows
+
+
+mechanism_rows = _refresh_optimized_cells(
+    st.session_state["mechanism_rows"],
+)
 
 edited_mechanism = st.data_editor(
     mechanism_rows,
     num_rows="dynamic",
     use_container_width=True,
-    key="mechanism_editor",
+    key=(
+        "mechanism_editor_"
+        + str(
+            st.session_state.get(
+                "mechanism_rows_version",
+                0,
+            )
+        )
+    ),
+    disabled=[
+        "length_optimized",
+        "angle_optimized",
+    ],
     column_config={
         "id": st.column_config.NumberColumn(
             "id",
             help="Eindeutige Hebel-ID (erster Hebel = Antrieb)",
+        ),
+        "length_optimize": (
+            st.column_config.CheckboxColumn(
+                "Optimierung",
+                default=True,
+                help="Hebellänge für die Optimierung freigeben",
+            )
+        ),
+        "length_optimized": (
+            st.column_config.NumberColumn(
+                "Optimiert",
+                help="Ergebnis des letzten Optimierungslaufs; wird geleert, sobald der Startwert geändert oder übernommen wird",
+            )
         ),
         "angle_min": st.column_config.NumberColumn(
             "angle_min (°)",
@@ -406,11 +523,28 @@ edited_mechanism = st.data_editor(
                 "mathematisch gerundet)."
             ),
         ),
+        "angle_optimize": (
+            st.column_config.CheckboxColumn(
+                "Optimierung",
+                default=True,
+                help="Hebelwinkel für die Optimierung freigeben",
+            )
+        ),
+        "angle_optimized": (
+            st.column_config.NumberColumn(
+                "Optimiert",
+                help="Ergebnis des letzten Optimierungslaufs; wird geleert, sobald der Startwert geändert oder übernommen wird",
+            )
+        ),
         "pivot_on": st.column_config.TextColumn(
             "pivot_on",
             help="lever_id@angle_deg (z. B. lever3@180), leer = fester Drehpunkt",
         ),
     },
+)
+
+st.session_state["mechanism_rows"] = (
+    edited_mechanism
 )
 
 try:
@@ -424,174 +558,112 @@ except WorkflowError as error:
 
 template = parameter_template(inputs)
 
-result = st.session_state.get("result")
-optimized_map: dict[str, float] = {}
-if result is not None:
-    optimized_map = optimized_values(
-        result.optimized_definition,
-    )
-
-# Start values adopted from the last optimization
-# run.  A set in session state survives reruns.
-if "adopted_params" not in st.session_state:
-    st.session_state["adopted_params"] = set()
-
-if optimized_map:
-    st.caption(
-        "✅ Optimierungsergebnis vorhanden — Klick "
-        "auf einen Wert in der Spalte „Optimiert“ "
-        "der nächsten Tabelle übernimmt ihn als "
-        "Startwert."
-    )
-    selection = st.dataframe(
-        [
-            {
-                "Parameter": (
-                    parameter.name
-                ),
-                "Startwert": (
-                    parameter.value
-                    * (
-                        180.0 / math.pi
-                        if is_angle_parameter(
-                            parameter,
-                        )
-                        else 1.0
-                    )
-                ),
-                "Optimiert": (
-                    optimized_map[
-                        parameter.name
-                    ]
-                    * (
-                        180.0 / math.pi
-                        if is_angle_parameter(
-                            parameter,
-                        )
-                        else 1.0
-                    )
-                ),
-            }
-            for parameter in template.parameters
-            if parameter.name in optimized_map
-        ],
-        use_container_width=True,
-        hide_index=True,
-        key="optimized_selection",
-        on_select="rerun",
-        selection_mode="single-cell",
-    )
-    selectable_names = [
-        parameter.name
-        for parameter in template.parameters
-        if parameter.name in optimized_map
-    ]
-    for (
-        row_index,
-        column,
-    ) in selection.selection.cells:
-        if column != "Optimiert":
+if optimized_map and st.button(
+    "Alle optimierten Werte als "
+    "Startwerte übernehmen",
+    key="adopt_all_button",
+):
+    for row in st.session_state[
+        "mechanism_rows"
+    ]:
+        if row.get("id") is None:
             continue
-        st.session_state[
-            "adopted_params"
-        ].add(
-            selectable_names[row_index]
+        lever_id = int(row["id"])
+        length_key = (
+            f"lever.{lever_id}.length"
         )
-    if st.button(
-        "Alle optimierten Werte als "
-        "Startwert übernehmen",
-        key="adopt_all_button",
-    ):
-        st.session_state[
-            "adopted_params"
-        ] = set(optimized_map)
-        st.rerun()
-
-rows = []
-for parameter in template.parameters:
-    angle = is_angle_parameter(parameter)
-    factor = (
-        180.0 / math.pi if angle else 1.0
-    )
-    start_value = parameter.value
-    if (
-        parameter.name
-        in st.session_state["adopted_params"]
-        and parameter.name in optimized_map
-    ):
-        start_value = optimized_map[
-            parameter.name
-        ]
-    rows.append(
-        {
-            "Parameter": parameter.name,
-            "Typ": (
-                "Winkel (°)"
-                if angle
-                else "Länge (mm)"
-            ),
-            "Minimum": (
-                parameter.minimum * factor
-            ),
-            "Maximum": (
-                parameter.maximum * factor
-            ),
-            "Startwert": (
-                start_value * factor
-            ),
-            "Optimiert": (
-                optimized_map.get(
-                    parameter.name,
+        angle_key = (
+            f"lever.{lever_id}.angle"
+        )
+        if length_key in optimized_map:
+            row["length_start"] = (
+                optimized_map[length_key]
+            )
+        if angle_key in optimized_map:
+            row["angle_start"] = (
+                math.degrees(
+                    optimized_map[angle_key],
                 )
-                * factor
-                if parameter.name
-                in optimized_map
-                else None
-            ),
-            "Optimieren": (
-                not parameter.is_fixed
-            ),
-        },
+            )
+    st.session_state[
+        "mechanism_rows_version"
+    ] = (
+        st.session_state.get(
+            "mechanism_rows_version",
+            0,
+        )
+        + 1
     )
-
-edited = st.data_editor(
-    rows,
-    num_rows="fixed",
-    use_container_width=True,
-    key="parameter_editor",
-    disabled=[
-        "Parameter",
-        "Typ",
-        "Optimiert",
-    ],
-)
+    st.rerun()
 
 overrides: dict[
     str,
     tuple[float, float, float],
 ] = {}
-for row, parameter in zip(
-    edited,
-    template.parameters,
-):
-    minimum = float(row["Minimum"])
-    maximum = float(row["Maximum"])
-    value = float(row["Startwert"])
-    if not row["Optimieren"]:
-        minimum = value
-        maximum = value
-    if maximum < minimum:
+for row in edited_mechanism:
+    lever_id = int(row["id"])
+    length_value = float(
+        row["length_start"],
+    )
+    angle_value = float(
+        row["angle_start"],
+    )
+    if row["length_optimize"]:
+        length_min = float(
+            row["length_min"],
+        )
+        length_max = float(
+            row["length_max"],
+        )
+    else:
+        length_min = length_max = (
+            length_value
+        )
+    if row["angle_optimize"]:
+        angle_min = float(
+            row["angle_min"],
+        )
+        angle_max = float(
+            row["angle_max"],
+        )
+    else:
+        angle_min = angle_max = (
+            angle_value
+        )
+    if length_max < length_min:
         st.error(
-            f"Ungültiger Bereich für "
-            f"{parameter.name}: "
-            f"Maximum < Minimum."
+            f"Hebel {lever_id}: "
+            f"length_max < length_min."
         )
         st.stop()
-    overrides[parameter.name] = (
-        minimum,
-        maximum,
-        value,
+    if angle_max < angle_min:
+        st.error(
+            f"Hebel {lever_id}: "
+            f"angle_max < angle_min."
+        )
+        st.stop()
+    overrides[
+        f"lever.{lever_id}.length"
+    ] = (
+        length_min,
+        length_max,
+        length_value,
     )
+    overrides[
+        f"lever.{lever_id}.angle"
+    ] = (
+        angle_min,
+        angle_max,
+        angle_value,
+    )
+    pivot_x = float(row["pivot_x"])
+    pivot_y = float(row["pivot_y"])
+    overrides[
+        f"lever.{lever_id}.pivot.x"
+    ] = (pivot_x, pivot_x, pivot_x)
+    overrides[
+        f"lever.{lever_id}.pivot.y"
+    ] = (pivot_y, pivot_y, pivot_y)
 
 try:
     active_template = (
@@ -723,7 +795,20 @@ with result_tab:
 
         progress_bar.empty()
         st.session_state["result"] = result
-        st.session_state["adopted_params"] = set()
+        st.session_state[
+            "optimized_snapshot"
+        ] = {
+            int(row["id"]): {
+                "length": float(
+                    row["length_start"],
+                ),
+                "angle": float(
+                    row["angle_start"],
+                ),
+            }
+            for row in edited_mechanism
+            if row.get("id") is not None
+        }
         history = (
             result.fitness_history
         )
