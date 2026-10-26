@@ -816,6 +816,107 @@ def apply_parameter_overrides(
     )
 
 
+def optimized_display_values(
+    rows: Sequence[Mapping[str, object]],
+    optimized_map: Mapping[str, float],
+    snapshot: Mapping[int, Mapping[str, float]],
+) -> dict[int, tuple[float | None, float | None]]:
+    """Optimized values displayed per lever id.
+
+    A value is only displayed while the
+    corresponding start value still matches the
+    snapshot taken when the optimization run
+    started; otherwise the cell is cleared
+    (``None``).  Lengths are in millimetres,
+    angles in DEGREES (user units).
+    """
+
+    result: dict[
+        int,
+        tuple[float | None, float | None],
+    ] = {}
+    for row in rows:
+        if row.get("id") is None:
+            continue
+        lever_id = int(row["id"])
+        length_key = (
+            f"lever.{lever_id}.length"
+        )
+        angle_key = (
+            f"lever.{lever_id}.angle"
+        )
+        lever_snapshot = snapshot.get(
+            lever_id,
+        )
+        length_value = (
+            optimized_map[length_key]
+            if lever_snapshot is not None
+            and lever_snapshot["length"]
+            == row["length_start"]
+            and length_key in optimized_map
+            else None
+        )
+        angle_value = (
+            math.degrees(
+                optimized_map[angle_key],
+            )
+            if lever_snapshot is not None
+            and lever_snapshot["angle"]
+            == row["angle_start"]
+            and angle_key in optimized_map
+            else None
+        )
+        result[lever_id] = (
+            length_value,
+            angle_value,
+        )
+    return result
+
+
+def adopt_single_optimized_values(
+    rows: list[dict],
+) -> bool:
+    """Adopt individually selected optimized
+    values as new start values, in place.
+
+    Each row may carry ``length_adopt`` /
+    ``angle_adopt`` flags set by the user.  For
+    every set flag whose ``length_optimized`` /
+    ``angle_optimized`` cell is not empty, the
+    optimized value is written into
+    ``length_start`` / ``angle_start`` and the
+    flag is cleared.  Returns ``True`` when at
+    least one value was adopted (the caller then
+    reruns so the table reflects the adoption).
+    """
+
+    adopted = False
+    for row in rows:
+        if row.get("id") is None:
+            continue
+        if (
+            row.get("length_adopt")
+            and row["length_optimized"]
+            is not None
+        ):
+            row["length_start"] = row[
+                "length_optimized"
+            ]
+            row["length_adopt"] = False
+            adopted = True
+        if (
+            row.get("angle_adopt")
+            and row["angle_optimized"]
+            is not None
+        ):
+            row["angle_start"] = row[
+                "angle_optimized"
+            ]
+            row["angle_adopt"] = False
+            adopted = True
+    return adopted
+
+
 def _simulate(
     builder: CsvMechanismBuilder,
     candidate: ParameterSet,
