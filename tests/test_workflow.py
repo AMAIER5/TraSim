@@ -30,8 +30,8 @@ from gui.workflow import (
 
 MECHANISM_CSV = """\
 id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,driver,coupled
-1,50,150,50,60,120,90,0,0,0,0,0,1,,2
-2,50,150,60,60,120,90,100,0,0,0,0,1,1,
+1,50,150,50,30,150,90,0,0,0,0,0,1,,2
+2,50,150,60,30,150,90,100,0,0,0,0,1,1,
 """
 
 TARGET_CSV = """\
@@ -619,3 +619,146 @@ def test_run_optimization_gradient_weight_setting(inputs):
         ),
     )
     assert math.isfinite(result.best_score)
+
+
+def test_middle_position_index_rounds_half_up():
+    from gui.workflow import (
+        middle_position_index,
+    )
+    assert middle_position_index(7) == 4
+    assert middle_position_index(6) == 3
+    assert middle_position_index(2) == 1
+    assert middle_position_index(1) == 1
+
+
+def test_anchored_input_angles_reference_middle(
+    inputs,
+):
+    from gui.workflow import (
+        anchored_input_angles,
+        middle_input_angle,
+    )
+    middle = middle_input_angle(inputs)
+    drive_start = math.radians(90.0)
+    angles = anchored_input_angles(
+        inputs,
+        drive_start,
+    )
+    index = len(angles) // 2
+    assert angles[index] == pytest.approx(
+        drive_start,
+    )
+    offsets = [
+        angle - drive_start
+        for angle in angles
+    ]
+    expected = [
+        angle - middle
+        for angle in inputs.input_angles
+    ]
+    assert offsets == pytest.approx(expected)
+    # The angular distances between the support
+    # points are preserved.
+    deltas = [
+        angles[i + 1] - angles[i]
+        for i in range(len(angles) - 1)
+    ]
+    original = [
+        inputs.input_angles[i + 1]
+        - inputs.input_angles[i]
+        for i in range(
+            len(inputs.input_angles) - 1
+        )
+    ]
+    assert deltas == pytest.approx(original)
+
+
+def test_anchored_output_angles_reference_middle(
+    inputs,
+):
+    from gui.workflow import (
+        anchored_output_angles,
+        middle_output_angle,
+    )
+    middle = middle_output_angle(inputs)
+    output_start = math.radians(90.0)
+    angles = anchored_output_angles(
+        inputs,
+        output_start,
+    )
+    index = len(angles) // 2
+    assert angles[index] == pytest.approx(
+        output_start,
+    )
+    expected = [
+        angle - middle + output_start
+        for angle in inputs.output_angles
+    ]
+    assert angles == pytest.approx(expected)
+
+
+def test_preview_curves_anchored_at_start_angles(
+    inputs,
+):
+    """Seven support points: in the preview the drive
+    lever sits at its start angle (90 degrees) at the
+    fourth support position, and the Soll output
+    curve passes through the output lever's start
+    angle there."""
+    import json
+    import re
+
+    from gui.workflow import middle_position_index
+
+    template = parameter_template(inputs)
+    html = preview(inputs, template)
+    match = re.search(
+        r'<script id="plot-data" '
+        r'type="application/json">'
+        r"(.*?)</script>",
+        html,
+        re.S,
+    )
+    data = json.loads(match.group(1))
+    curves = {
+        series["label"]: series
+        for series in data["curves"]
+    }
+    index = middle_position_index(
+        inputs.point_count,
+    ) - 1
+    target = curves["Soll-Ausgangskurve"]
+    assert target["input_angles"][
+        index
+    ] == pytest.approx(90.0)
+    assert target["output_angles"][
+        index
+    ] == pytest.approx(90.0)
+    deltas = [
+        target["output_angles"][i + 1]
+        - target["output_angles"][i]
+        for i in range(
+            len(target["output_angles"]) - 1
+        )
+    ]
+    assert deltas == pytest.approx(
+        [
+            math.degrees(
+                inputs.output_angles[i + 1]
+                - inputs.output_angles[i]
+            )
+            for i in range(
+                len(inputs.output_angles) - 1
+            )
+        ],
+    )
+
+
+def test_preview_drive_angle_at_middle_position(
+    inputs,
+):
+    """Seven support points: the drive lever must sit
+    at its start angle at the fourth position."""
+    template = parameter_template(inputs)
+    html = preview(inputs, template)
+    assert "<html" in html

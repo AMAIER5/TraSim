@@ -79,6 +79,7 @@ class LeverPlotLine:
     end: Point3D
     angle: float
     color: str
+    zero_end: Point3D | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,6 +190,11 @@ class MechanismPlotState:
                             (lever_id - 1)
                             % len(LEVER_COLORS)
                         ],
+                    ),
+                    zero_end=(
+                        entry.lever.end_position(
+                            0.0,
+                        )
                     ),
                 ),
             )
@@ -493,6 +499,12 @@ class CurvePlotter:
                         lever.angle,
                     ),
                     "color": lever.color,
+                    "zero_end": (
+                        _point(lever.zero_end)
+                        if lever.zero_end
+                        is not None
+                        else None
+                    ),
                 }
                 for lever in state.levers
             ]
@@ -780,6 +792,15 @@ p {{
     margin: 0 0 12px 0;
     color: #4b5563;
 }}
+#toggle-zero-lines {{
+    margin: 4px 0 8px 0;
+    padding: 6px 14px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #1f2937;
+    cursor: pointer;
+}}
 .plot-container {{
     background: #ffffff;
     border: 1px solid #e5e7eb;
@@ -811,6 +832,7 @@ Winkel in Grad, L&auml;ngen in Millimetern.
 </div>
 
 <h2>Hebel und Koppelstangen in drei Positionen (3D)</h2>
+<button id="toggle-zero-lines" type="button">Nullage der Winkeldefinitionen einblenden</button>
 <div class="plot-container">
     <div id="lever-plot"></div>
 </div>
@@ -834,6 +856,7 @@ const POSITION_DASH = {{
 }};
 
 const ROD_COLOR = "#7f7f7f";
+const ZERO_LINE_COLOR = "#f4a6a6";
 
 function leverTraces() {{
     const traces = [];
@@ -896,6 +919,30 @@ function leverTraces() {{
                 hovertemplate: "Drehpunkt " + lever.name +
                     "<extra></extra>"
             }});
+            if (
+                lever.zero_end !== null
+                && lever.zero_end !== undefined
+                && state.position_label === "min"
+            ) {{
+                traces.push({{
+                    type: "scatter3d",
+                    mode: "lines",
+                    x: [lever.pivot.x, lever.zero_end.x],
+                    y: [lever.pivot.y, lever.zero_end.y],
+                    z: [lever.pivot.z, lever.zero_end.z],
+                    name: "Nullage " + lever.name,
+                    legendgroup: "zero-lines",
+                    showlegend: state.position_label === "min",
+                    visible: false,
+                    line: {{
+                        color: ZERO_LINE_COLOR,
+                        width: 4,
+                        dash: "dash"
+                    }},
+                    hovertemplate: "Nullage " + lever.name +
+                        "<extra></extra>"
+                }});
+            }}
         }}
     }}
     return traces;
@@ -955,12 +1002,48 @@ function curveLayout() {{
     }};
 }}
 
+const leverTracesData = leverTraces();
+
 Plotly.newPlot(
     "lever-plot",
-    leverTraces(),
+    leverTracesData,
     leverLayout(),
     {{ responsive: true }}
 );
+
+const toggleZeroButton = document.getElementById(
+    "toggle-zero-lines"
+);
+let zeroLinesVisible = false;
+
+const zeroLineIndices = [];
+for (
+    let index = 0;
+    index < leverTracesData.length;
+    index += 1
+) {{
+    if (
+        leverTracesData[index].legendgroup
+        === "zero-lines"
+    ) {{
+        zeroLineIndices.push(index);
+    }}
+}}
+
+toggleZeroButton.addEventListener("click", function () {{
+    zeroLinesVisible = !zeroLinesVisible;
+    const visibility = zeroLinesVisible ? true : false;
+    if (zeroLineIndices.length > 0) {{
+        Plotly.restyle(
+            "lever-plot",
+            {{ visible: visibility }},
+            zeroLineIndices
+        );
+    }}
+    toggleZeroButton.textContent = zeroLinesVisible
+        ? "Nullage der Winkeldefinitionen ausblenden"
+        : "Nullage der Winkeldefinitionen einblenden";
+}});
 
 Plotly.newPlot(
     "curve-plot",

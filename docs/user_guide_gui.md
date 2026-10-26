@@ -32,6 +32,17 @@ users need no Python knowledge.
      output_angle` (degrees), optional third column
      `weight` for per-support-point fitness
      weighting.
+   - **Start angle semantics:** the initial start
+     angle (`angle_start`, before optimization)
+     of every lever describes the position the
+     lever occupies at the **middle support
+     position** of the target curve.  The middle
+     position is the n-th support position with
+     n = (number of support positions) / 2,
+     mathematically rounded (round half up); with
+     seven support positions at -30, -20, -10, 0,
+     10, 20, 30° the support position at 0° is the
+     reference point for the start angle.
    - Both international (comma/dot) and German
      (semicolon/comma) CSV conventions are
      detected automatically from the header line.
@@ -95,6 +106,11 @@ users need no Python knowledge.
 7. **Download the result**
    - `simulation_result.html`: the usual result
      document (3D lever diagram + Soll/Ist curve).
+     In the 3D mechanism diagram the button
+     **Nullage der Winkeldefinitionen einblenden**
+     optionally overlays the zero position of each
+     lever's angle definition as a dashed, light-red
+     line at every axis.
    - `mechanism_optimized.csv`: the optimized
      mechanism, written in the convention of the
      input files.

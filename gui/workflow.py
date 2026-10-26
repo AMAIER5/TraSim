@@ -14,6 +14,19 @@ directly.
 
 User I/O angles are in DEGREES, internal calculations
 use RADIANS.
+
+Start angle semantics: the start angle of every lever
+(its angle parameter, initially ``angle_start`` from
+the mechanism CSV) describes the position the lever
+occupies at the MIDDLE support position of the target
+curve.  The middle position is the n-th support point
+with n = point_count / 2, mathematically rounded half
+up (seven support points -> fourth position).  The
+target curve's input angles are applied as angular
+offsets relative to that middle support position: the
+drive lever sits at its start angle at the middle
+support point, and every other support point keeps
+its angular distance to the middle.
 """
 
 from __future__ import annotations
@@ -158,6 +171,169 @@ class OptimizationResult:
     html: str
     fitness_history: tuple[float, ...] = field(
         default=(),
+    )
+
+
+def middle_position_index(
+    point_count: int,
+) -> int:
+    """
+    One-based index of the middle support position of a
+    target curve with ``point_count`` positions.
+
+    The middle position is the n-th position with
+    n = point_count / 2, mathematically rounded
+    (round half up).  Seven positions therefore give the
+    fourth position, six positions the third.
+    """
+
+    return int(
+        math.floor(point_count / 2 + 0.5)
+    )
+
+
+def middle_input_angle(
+    inputs: LoadedInputs,
+) -> float:
+    """
+    Input angle (radians) of the middle support position
+    of the target curve.
+    """
+
+    index = middle_position_index(
+        inputs.point_count,
+    ) - 1
+    return inputs.input_angles[index]
+
+
+def middle_output_angle(
+    inputs: LoadedInputs,
+) -> float:
+    """
+    Output angle (radians) of the target curve at the
+    middle support position.
+    """
+
+    index = middle_position_index(
+        inputs.point_count,
+    ) - 1
+    return inputs.output_angles[index]
+
+
+def anchored_input_angles(
+    inputs: LoadedInputs,
+    drive_angle: float,
+) -> tuple[float, ...]:
+    """
+    Support-point input angles (radians) shifted so that
+    the drive lever sits at ``drive_angle`` (its start
+    angle) at the middle support position.
+
+    Every support point keeps its angular distance to
+    the middle position; only the origin of the drive
+    lever's angle definition moves.
+    """
+
+    middle = middle_input_angle(inputs)
+    return tuple(
+        angle - middle + drive_angle
+        for angle in inputs.input_angles
+    )
+
+
+def anchored_output_angles(
+    inputs: LoadedInputs,
+    output_angle: float,
+) -> tuple[float, ...]:
+    """
+    Support-point output angles (radians) shifted so
+    that the output lever sits at ``output_angle`` (its
+    start angle) at the middle support position.
+    """
+
+    middle = middle_output_angle(inputs)
+    return tuple(
+        angle - middle + output_angle
+        for angle in inputs.output_angles
+    )
+
+
+def _drive_lever_id(
+    definition: MechanismDefinition,
+) -> int:
+    """
+    Lever id of the drive lever (input lever of the first
+    stage).
+    """
+
+    for lever in definition.levers:
+        if lever.driver is not None:
+            return lever.driver
+    return definition.levers[0].id
+
+
+def _output_lever_id(
+    definition: MechanismDefinition,
+) -> int:
+    """
+    Lever id of the output lever of the last stage.
+    """
+
+    output_id = None
+    for lever in definition.levers:
+        if lever.driver is not None:
+            output_id = lever.id
+    if output_id is None:
+        return definition.levers[-1].id
+    return output_id
+
+
+def _anchored_motion(
+    inputs: LoadedInputs,
+    parameters: ParameterSet,
+) -> PointMotion:
+    """
+    Motion over the target-curve support points anchored
+    at the current start angle of the drive lever.
+    """
+
+    drive_id = _drive_lever_id(
+        inputs.definition,
+    )
+    drive_angle = parameters.values().get(
+        f"lever.{drive_id}.angle",
+    )
+    if drive_angle is None:
+        drive_angle = (
+            inputs.definition.get_lever(
+                drive_id,
+            ).angle_start
+        )
+    return PointMotion(
+        angles=anchored_input_angles(
+            inputs,
+            drive_angle,
+        ),
+    )
+
+
+def _anchored_simulator(
+    inputs: LoadedInputs,
+    parameters: ParameterSet,
+) -> MechanismSimulator:
+    """
+    Simulator over the support points anchored at the
+    drive lever's start angle (see
+    ``anchored_input_angles``).
+    """
+
+    return MechanismSimulator(
+        motion=_anchored_motion(
+            inputs,
+            parameters,
+        ),
+        stage_simulator=StageSimulator(),
+        stage_limit=None,
     )
 
 
@@ -645,12 +821,9 @@ def _simulate(
     candidate: ParameterSet,
     inputs: LoadedInputs,
 ):
-    simulator = MechanismSimulator(
-        motion=PointMotion(
-            angles=inputs.input_angles,
-        ),
-        stage_simulator=StageSimulator(),
-        stage_limit=None,
+    simulator = _anchored_simulator(
+        inputs,
+        candidate,
     )
     mechanism = builder.build(candidate)
     results = simulator.simulate(mechanism)
@@ -679,16 +852,33 @@ def build_report_html(
     ),
 ) -> str:
     """Build the usual HTML result document for a
-    simulated mechanism."""
+    simulated mechanism.
+
+    Start angle semantics: the Soll (target) output
+    angles are anchored at the output lever's start
+    angle (its reference angle in ``mechanism``,
+    which reflects the applied angle parameter) at
+    the middle support position, and the Ist
+    (actual) curve is drawn over the anchored input
+    angles.
+    """
 
     plotter = CurvePlotter(title=title)
-    plotter.set_target_curve(
-        inputs.target_curve,
-        input_angles=inputs.input_angles,
-        output_angles=inputs.output_angles,
-    )
     final_result = results[-1]
     drive_result = results[0]
+    output_angle = (
+        mechanism.stages[-1].output_angle
+        if mechanism.stages
+        else middle_output_angle(inputs)
+    )
+    plotter.set_target_curve(
+        inputs.target_curve,
+        input_angles=drive_result.input_angles,
+        output_angles=anchored_output_angles(
+            inputs,
+            output_angle,
+        ),
+    )
     plotter.add_actual_curve(
         drive_result.input_angles,
         final_result.output_angles,
@@ -767,36 +957,93 @@ def _build_optimizer(
     evaluator_factory; in sequential mode it is
     used directly.  It must live at module level
     so Windows spawn can pickle it.
+
+    Start angle semantics: the drive lever's angle
+    parameter is the position it occupies at the
+    middle support position of the target curve.
+    The support-point input angles are therefore
+    shifted by ``(drive angle - middle input
+    angle)`` for every candidate, and the target
+    curve's support input angles are shifted by
+    the same constant so the fitness still
+    compares output angles support point by
+    support point.
     """
 
     builder = CsvMechanismBuilder(
         inputs.definition,
     )
-    simulator = MechanismSimulator(
-        motion=PointMotion(
-            angles=inputs.input_angles,
-        ),
-        stage_simulator=StageSimulator(),
-        stage_limit=None,
+    drive_id = _drive_lever_id(
+        inputs.definition,
     )
-    fitness = CurveFitness(
-        target_curve=inputs.target_curve,
-        motion_start=(
-            inputs.input_angles[0]
-        ),
-        motion_range=(
-            inputs.input_angles[-1]
-            - inputs.input_angles[0]
-        ),
-        gradient_weight=(
-            settings.gradient_weight
-        ),
+    output_id = _output_lever_id(
+        inputs.definition,
     )
-    return MechanismOptimizer(
-        builder=builder,
-        simulator=simulator,
-        fitness=fitness,
-    ).evaluate
+    drive_fallback = (
+        inputs.definition.get_lever(
+            drive_id,
+        ).angle_start
+    )
+    output_fallback = (
+        inputs.definition.get_lever(
+            output_id,
+        ).angle_start
+    )
+    weights = inputs.target_curve.weights
+    gradient_weight = settings.gradient_weight
+
+    def evaluate(
+        candidate: ParameterSet,
+    ) -> float:
+
+        values = candidate.values()
+        drive_angle = values.get(
+            f"lever.{drive_id}.angle",
+            drive_fallback,
+        )
+        output_angle = values.get(
+            f"lever.{output_id}.angle",
+            output_fallback,
+        )
+        angles = anchored_input_angles(
+            inputs,
+            drive_angle,
+        )
+        outputs = anchored_output_angles(
+            inputs,
+            output_angle,
+        )
+        target = (
+            TargetCurve.from_points_strict(
+                angles,
+                outputs,
+                weights,
+            )
+        )
+        fitness = CurveFitness(
+            target_curve=target,
+            motion_start=angles[0],
+            motion_range=(
+                angles[-1] - angles[0]
+            ),
+            gradient_weight=(
+                gradient_weight
+            ),
+        )
+        simulator = MechanismSimulator(
+            motion=PointMotion(
+                angles=angles,
+            ),
+            stage_simulator=StageSimulator(),
+            stage_limit=None,
+        )
+        return MechanismOptimizer(
+            builder=builder,
+            simulator=simulator,
+            fitness=fitness,
+        ).evaluate(candidate)
+
+    return evaluate
 
 
 def run_optimization(
@@ -930,12 +1177,9 @@ def run_optimization(
     final_builder = CsvMechanismBuilder(
         inputs.definition,
     )
-    final_simulator = MechanismSimulator(
-        motion=PointMotion(
-            angles=inputs.input_angles,
-        ),
-        stage_simulator=StageSimulator(),
-        stage_limit=None,
+    final_simulator = _anchored_simulator(
+        inputs,
+        best,
     )
     mechanism = final_builder.build(best)
     results = final_simulator.simulate(mechanism)
