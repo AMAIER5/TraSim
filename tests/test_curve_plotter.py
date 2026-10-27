@@ -565,3 +565,49 @@ def test_build_html_contains_zero_line_toggle(
     html = plotter.build_html()
     assert "toggle-zero-lines" in html
     assert "Nullage" in html
+
+
+def test_curve_layout_ranges_follow_target_curve():
+    """Issue #78: the axes of the transmission curve
+    diagram follow the range of the target (Soll)
+    curve, and the plotted values are rounded to one
+    decimal place (Issue #77)."""
+    import math
+
+    plotter = CurvePlotter(
+        title="Achsenbereiche",
+    )
+    plotter.add_target_curve(
+        tuple(
+            math.radians(angle)
+            for angle in (-35.0, 0.0, 35.0)
+        ),
+        tuple(
+            math.radians(angle)
+            for angle in (-10.0, 0.0, 10.0)
+        ),
+    )
+    plotter.add_actual_curve(
+        tuple(
+            math.radians(angle)
+            for angle in (-35.0, 0.0, 35.0)
+        ),
+        tuple(
+            math.radians(angle)
+            for angle in (-12.0, 1.0, 9.0)
+        ),
+    )
+    html = plotter.build_html()
+    assert "targetRange" in html
+    data = plotter.build_data()
+    soll = [
+        series
+        for series in data["curves"]
+        if series["label"].startswith("Soll")
+    ][0]
+    assert soll["input_angles"] == [-35.0, 0.0, 35.0]
+    assert soll["output_angles"] == [
+        -10.0,
+        0.0,
+        10.0,
+    ]

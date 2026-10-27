@@ -972,17 +972,28 @@ def build_report_html(
         if mechanism.stages
         else middle_output_angle(inputs)
     )
+    input_offset = (
+        drive_result.input_angles[0]
+        - inputs.input_angles[0]
+    )
+    output_offset = (
+        output_angle
+        - middle_output_angle(inputs)
+    )
     plotter.set_target_curve(
         inputs.target_curve,
-        input_angles=drive_result.input_angles,
-        output_angles=anchored_output_angles(
-            inputs,
-            output_angle,
-        ),
+        input_angles=inputs.input_angles,
+        output_angles=inputs.output_angles,
     )
     plotter.add_actual_curve(
-        drive_result.input_angles,
-        final_result.output_angles,
+        tuple(
+            angle - input_offset
+            for angle in drive_result.input_angles
+        ),
+        tuple(
+            angle - output_offset
+            for angle in final_result.output_angles
+        ),
         label=actual_label,
     )
     for state in mechanism_states_from_results(

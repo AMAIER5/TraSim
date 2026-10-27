@@ -745,11 +745,11 @@ def _series_payload(
         "label": series.label,
         "color": series.color,
         "input_angles": [
-            math.degrees(angle)
+            round(math.degrees(angle), 1)
             for angle in series.input_angles
         ],
         "output_angles": [
-            math.degrees(angle)
+            round(math.degrees(angle), 1)
             for angle in series.output_angles
         ],
     }
@@ -987,17 +987,41 @@ function curveTraces() {{
     return traces;
 }}
 
+function targetRange(index) {{
+    let min = null;
+    let max = null;
+    for (const series of data.curves) {{
+        if (series.label.indexOf("Soll") !== 0) {{
+            continue;
+        }}
+        for (const value of series[index]) {{
+            if (min === null || value < min) {{
+                min = value;
+            }}
+            if (max === null || value > max) {{
+                max = value;
+            }}
+        }}
+    }}
+    if (min === null || max === null) {{
+        return undefined;
+    }}
+    return [min, max];
+}}
+
 function curveLayout() {{
     return {{
         margin: {{ t: 16, r: 24, b: 48, l: 64 }},
         legend: {{ orientation: "h", y: -0.18 }},
         xaxis: {{
             title: {{ text: "Eingangswinkel [&deg;]" }},
-            zeroline: false
+            zeroline: false,
+            range: targetRange("input_angles")
         }},
         yaxis: {{
             title: {{ text: "Ausgangswinkel [&deg;]" }},
-            zeroline: false
+            zeroline: false,
+            range: targetRange("output_angles")
         }}
     }};
 }}
