@@ -697,18 +697,16 @@ def test_anchored_output_angles_reference_middle(
     assert angles == pytest.approx(expected)
 
 
-def test_preview_curves_anchored_at_start_angles(
+def test_preview_curves_in_target_system(
     inputs,
 ):
-    """Seven support points: in the preview the drive
-    lever sits at its start angle (90 degrees) at the
-    fourth support position, and the Soll output
-    curve passes through the output lever's start
-    angle there."""
+    """Seven support points: in the preview the Soll
+    curve is drawn exactly as specified by the target
+    curve (in the system of the Vorgabewinkel), and
+    the Ist curve is shifted into the same system.
+    Issue #78."""
     import json
     import re
-
-    from gui.workflow import middle_position_index
 
     template = parameter_template(inputs)
     html = preview(inputs, template)
@@ -724,33 +722,28 @@ def test_preview_curves_anchored_at_start_angles(
         series["label"]: series
         for series in data["curves"]
     }
-    index = middle_position_index(
-        inputs.point_count,
-    ) - 1
     target = curves["Soll-Ausgangskurve"]
-    assert target["input_angles"][
-        index
-    ] == pytest.approx(90.0)
-    assert target["output_angles"][
-        index
-    ] == pytest.approx(90.0)
-    deltas = [
-        target["output_angles"][i + 1]
-        - target["output_angles"][i]
-        for i in range(
-            len(target["output_angles"]) - 1
+    assert target["input_angles"] == (
+        pytest.approx(
+            [
+                round(
+                    math.degrees(angle),
+                    1,
+                )
+                for angle in inputs.input_angles
+            ]
         )
-    ]
-    assert deltas == pytest.approx(
-        [
-            math.degrees(
-                inputs.output_angles[i + 1]
-                - inputs.output_angles[i]
-            )
-            for i in range(
-                len(inputs.output_angles) - 1
-            )
-        ],
+    )
+    assert target["output_angles"] == (
+        pytest.approx(
+            [
+                round(
+                    math.degrees(angle),
+                    1,
+                )
+                for angle in inputs.output_angles
+            ]
+        )
     )
 
 

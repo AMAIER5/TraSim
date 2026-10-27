@@ -264,6 +264,26 @@ edited_target = st.data_editor(
     num_rows="dynamic",
     width="stretch",
     key="target_curve_editor",
+    column_config={
+        "Eingabewinkel (°)": (
+            st.column_config.NumberColumn(
+                "Eingabewinkel (°)",
+                format="%.1f",
+            )
+        ),
+        "Ausgangswinkel (°)": (
+            st.column_config.NumberColumn(
+                "Ausgangswinkel (°)",
+                format="%.1f",
+            )
+        ),
+        "Gewicht": (
+            st.column_config.NumberColumn(
+                "Gewicht",
+                format="%.1f",
+            )
+        ),
+    },
 )
 
 edited_target = sorted(
@@ -299,11 +319,11 @@ with curve_column:
     st.line_chart(
         {
             "Eingabewinkel (°)": [
-                math.degrees(angle)
+                round(math.degrees(angle), 1)
                 for angle in inputs.input_angles
             ],
             "Ausgangswinkel (°)": [
-                math.degrees(angle)
+                round(math.degrees(angle), 1)
                 for angle in inputs.output_angles
             ],
         },
@@ -317,7 +337,7 @@ with weight_column:
     st.bar_chart(
         {
             "Eingabewinkel (°)": [
-                math.degrees(angle)
+                round(math.degrees(angle), 1)
                 for angle in inputs.input_angles
             ],
             "Gewicht": list(
@@ -489,6 +509,18 @@ edited_mechanism = st.data_editor(
             "id",
             help="Eindeutige Hebel-ID (erster Hebel = Antrieb)",
         ),
+        "length_min": st.column_config.NumberColumn(
+            "length_min",
+            format="%.1f",
+        ),
+        "length_max": st.column_config.NumberColumn(
+            "length_max",
+            format="%.1f",
+        ),
+        "length_start": st.column_config.NumberColumn(
+            "length_start",
+            format="%.1f",
+        ),
         "length_optimize": (
             st.column_config.CheckboxColumn(
                 "Optimierung",
@@ -499,6 +531,7 @@ edited_mechanism = st.data_editor(
         "length_optimized": (
             st.column_config.NumberColumn(
                 "Optimiert",
+                format="%.1f",
                 help="Ergebnis des letzten Optimierungslaufs; wird geleert, sobald der Startwert geändert oder übernommen wird",
             )
         ),
@@ -511,12 +544,15 @@ edited_mechanism = st.data_editor(
         ),
         "angle_min": st.column_config.NumberColumn(
             "angle_min (°)",
+            format="%.1f",
         ),
         "angle_max": st.column_config.NumberColumn(
             "angle_max (°)",
+            format="%.1f",
         ),
         "angle_start": st.column_config.NumberColumn(
             "angle_start (°)",
+            format="%.1f",
             help=(
                 "Startwinkel: Position des Hebels bei der "
                 "mittleren Stützstelle der Zielkurve "
@@ -534,6 +570,7 @@ edited_mechanism = st.data_editor(
         "angle_optimized": (
             st.column_config.NumberColumn(
                 "Optimiert",
+                format="%.1f",
                 help="Ergebnis des letzten Optimierungslaufs; wird geleert, sobald der Startwert geändert oder übernommen wird",
             )
         ),
