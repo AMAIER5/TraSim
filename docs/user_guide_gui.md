@@ -126,6 +126,137 @@ users need no Python knowledge.
      mechanism, written in the convention of the
      input files.
 
+## Mischer-Modus (Bremsklappenbetätigung)
+
+Enthält die geladene `mechanism.csv` einen Hebel mit
+einem Eintrag in der Spalte `pivot_on`, erkennt die GUI das
+automatisch und schaltet in den Mischer-Modus
+(Bremsklappenbetätigung): der Erfolg der
+Optimierung wird über **fünf Bremsstellungen**
+(0 % / 25 % / 50 % / 75 % / 100 % Bremsweg)
+bewertet.
+
+### Bedeutung des pivot_on-Hebels
+
+- `pivot_on = <Verstellhebel-Index>` bezeichnet den
+  Hebel, auf dessen Endpunkt der Drehpunkt des
+  pivot_on-Hebels (Mischerhebel) sitzt. Der
+  Verstellhebel selbst bleibt ein ganz normaler
+  Hebel mit festem Drehpunkt — sein Winkelbereich
+  (`angle_start` bis `angle_max`) definiert
+  zugleich den Bremsweg: `angle_start` ist die
+  ungebremste Referenzstellung, `angle_max` die
+  voll gebremste Stellung. Die veraltete Syntax
+  `lever_id@winkel` wird mit einer Fehlermeldung
+  abgelehnt.
+- Die Spalten `pivot_x`/`pivot_y`/`pivot_z` und
+  `axis_x`/`axis_y`/`axis_z` des Mischerhebels
+  werden ignoriert: Drehpunkt, Achse und
+  Referenzrichtung werden bei jedem Build
+  dynamisch vom Endpunkt des Verstellhebels
+  übernommen. Die Winkel-Grenzen des
+  Mischerhebels behalten ihre übliche Bedeutung
+  (Hebelwinkel relativ zur Referenzrichtung).
+- Genau ein Hebel darf `pivot_on` besitzen; der
+  Verweis darf nicht auf einen anderen pivot_on-
+  Hebel zeigen.
+
+### CSV-Format im Überblick
+
+```csv
+id,...,pivot_on
+1,...,lever3
+2,...,
+3,...,
+```
+
+### Aufbau der zwei Sollkurven-Bereiche in der GUI
+
+- Wie im Normalmodus wird die **Zielkurve ungebremst**
+  (`targetcurve.csv`) hochgeladen und in der
+  editierbaren Tabelle gepflegt; sie beschreibt das
+  Ausgangsverhalten bei 0 % Bremsweg.
+- Zusätzlich erscheint der Ausbereich
+  „Mischer-Modus: Zielkurve voll gebremst
+  (target_curve_braked.csv)“: hier wird die zweite
+  Sollkurve für die voll gebremste Stellung
+  (100 % Bremsweg) hochgeladen — eigene Datei
+  oder per Knopfdruck **Beispiel-Dateien laden**.
+  Ohne diese zweite Kurve startet der Modus nicht.
+- Die Zielkurven der Bremsstellungen 25 %, 50 %
+  und 75 % werden zwischen den beiden
+  Sollkurven interpoliert; die Optimierung
+  bewertet den Kandidaten über alle fünf
+  Bremsstellungen.
+
+### Bremsstellungs-Schalter
+
+- Im Tab **Vorschau** wählt der Schalter
+  **Bremsstellung** (0 % bis 100 %), welche
+  Bremsstellung im Mechanismus-Snapshot der
+  Vorschau dargestellt wird.
+- Im Tab **Ergebnis** wählt derselbe Schalter
+  die Bremsstellung des Ergebnisses (optimierte
+  Geometrie); die Soll-/Ist-Kurve des Berichts
+  ist jeweils mit „Soll Bremse XX %“ / „Bremse
+  XX %“ beschriftet.
+
+### Beispiel: kompletter Durchlauf am Mischbrems-Beispiel
+
+1. **CSV vorbereiten:** `examples/mixed_brake_mechanism.csv`
+   (Hebel 1 `pivot_on = lever3` = Mischerhebel mit ±12°
+   Winkelbereich, Hebel 2 = Abtriebshebel, Hebel 3 =
+   Bremshebel mit Winkelbereich 170°–190°,
+   `angle_start = 180°`); die Sollkurven sind
+   `examples/target_curve_unbraked.csv` und
+   `examples/target_curve_braked.csv` (jeweils
+   11 Stützpunkte von −10° bis +10°, beide mit
+   0° Ausgangswinkel am rechten Rand). Das
+   fertige Beispiel-Setup läuft alternativ per
+   `python examples/optimize_mixed_brake.py`
+   (vom Projektverzeichnis aus, um die Paket-
+   Importe aufzulösen).
+2. **GUI-Schritte:** Streamlit-App starten, dann
+   `mixed_brake_mechanism.csv` als mechanism.csv
+   und `target_curve_unbraked.csv` als
+   targetcurve.csv hochladen; im aufgehenden
+   Ausbereich „Mischer-Modus“ entweder
+   `target_curve_braked.csv` hochladen oder
+   **Beispiel-Dateien laden** drücken. Beide
+   Sollkurven bei Bedarf in den Tabellen
+   editieren, Grenzen/Freigaben der Hebel in
+   der Parametertabelle prüfen (der Mischerhebel
+   hat keine eigenen Drehpunkt-Parameter), in
+   der Sidebar Population/Generationen/Seed
+   setzen, im Tab **Vorschau** über den
+   **Bremsstellung**-Schalter und **Vorschau
+   aktualisieren** den Startmechanismus prüfen
+   und schließlich **Optimierung starten**
+   drücken.
+3. **Ergebnis-Interpretation:** Der Kopf zeigt
+   Stopgrund, beste Fitness, Generationen und
+   den minimalen Übertragungswinkel des besten
+   Kandidaten (Soft-Kriterium); der
+   Fitness-Verlauf über die Generationen zeigt,
+   ob die Konvergenz abflacht. Über den
+   **Bremsstellung**-Schalter werden Soll- und
+   Istkurve der fünf Bremsstellungen im
+   Vergleich durchgeschaltet — am
+   0-%-Ende entspricht die Istkurve der
+   ungebremsten, am 100-%-Ende der gebremsten
+   Sollkurve, und die Zwischenstellungen zeigen
+   die interpolierten Verläufe. Große Abweichungen
+   bei einzelnen Bremsstellungen deuten auf
+   einen Kompromiss des Optimierers hin; dann
+   Grenzen oder Sollkurven nachschärfen und
+   mit **Alle optimierten Werte als Startwerte
+   übernehmen** iterieren. **Ergebnis-HTML
+   herunterladen** liefert den Bericht
+   (`mixed_brake_result.html`), **Optimierte
+   Mechanik herunterladen (CSV)** die optimierte
+   Geometrie als `mechanism_optimized.csv` in der
+   Konvention der Eingabedateien.
+
 ## Starting the app (developer machine)
 
 ```powershell
