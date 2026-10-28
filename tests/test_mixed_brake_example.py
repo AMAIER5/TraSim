@@ -114,10 +114,6 @@ def test_mixer_topology(example_definition):
     assert (
         mixer.pivot_reference.lever_id == 3
     )
-    assert (
-        mixer.pivot_reference.angle_deg
-        == pytest.approx(180.0)
-    )
     brake = example_definition.get_lever(3)
     assert math.degrees(brake.angle_min) == (
         pytest.approx(170.0)

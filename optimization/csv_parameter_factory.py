@@ -16,6 +16,10 @@ from optimization.parameter_set import (
     ParameterSet,
 )
 
+#: Default symmetric search-space offset around
+#: each lever's CSV pivot value (millimetres).
+DEFAULT_PIVOT_OFFSET = 20.0
+
 
 class CsvParameterFactory:
     """
@@ -27,15 +31,15 @@ class CsvParameterFactory:
 
     - length (length_min..length_max)
     - angle (angle_min..angle_max)
-    - pivot x / pivot y (fixed by default;
-      see ``pivot_bounds``)
+    - pivot x / pivot y (symmetric search
+      space around the CSV value; see
+      ``pivot_bounds``)
 
-    Pivot parameters follow the same mechanism as
-    length and angle: a parameter exists for every
-    lever row, and a pivot can be nailed down (or
-    freed for optimization) via ``minimum == maximum``
-    fixed parameters, exactly like the existing
-    length/angle parameters.
+    Levers with a ``pivot_on`` reference (mixer
+    levers) have no pivot of their own: their
+    pivot sits on the endpoint of the referenced
+    lever, so no pivot parameter is created
+    for them.
     """
 
     @staticmethod
@@ -59,12 +63,15 @@ class CsvParameterFactory:
             pair applied symmetrically around each
             lever's CSV pivot x/y value, e.g. ``(-20,
             20)`` for a +/-20 unit box.  When ``None``
-            (default), pivot parameters are fixed at
-            the CSV value (``minimum == maximum``), so
-            pivots stay nailed down unless explicitly
-            freed.
+            (default), the default search space
+            ``DEFAULT_PIVOT_OFFSET`` is applied, so
+            pivots are optimizable.  Pass ``(0, 0)``
+            to nail pivots down at the CSV value.
         """
-        if pivot_bounds is not None:
+        if pivot_bounds is None:
+            offset_min = -DEFAULT_PIVOT_OFFSET
+            offset_max = DEFAULT_PIVOT_OFFSET
+        else:
             offset_min, offset_max = pivot_bounds
             if offset_min > offset_max:
                 raise ValueError(
@@ -90,32 +97,15 @@ class CsvParameterFactory:
                     value=lever.angle_start,
                 )
             )
-            if pivot_bounds is None:
-                pivot_x_min = lever.pivot.x
-                pivot_x_max = lever.pivot.x
-                pivot_y_min = lever.pivot.y
-                pivot_y_max = lever.pivot.y
-            else:
-                offset_min, offset_max = pivot_bounds
-                pivot_x_min = (
-                    lever.pivot.x + offset_min
-                )
-                pivot_x_max = (
-                    lever.pivot.x + offset_max
-                )
-                pivot_y_min = (
-                    lever.pivot.y + offset_min
-                )
-                pivot_y_max = (
-                    lever.pivot.y + offset_max
-                )
+            if lever.pivot_on is not None:
+                continue
             parameters.append(
                 Parameter(
                     name=(
                         f"lever.{lever.id}.pivot.x"
                     ),
-                    minimum=pivot_x_min,
-                    maximum=pivot_x_max,
+                    minimum=lever.pivot.x + offset_min,
+                    maximum=lever.pivot.x + offset_max,
                     value=lever.pivot.x,
                 )
             )
@@ -124,8 +114,8 @@ class CsvParameterFactory:
                     name=(
                         f"lever.{lever.id}.pivot.y"
                     ),
-                    minimum=pivot_y_min,
-                    maximum=pivot_y_max,
+                    minimum=lever.pivot.y + offset_min,
+                    maximum=lever.pivot.y + offset_max,
                     value=lever.pivot.y,
                 )
             )

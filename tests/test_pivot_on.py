@@ -10,32 +10,48 @@ from model.lever_definition import (
 from model.mechanism_definition import MechanismDefinition
 
 PIVOT_ON_CSV = """id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,driver,coupled,pivot_on
-1,40,100,60,-40,40,0,0,0,0,0,0,1,,,lever3@180
+1,40,100,60,-40,40,0,0,0,0,0,0,1,,,lever3
 2,30,90,45,-60,60,0,100,0,0,0,0,1,1,,
-3,20,70,35,-30,30,0,200,20,0,0,0,1,2,,
+3,20,70,35,170,190,180,200,20,0,0,0,1,2,,
 """
 
 
 def test_parse_pivot_reference_valid():
-    reference = parse_pivot_reference("lever3@180")
+    reference = parse_pivot_reference("lever3")
     assert reference.lever_id == 3
-    assert reference.angle_deg == 180.0
+
+
+def test_parse_pivot_reference_accepts_bare_number():
+    reference = parse_pivot_reference("3")
+    assert reference.lever_id == 3
 
 
 @pytest.mark.parametrize(
     "value",
     [
-        "lever3",
+        "lever3@180",
+        "3@180",
         "lever3@",
         "@180",
-        "lever3@18a0",
-        "lever-three@180",
-        "lever3@180@0",
+        "lever-three",
+        "lever-3",
+        "lever3lever",
+        "",
     ],
 )
 def test_parse_pivot_reference_invalid(value):
     with pytest.raises(ValueError, match="invalid pivot_on"):
         parse_pivot_reference(value)
+
+
+def test_parse_pivot_reference_rejects_old_syntax():
+    """The old angle syntax is rejected with a migration
+    hint, not silently re-interpreted."""
+    with pytest.raises(
+        ValueError,
+        match="angle suffix is no longer part",
+    ):
+        parse_pivot_reference("lever3@180")
 
 
 def test_pivot_reference_property():
@@ -49,11 +65,10 @@ def test_pivot_reference_property():
         angle_max=60,
         angle_start=0,
         axis=None,
-        pivot_on="lever3@180",
+        pivot_on="lever3",
     )
     assert lever.pivot_reference is not None
     assert lever.pivot_reference.lever_id == 3
-    assert lever.pivot_reference.angle_deg == 180.0
 
 
 def test_pivot_reference_property_none():
@@ -76,7 +91,7 @@ def test_read_mechanism_with_pivot_on(tmp_path):
     path = tmp_path / "mechanism.csv"
     path.write_text(PIVOT_ON_CSV, encoding="utf-8")
     mechanism = CsvReader.read_mechanism(path)
-    assert mechanism.levers[0].pivot_on == "lever3@180"
+    assert mechanism.levers[0].pivot_on == "lever3"
     assert mechanism.levers[1].pivot_on is None
     assert mechanism.levers[2].pivot_on is None
 
@@ -84,10 +99,22 @@ def test_read_mechanism_with_pivot_on(tmp_path):
 def test_read_mechanism_invalid_pivot_on(tmp_path):
     path = tmp_path / "mechanism.csv"
     path.write_text(
-        PIVOT_ON_CSV.replace("lever3@180", "lever3@18a0"),
+        PIVOT_ON_CSV.replace("lever3", "lever-three"),
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="invalid pivot_on"):
+        CsvReader.read_mechanism(path)
+
+
+def test_read_mechanism_rejects_old_pivot_on_syntax(tmp_path):
+    """Reading a CSV with the old angle syntax fails loudly
+    with the migration message (no silent re-interpretation)."""
+    path = tmp_path / "mechanism.csv"
+    path.write_text(
+        PIVOT_ON_CSV.replace("lever3", "lever3@180"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="angle suffix"):
         CsvReader.read_mechanism(path)
 
 
@@ -103,7 +130,7 @@ def test_pivot_on_roundtrip(tmp_path):
         encoding="utf-8"
     ).splitlines()
     assert lines[0].endswith("pivot_on")
-    assert lines[1].endswith("lever3@180")
+    assert lines[1].endswith("lever3")
 
 
 def test_write_pivot_on_last_column(tmp_path):

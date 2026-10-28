@@ -8,11 +8,14 @@ Setup
 - mechanism CSV with three levers:
   * Lever 1: input lever (tight +/-12 deg angle bounds; the
     stage motion validator checks the COMPLETE input range)
-  * Lever 2: output lever (generous +/-120 deg angle bounds)
-  * Lever 3: brake lever carrying the pivot of lever 2 via
-    pivot_on=lever3@180.  It is oriented so that it displaces
-    the pivot TRANSVERSALLY (angle ~180 deg), avoiding the
-    kinematic branch jump a radial displacement causes.
+  * Lever 2: output lever (generous +/-120 deg angle bounds);
+    its pivot sits ON the brake lever endpoint via
+    pivot_on=lever3 (its own pivot/axis columns are ignored;
+    axis and reference direction come from lever 3)
+  * Lever 3: brake lever (adjusting lever) carrying the
+    pivot of lever 2.  Its angle range (angle_start=180 deg
+    unbraked reference up to angle_max=190 deg fully braked)
+    defines the brake positions.
 - Two target curves (unbraked / braked) derived from the real
   reachable behaviour of the mechanism, sharing the common
   endpoint characteristic (output returns to 0 deg at the
@@ -142,8 +145,8 @@ def main() -> None:
         brake_lever.pivot_reference.lever_id
     )
     grid = BrakeGridSettings(
-        brake_min_deg=(
-            brake_lever.pivot_reference.angle_deg
+        brake_min_deg=math.degrees(
+            brake.angle_start
         ),
         brake_max_deg=math.degrees(
             brake.angle_max

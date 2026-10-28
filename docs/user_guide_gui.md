@@ -22,9 +22,9 @@ users need no Python knowledge.
      (explicit reference direction of the lever;
      when all three are empty it is selected
      automatically) and `pivot_on` (mixer lever:
-     `lever_id@angle_deg` moves the lever's pivot
-     onto the endpoint of the referenced lever
-     at the given lever angle; see
+     `lever_id` moves the lever's pivot
+     onto the endpoint of the referenced lever;
+     its pivot/axis columns are ignored, see
      `docs/Architecture.md`, section *pivot_on
      Relationship*, and the example
      `examples/mechanism_optimized.csv`).

@@ -182,3 +182,36 @@ def test_progress_callback_is_called(inputs):
         progress=progress,
     )
     assert calls
+
+
+def test_parameter_template_has_free_pivots(inputs):
+    """Requirement 2.4: the mixer workflow receives free
+    pivot parameters (default search space) for every lever
+    with its own pivot; the mixer lever (pivot_on) gets no
+    pivot parameters at all."""
+    template = mixed_brake_parameter_template(
+        inputs,
+    )
+    names = {
+        parameter.name
+        for parameter in template.parameters
+    }
+    mixer_ids = {
+        lever.id
+        for lever in inputs.definition.levers
+        if lever.pivot_on is not None
+    }
+    for lever in inputs.definition.levers:
+        if lever.id in mixer_ids:
+            assert not any(
+                name.startswith(
+                    f"lever.{lever.id}.pivot"
+                )
+                for name in names
+            )
+        else:
+            pivot_x = template.get(
+                f"lever.{lever.id}.pivot.x"
+            )
+            assert pivot_x.minimum < pivot_x.maximum
+            assert not pivot_x.is_fixed

@@ -236,7 +236,9 @@ class CsvReader:
 
         Empty or missing cells become ``None`` (fixed pivot);
         any other value is validated against the
-        ``lever_id@angle_deg`` reference format.
+        ``lever_id`` reference format.  The old
+        ``lever_id@angle_deg`` syntax is rejected
+        explicitly (see ``parse_pivot_reference``).
         """
         if value is None or value.strip() == "":
             return None
