@@ -36,12 +36,14 @@ from analysis.brake_grid import (
 )
 from analysis.curve_plotter import (
     CurvePlotter,
+    MechanismPlotState,
     mechanism_states_from_results,
 )
 from analysis.endpoint_constraint import (
     EndpointConstraint,
 )
 from analysis.target_curve import TargetCurve
+from core.point3d import Point3D
 from analysis.transmission_angle import (
     TransmissionAngleConstraint,
     min_transmission_angle,
@@ -50,11 +52,12 @@ from gui.workflow import (
     WorkflowError,
     _text_to_temp_file,
 )
-from mechanics.mechanism import Mechanism
 from mechanics.mixed_brake_builder import (
+    MechanismBuildError,
     MixedBrakeBuilder,
 )
 from mechanism_io.csv_reader import CsvReader
+from mechanism_io.csv_writer import CsvWriter
 from model.mechanism_definition import (
     MechanismDefinition,
 )
@@ -78,17 +81,18 @@ from optimization.reproduction import Reproduction
 from simulation.mechanism_simulator import (
     MechanismSimulator,
 )
-from simulation.simulation_result import (
-    SimulationResult,
-)
 from simulation.motion_range import MotionRange
 
 __all__ = [
     "MixedBrakeInputs",
     "MixedBrakeResult",
     "MixedBrakeSettings",
+    "MixedBrakeState",
+    "build_mixed_brake_grid",
+    "build_mixed_brake_state",
     "load_mixed_brake_inputs",
     "mixed_brake_parameter_template",
+    "mixed_brake_preview",
     "run_mixed_brake_optimization",
 ]
 
@@ -139,6 +143,43 @@ class MixedBrakeResult:
     min_transmission_angle_deg: float = field(
         default=0.0,
     )
+    optimized_definition: (
+        MechanismDefinition | None
+    ) = None
+    mechanism_csv: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class MixedBrakeState:
+    """Visualization state of one brake position."""
+
+    brake_fraction: float
+    brake_angle_deg: float
+    input_angles_deg: tuple[float, ...]
+    target_deg: tuple[float, ...]
+    actual_deg: tuple[float, ...]
+    states: tuple[
+        MechanismPlotState,
+        MechanismPlotState,
+        MechanismPlotState,
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class _MixedBrakeGrid:
+    """Grid of one blended target curve and one
+    simulated mechanism state per brake position."""
+
+    fractions: tuple[float, ...]
+    brake_positions_deg: tuple[float, ...]
+    input_angles_deg: tuple[float, ...]
+    targets_deg: (
+        tuple[tuple[float, ...], ...]
+    )
+    states: (
+        tuple[MixedBrakeState | None, ...]
+    )
+    min_transmission_angle_deg: float
 
 
 def load_mixed_brake_inputs(
@@ -189,6 +230,53 @@ def load_mixed_brake_inputs(
             f"Eingabedatei konnte nicht gelesen "
             f"werden: {error}",
         ) from error
+
+
+def mixed_brake_inputs_from_parts(
+    definition: MechanismDefinition,
+    unbraked: TargetCurve,
+    braked: TargetCurve,
+    *,
+    motion_start_deg: float = -10.0,
+    motion_travel_deg: float = 20.0,
+    motion_step_deg: float = 2.0,
+) -> MixedBrakeInputs:
+    """Build mixed brake inputs from an (edited)
+    mechanism definition and the two base target
+    curves.
+
+    Raises WorkflowError when the definition does not
+    contain exactly one mixer lever with pivot_on.
+    """
+    mixers = [
+        lever
+        for lever in definition.levers
+        if lever.pivot_on is not None
+    ]
+    if len(mixers) != 1:
+        raise WorkflowError(
+            "Der Mischer-Modus ben\u00f6tigt genau einen "
+            "Hebel mit pivot_on (Mischerhebel); "
+            f"gefunden: {len(mixers)}."
+        )
+    mixer = mixers[0]
+    brake = definition.get_lever(
+        mixer.pivot_reference.lever_id
+    )
+    return MixedBrakeInputs(
+        definition=definition,
+        unbraked=unbraked,
+        braked=braked,
+        motion_start_deg=motion_start_deg,
+        motion_travel_deg=motion_travel_deg,
+        motion_step_deg=motion_step_deg,
+        brake_min_deg=math.degrees(
+            brake.angle_start
+        ),
+        brake_max_deg=math.degrees(
+            brake.angle_max
+        ),
+    )
 
 
 def _load_mixed_brake_inputs(
@@ -258,92 +346,314 @@ def mixed_brake_parameter_template(
     )
 
 
-def _simulate_best(
-    optimizer: MixedBrakeOptimizer,
-    best: ParameterSet,
-    grid: BrakeGridSettings,
-    *,
-    targets: tuple[TargetCurve, ...],
-    input_angles: tuple[float, ...],
-) -> tuple[str, float]:
-    """Build the HTML report of the best candidate over all
-    brake positions and determine its minimum transmission
-    angle.
-
-    For every brake position the blended target curve
-    (Soll) and the achieved output curve (Ist) are drawn,
-    together with three mechanism snapshots of the middle
-    brake position.
-    """
-    plotter = CurvePlotter(
-        title=(
-            "TraSim — Mischer-Optimierung "
-            "(beste Geometrie)"
+def _motion_range(
+    inputs: MixedBrakeInputs,
+) -> MotionRange:
+    return MotionRange(
+        start_angle=math.radians(
+            inputs.motion_start_deg
+        ),
+        max_angle=math.radians(
+            inputs.motion_travel_deg
+        ),
+        step=math.radians(
+            inputs.motion_step_deg
         ),
     )
-    mechanisms: list[Mechanism] = []
-    middle_mechanism: Mechanism | None = None
-    middle_results: (
-        tuple[SimulationResult, ...] | None
-    ) = None
-    for index, beta_deg in enumerate(
-        grid.brake_positions_deg
-    ):
-        beta = math.radians(beta_deg)
-        results = optimizer.simulate_stages(
-            best,
-            beta,
+
+
+def _parameter_definition(
+    inputs: MixedBrakeInputs,
+    parameters: ParameterSet,
+) -> MechanismDefinition:
+    """Apply optimization parameters (length, angle,
+    pivot) onto the input definition."""
+    from dataclasses import replace
+
+    values = parameters.values()
+    levers = []
+    for lever in inputs.definition.levers:
+        levers.append(
+            replace(
+                lever,
+                length_start=values.get(
+                    f"lever.{lever.id}.length",
+                    lever.length_start,
+                ),
+                angle_start=values.get(
+                    f"lever.{lever.id}.angle",
+                    lever.angle_start,
+                ),
+                pivot=(
+                    Point3D(
+                        x=values.get(
+                            f"lever.{lever.id}.pivot.x",
+                            lever.pivot.x,
+                        ),
+                        y=values.get(
+                            f"lever.{lever.id}.pivot.y",
+                            lever.pivot.y,
+                        ),
+                        z=lever.pivot.z,
+                    )
+                    if lever.pivot_on is None
+                    else lever.pivot
+                ),
+            )
         )
-        if results is None:
-            continue
-        mechanism = optimizer._cached_mechanism(
-            best,
-            beta,
-        )
-        if mechanism is None:
-            continue
-        mechanisms.append(mechanism)
-        if index == len(grid.fractions) // 2:
-            middle_mechanism = mechanism
-            middle_results = results
-        fraction = grid.fractions[index]
-        plotter.add_target_curve(
-            input_angles,
-            targets[index].sample(
+    return MechanismDefinition(tuple(levers))
+
+
+def build_mixed_brake_grid(
+    inputs: MixedBrakeInputs,
+    definition: MechanismDefinition,
+    *,
+    position_count: int = 5,
+    motion: MotionRange | None = None,
+) -> _MixedBrakeGrid:
+    """Build the mechanism for every brake position of
+    the evenly spaced brake grid and simulate it over
+    the motion range.
+
+    Positions whose mechanism cannot be built (for
+    example because a candidate is not mountable there)
+    yield a ``None`` entry in ``states`` instead of
+    raising, so reports can still show the remaining
+    positions.
+    """
+    grid = BrakeGridSettings(
+        brake_min_deg=inputs.brake_min_deg,
+        brake_max_deg=inputs.brake_max_deg,
+        position_count=position_count,
+    )
+    if motion is None:
+        motion = _motion_range(inputs)
+    input_angles = tuple(
+        angle for angle in motion
+    )
+    targets = blend_target_curves(
+        inputs.unbraked,
+        inputs.braked,
+        grid.fractions,
+        input_angles=input_angles,
+    )
+    builder = MixedBrakeBuilder(definition)
+    simulator = MechanismSimulator(motion=motion)
+    targets_deg = tuple(
+        tuple(
+            math.degrees(angle)
+            for angle in target.sample(
                 input_angles,
-            ).output_angles,
+            ).output_angles
+        )
+        for target in targets
+    )
+    states: list[MixedBrakeState | None] = []
+    minimum_deg = float("inf")
+    input_deg = tuple(
+        round(math.degrees(angle), 1)
+        for angle in input_angles
+    )
+    for (
+        fraction,
+        beta_deg,
+        target_deg,
+    ) in zip(
+        grid.fractions,
+        grid.brake_positions_deg,
+        targets_deg,
+    ):
+        try:
+            mechanism = builder.build(
+                math.radians(beta_deg)
+            )
+            results = simulator.simulate(
+                mechanism
+            )
+        except MechanismBuildError:
+            states.append(None)
+            continue
+        if not results or not all(
+            result.success
+            for result in results
+        ):
+            states.append(None)
+            continue
+        minimum_deg = min(
+            minimum_deg,
+            math.degrees(
+                min_transmission_angle(
+                    mechanism
+                )
+            ),
+        )
+        states.append(
+            MixedBrakeState(
+                brake_fraction=fraction,
+                brake_angle_deg=beta_deg,
+                input_angles_deg=input_deg,
+                target_deg=target_deg,
+                actual_deg=tuple(
+                    round(math.degrees(angle), 1)
+                    for angle in results[
+                        -1
+                    ].output_angles
+                ),
+                states=mechanism_states_from_results(
+                    mechanism,
+                    results,
+                ),
+            )
+        )
+    return _MixedBrakeGrid(
+        fractions=grid.fractions,
+        brake_positions_deg=(
+            grid.brake_positions_deg
+        ),
+        input_angles_deg=input_deg,
+        targets_deg=targets_deg,
+        states=tuple(states),
+        min_transmission_angle_deg=(
+            minimum_deg
+        ),
+    )
+
+
+def build_mixed_brake_state(
+    inputs: MixedBrakeInputs,
+    parameters: ParameterSet,
+    *,
+    brake_fraction: float,
+    position_count: int = 5,
+    motion: MotionRange | None = None,
+) -> MixedBrakeState:
+    """Simulate one brake position of a (candidate)
+    parameter set.
+
+    ``brake_fraction`` is the brake travel in [0, 1]
+    (0 % = unbraked, 100 % = fully braked); it is
+    snapped onto the evenly spaced brake grid.
+
+    Raises WorkflowError with a user-facing message
+    when the mechanism cannot be built or simulated
+    for the requested position.
+    """
+    if not 0.0 <= brake_fraction <= 1.0:
+        raise WorkflowError(
+            "Die Bremsstellung muss zwischen 0 % "
+            "und 100 % liegen."
+        )
+    grid = build_mixed_brake_grid(
+        inputs,
+        _parameter_definition(
+            inputs,
+            parameters,
+        ),
+        position_count=position_count,
+        motion=motion,
+    )
+    count = len(grid.fractions)
+    index = int(
+        min(
+            max(
+                round(
+                    brake_fraction
+                    * (count - 1)
+                ),
+                0,
+            ),
+            count - 1,
+        )
+    )
+    state = grid.states[index]
+    if state is None:
+        raise WorkflowError(
+            "Die Mechanik kann f\u00fcr die gew\u00e4hlte "
+            "Bremsstellung nicht aufgebaut werden "
+            "(Geometrie unzul\u00e4ssig oder blockiert)."
+        )
+    return state
+
+
+def _brake_position_report(
+    grid: _MixedBrakeGrid,
+    *,
+    title: str,
+) -> str:
+    """HTML report showing all blended target curves
+    and actual curves plus the mechanism snapshots of
+    the middle brake position."""
+    plotter = CurvePlotter(title=title)
+    middle = len(grid.fractions) // 2
+    middle_state = (
+        grid.states[middle]
+        if grid.states
+        else None
+    )
+    for state in grid.states:
+        if state is None:
+            continue
+        fraction = state.brake_fraction
+        input_deg = state.input_angles_deg
+        plotter.add_target_curve(
+            input_deg,
+            state.target_deg,
             label=(
-                f"Soll Bremse {100 * fraction:.0f} %"
+                f"Soll Bremse "
+                f"{100 * fraction:.0f} %"
             ),
         )
         plotter.add_actual_curve(
-            results[-1].input_angles,
-            results[-1].output_angles,
+            input_deg,
+            state.actual_deg,
             label=(
-                f"Bremse {100 * fraction:.0f} %"
+                f"Bremse "
+                f"{100 * fraction:.0f} %"
             ),
         )
-    if (
-        middle_mechanism is not None
-        and middle_results is not None
-    ):
-        for state in mechanism_states_from_results(
-            middle_mechanism,
-            middle_results,
-        ):
-            plotter.add_mechanism_state(state)
-    if not mechanisms:
-        return (
-            plotter.build_html(),
-            float("inf"),
+    if middle_state is not None:
+        for state in middle_state.states:
+            plotter.add_mechanism_state(
+                state
+            )
+    return plotter.build_html()
+
+
+def mixed_brake_preview(
+    inputs: MixedBrakeInputs,
+    template: ParameterSet | None = None,
+    *,
+    position_count: int = 5,
+) -> str:
+    """Simulate the start mechanism over all brake
+    positions and return the HTML preview report."""
+    if template is None:
+        template = (
+            mixed_brake_parameter_template(inputs)
         )
-    minimum = min(
-        min_transmission_angle(mechanism)
-        for mechanism in mechanisms
+    grid = build_mixed_brake_grid(
+        inputs,
+        _parameter_definition(
+            inputs,
+            template,
+        ),
+        position_count=position_count,
     )
-    return (
-        plotter.build_html(),
-        math.degrees(minimum),
+    if all(
+        state is None
+        for state in grid.states
+    ):
+        raise WorkflowError(
+            "Die Mechanik kann f\u00fcr keine "
+            "Bremsstellung aufgebaut werden; "
+            "bitte die Parameter pr\u00fcfen."
+        )
+    return _brake_position_report(
+        grid,
+        title=(
+            "TraSim \u2014 Mischer-Vorschau "
+            "(Startmechanismus)"
+        ),
     )
 
 
@@ -472,13 +782,41 @@ def run_mixed_brake_optimization(
             "Die Optimierung hat keinen "
             "Kandidaten erzeugt.",
         )
-    html, min_angle_deg = _simulate_best(
-        optimizer,
-        best,
-        grid,
-        targets=targets,
-        input_angles=input_angles,
+    optimized_definition = (
+        _parameter_definition(
+            inputs,
+            best,
+        )
     )
+    result_grid = build_mixed_brake_grid(
+        inputs,
+        optimized_definition,
+        position_count=(
+            settings.brake_positions
+        ),
+        motion=motion,
+    )
+    html = _brake_position_report(
+        result_grid,
+        title=(
+            "TraSim \u2014 Mischer-Optimierung "
+            "(beste Geometrie)"
+        ),
+    )
+    min_angle_deg = (
+        result_grid.min_transmission_angle_deg
+    )
+    with tempfile.TemporaryDirectory() as temp:
+        mechanism_path = (
+            Path(temp) / "mechanism.csv"
+        )
+        CsvWriter.write_mechanism(
+            optimized_definition,
+            mechanism_path,
+        )
+        mechanism_csv = mechanism_path.read_text(
+            encoding="utf-8",
+        )
     return MixedBrakeResult(
         best_score=engine.best_score,
         stop_reason=(
@@ -494,4 +832,8 @@ def run_mixed_brake_optimization(
         min_transmission_angle_deg=(
             min_angle_deg
         ),
+        optimized_definition=(
+            optimized_definition
+        ),
+        mechanism_csv=mechanism_csv,
     )

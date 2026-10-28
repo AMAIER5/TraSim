@@ -37,7 +37,10 @@ import math
 from dataclasses import dataclass
 
 from mechanics.lever import Lever
-from mechanics.mechanism import Mechanism
+from mechanics.mechanism import (
+    Mechanism,
+    MechanismLever,
+)
 from mechanics.stage import Stage
 from model.mechanism_definition import MechanismDefinition
 from solver.constraints import rod_length_error
@@ -356,7 +359,31 @@ class MixedBrakeBuilder:
                 stage_id=index,
             )
             self._validation_results.append(result)
-        return Mechanism(stages=tuple(stages))
+        positions = {
+            lever.id: position
+            for position, lever in enumerate(
+                definition.levers,
+                start=1,
+            )
+        }
+        mechanism_levers = tuple(
+            MechanismLever(
+                lever=levers[lever.id],
+                reference_angle=(
+                    current_angles[lever.id]
+                ),
+                coupled_to=(
+                    positions[lever.coupled]
+                    if lever.coupled is not None
+                    else None
+                ),
+            )
+            for lever in definition.levers
+        )
+        return Mechanism(
+            stages=tuple(stages),
+            levers=mechanism_levers,
+        )
 
     def _create_levers(
         self,

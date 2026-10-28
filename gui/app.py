@@ -32,10 +32,16 @@ import streamlit as st
 from analysis.target_curve import (
     MAX_WEIGHT,
 )
+from analysis.curve_plotter import (
+    CurvePlotter,
+)
+from analysis.target_curve import TargetCurve
 from gui.mixed_brake_workflow import (
     MixedBrakeSettings,
-    load_mixed_brake_inputs,
+    build_mixed_brake_state,
+    mixed_brake_inputs_from_parts,
     mixed_brake_parameter_template,
+    mixed_brake_preview,
     run_mixed_brake_optimization,
 )
 from gui.workflow import (
@@ -202,6 +208,83 @@ with st.sidebar:
         ),
     )
 
+def _mixed_brake_example_dir():
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass is not None:
+        return Path(meipass) / "examples"
+    return (
+        Path(__file__).resolve().parent.parent
+        / "examples"
+    )
+
+
+def _has_pivot_on(definition) -> bool:
+    return any(
+        lever.pivot_on is not None
+        for lever in definition.levers
+    )
+
+
+def _mixed_brake_example_files() -> (
+    tuple[str, str, str]
+):
+    example_dir = _mixed_brake_example_dir()
+    return (
+        (
+            example_dir
+            / "mixed_brake_mechanism.csv"
+        ).read_text(encoding="utf-8"),
+        (
+            example_dir
+            / "target_curve_unbraked.csv"
+        ).read_text(encoding="utf-8"),
+        (
+            example_dir
+            / "target_curve_braked.csv"
+        ).read_text(encoding="utf-8"),
+    )
+
+
+def _single_mechanism_report(
+    title: str,
+    state,
+    show_actual: bool,
+) -> str:
+    plotter = CurvePlotter(title=title)
+    plotter.add_target_curve(
+        state.input_angles_deg,
+        state.target_deg,
+        label=(
+            f"Soll Bremse "
+            f"{100 * state.brake_fraction:.0f} %"
+        ),
+    )
+    if show_actual:
+        plotter.add_actual_curve(
+            state.input_angles_deg,
+            state.actual_deg,
+            label=(
+                f"Bremse "
+                f"{100 * state.brake_fraction:.0f} %"
+            ),
+        )
+    for snapshot in state.states:
+        plotter.add_mechanism_state(snapshot)
+    return plotter.build_html()
+
+
+def _target_curve_from_csv_text(
+    text: str,
+):
+    import tempfile
+    from pathlib import Path as _Path
+
+    with tempfile.TemporaryDirectory() as temp:
+        path = _Path(temp) / "target_curve.csv"
+        path.write_text(text, encoding="utf-8")
+        return TargetCurve.from_csv(path)
+
+
 if (
     mechanism_upload is None
     or target_upload is None
@@ -225,12 +308,95 @@ except WorkflowError as error:
     st.error(str(error))
     st.stop()
 
+
+mixed_mode = _has_pivot_on(inputs.definition)
+
+mixed_inputs = None
+if mixed_mode:
+    with st.expander(
+        "Mischer-Modus: Zielkurve voll gebremst "
+        "(target_curve_braked.csv)"
+    ):
+        st.caption(
+            "Der geladene Mechanismus enthält einen "
+            "Hebel mit pivot_on (Mischerhebel). "
+            "Zusätzlich zur Zielkurve ungebremst wird "
+            "eine zweite Zielkurve für die voll "
+            "gebremste Stellung benötigt; die "
+            "Zielkurven der übrigen Bremsstellungen "
+            "werden interpoliert."
+        )
+        braked_upload = st.file_uploader(
+            "Zielkurve voll gebremst",
+            type=["csv"],
+            key="target_braked",
+        )
+        load_examples = st.button(
+            "Beispiel-Dateien laden",
+            key="mixed_brake_examples_button",
+        )
+        if load_examples:
+            (
+                mechanism_example,
+                unbraked_example,
+                braked_example,
+            ) = _mixed_brake_example_files()
+            st.session_state[
+                "mixed_brake_mechanism"
+            ] = mechanism_example
+            st.session_state[
+                "mixed_brake_unbraked"
+            ] = unbraked_example
+            st.session_state[
+                "mixed_brake_braked"
+            ] = braked_example
+            st.rerun()
+        braked_text = None
+        if braked_upload is not None:
+            braked_text = (
+                braked_upload.getvalue().decode(
+                    "utf-8",
+                )
+            )
+        elif (
+            "mixed_brake_mechanism"
+            in st.session_state
+        ):
+            braked_text = st.session_state[
+                "mixed_brake_braked"
+            ]
+        if braked_text is None:
+            st.info(
+                "Bitte die gebremste Zielkurve "
+                "hochladen oder die Beispiel-Dateien "
+                "laden, um den Mischer-Modus zu "
+                "starten."
+            )
+            st.stop()
+    try:
+        mixed_inputs = (
+            mixed_brake_inputs_from_parts(
+                inputs.definition,
+                inputs.target_curve,
+                _target_curve_from_csv_text(
+                    braked_text
+                ),
+            )
+        )
+    except WorkflowError as error:
+        st.error(str(error))
+        st.stop()
+
 st.success(
     f"Mechanismus geladen: "
     f"{len(inputs.definition.levers)} Hebel · "
-    f"Zielkurve: {inputs.point_count} Stützpunkte"
+    f"Zielkurve: {inputs.point_count} Stüzpunkte"
+    + (
+        " · Mischer-Modus (pivot_on)"
+        if mixed_mode
+        else ""
+    )
 )
-
 st.header("Zielkurve")
 st.caption(
     "Die eingelesenen Stützpunkte der Zielkurve "
@@ -313,6 +479,19 @@ except WorkflowError as error:
     st.error(str(error))
     st.stop()
 
+if mixed_inputs is not None:
+    try:
+        mixed_inputs = (
+            mixed_brake_inputs_from_parts(
+                inputs.definition,
+                inputs.target_curve,
+                mixed_inputs.braked,
+            )
+        )
+    except WorkflowError as error:
+        st.error(str(error))
+        st.stop()
+
 curve_column, weight_column = st.columns(2)
 with curve_column:
     st.subheader("Zielkurve")
@@ -362,6 +541,9 @@ st.caption(
 )
 
 result = st.session_state.get("result")
+mixed_result_state = st.session_state.get(
+    "mixed_brake_result"
+)
 optimized_map: dict[str, float] = {}
 optimized_snapshot: dict[
     int,
@@ -370,6 +552,23 @@ optimized_snapshot: dict[
 if result is not None:
     optimized_map = optimized_values(
         result.optimized_definition,
+    )
+    optimized_snapshot = (
+        st.session_state.get(
+            "optimized_snapshot",
+            {},
+        )
+    )
+elif (
+    mixed_result_state is not None
+    and (
+        mixed_result_state
+        .optimized_definition
+        is not None
+    )
+):
+    optimized_map = optimized_values(
+        mixed_result_state.optimized_definition,
     )
     optimized_snapshot = (
         st.session_state.get(
@@ -455,6 +654,22 @@ if (
     )
     st.session_state.pop(
         "last_edited_rows",
+        None,
+    )
+    st.session_state.pop(
+        "result",
+        None,
+    )
+    st.session_state.pop(
+        "mixed_brake_result",
+        None,
+    )
+    st.session_state.pop(
+        "optimized_snapshot",
+        None,
+    )
+    st.session_state.pop(
+        "preview_html",
         None,
     )
 
@@ -635,7 +850,12 @@ except WorkflowError as error:
     st.error(str(error))
     st.stop()
 
-template = parameter_template(inputs)
+if mixed_inputs is not None:
+    template = mixed_brake_parameter_template(
+        mixed_inputs
+    )
+else:
+    template = parameter_template(inputs)
 
 if optimized_map and st.button(
     "Alle optimierten Werte als "
@@ -764,8 +984,34 @@ except ValueError as error:
     )
     st.stop()
 
+if mixed_inputs is not None:
+    try:
+        mixed_inputs = (
+            mixed_brake_inputs_from_parts(
+                inputs.definition,
+                inputs.target_curve,
+                mixed_inputs.braked,
+            )
+        )
+        active_template = (
+            apply_parameter_overrides(
+                mixed_brake_parameter_template(
+                    mixed_inputs
+                ),
+                overrides,
+            )
+        )
+    except WorkflowError as error:
+        st.error(str(error))
+        st.stop()
+
 preview_tab, result_tab = st.tabs(
     ["Vorschau", "Ergebnis"]
+)
+
+BRAKE_POSITIONS = (0, 25, 50, 75, 100)
+PREVIEW_BRAKE_KEY = (
+    "mixed_preview_brake_position"
 )
 
 with preview_tab:
@@ -773,17 +1019,44 @@ with preview_tab:
     st.caption(
         "Simulation des Startmechanismus mit der "
         "geladenen Zielkurve."
+        + (
+            " Im Mischer-Modus wird der "
+            "Mechanismus-Snapshot der gewählten "
+            "Bremsstellung dargestellt."
+            if mixed_inputs is not None
+            else ""
+        )
     )
+    if mixed_inputs is not None:
+        preview_brake = st.radio(
+            "Bremsstellung",
+            options=BRAKE_POSITIONS,
+            format_func=(
+                lambda value: f"{value} %"
+            ),
+            horizontal=True,
+            key=PREVIEW_BRAKE_KEY,
+        )
     refresh_preview = st.button(
         "Vorschau aktualisieren",
         key="refresh_preview_button",
     )
     if refresh_preview:
         try:
-            preview_html = preview(
-                inputs,
-                active_template,
-            )
+            if (
+                mixed_inputs is not None
+            ):
+                preview_html = (
+                    mixed_brake_preview(
+                        mixed_inputs,
+                        active_template,
+                    )
+                )
+            else:
+                preview_html = preview(
+                    inputs,
+                    active_template,
+                )
         except WorkflowError as error:
             st.session_state.pop(
                 "preview_html",
@@ -798,11 +1071,48 @@ with preview_tab:
         "preview_html",
     )
     if preview_html:
-        st.components.v1.html(
-            preview_html,
-            height=900,
-            scrolling=True,
-        )
+        if mixed_inputs is not None:
+            try:
+                preview_state = (
+                    build_mixed_brake_state(
+                        mixed_inputs,
+                        active_template,
+                        brake_fraction=(
+                            preview_brake
+                            / 100.0
+                        ),
+                    )
+                )
+            except WorkflowError as error:
+                st.error(str(error))
+                preview_state = None
+            if preview_state is not None:
+                st.components.v1.html(
+                    _single_mechanism_report(
+                        (
+                            "TraSim — Vorschau "
+                            "(Startmechanismus, "
+                            f"Bremsstellung "
+                            f"{preview_brake} %)"
+                        ),
+                        preview_state,
+                        show_actual=True,
+                    ),
+                    height=900,
+                    scrolling=True,
+                )
+            else:
+                st.components.v1.html(
+                    preview_html,
+                    height=900,
+                    scrolling=True,
+                )
+        else:
+            st.components.v1.html(
+                preview_html,
+                height=900,
+                scrolling=True,
+            )
     else:
         st.info(
             "„Vorschau aktualisieren“ klicken, um "
@@ -818,6 +1128,90 @@ with result_tab:
         key="start_optimization_button",
     )
     if start_pressed:
+        if mixed_inputs is not None:
+            mixed_settings = MixedBrakeSettings(
+                population_size=int(
+                    population_size
+                ),
+                children_count=int(
+                    children_count
+                ),
+                mutation_strength=(
+                    float(mutation_strength)
+                ),
+                max_generations=int(
+                    max_generations
+                ),
+                stagnation_limit=(
+                    int(stagnation_limit)
+                ),
+                seed=int(seed),
+            )
+            progress_mixed = st.progress(
+                0.0,
+                text=(
+                    "Mischer-Optimierung "
+                    "läuft …"
+                ),
+            )
+
+            def report_mixed(
+                generation: int,
+                best_score: float,
+            ) -> None:
+                progress_mixed.progress(
+                    min(
+                        generation
+                        / max(
+                            1,
+                            (
+                                mixed_settings
+                                .max_generations
+                            ),
+                        ),
+                        1.0,
+                    ),
+                    text=(
+                        f"Generation "
+                        f"{generation} · "
+                        f"Fitness "
+                        f"{best_score:.6f}"
+                    ),
+                )
+
+            try:
+                result = run_mixed_brake_optimization(
+                    mixed_inputs,
+                    active_template,
+                    mixed_settings,
+                    progress=report_mixed,
+                )
+            except WorkflowError as error:
+                st.error(str(error))
+                st.stop()
+            progress_mixed.empty()
+            st.session_state[
+                "mixed_brake_result"
+            ] = result
+            st.session_state.pop(
+                "result",
+                None,
+            )
+            st.session_state[
+                "optimized_snapshot"
+            ] = {
+                int(row["id"]): {
+                    "length": float(
+                        row["length_start"],
+                    ),
+                    "angle": float(
+                        row["angle_start"],
+                    ),
+                }
+                for row in edited_mechanism
+                if row.get("id") is not None
+            }
+            st.rerun()
         settings = OptimizationSettings(
             population_size=int(population_size),
             children_count=int(children_count),
@@ -881,6 +1275,10 @@ with result_tab:
 
         progress_bar.empty()
         st.session_state["result"] = result
+        st.session_state.pop(
+            "mixed_brake_result",
+            None,
+        )
         st.session_state[
             "optimized_snapshot"
         ] = {
@@ -917,7 +1315,111 @@ with result_tab:
         st.rerun()
 
 result = st.session_state.get("result")
-if result is not None:
+mixed_result = st.session_state.get(
+    "mixed_brake_result"
+)
+if mixed_result is not None:
+    with result_tab:
+        st.write(
+            f"**Stopgrund:** "
+            f"{mixed_result.stop_reason} · "
+            f"**Beste Fitness:** "
+            f"{mixed_result.best_score:.8f} · "
+            f"**Generationen:** "
+            f"{mixed_result.generations} · "
+            f"**Min. Übertragungswinkel:** "
+            f"{mixed_result.min_transmission_angle_deg:.1f}°"
+        )
+        if mixed_result.fitness_history:
+            st.line_chart(
+                {
+                    "Beste Fitness": (
+                        list(
+                            mixed_result.fitness_history,
+                        )
+                    ),
+                },
+                x_label="Generation",
+                y_label="Fitness",
+            )
+        result_brake = st.radio(
+            "Bremsstellung",
+            options=BRAKE_POSITIONS,
+            format_func=(
+                lambda value: f"{value} %"
+            ),
+            horizontal=True,
+            key="mixed_result_brake_position",
+        )
+        try:
+            if (
+                mixed_result.optimized_definition
+                is not None
+            ):
+                result_inputs = (
+                    mixed_brake_inputs_from_parts(
+                        (
+                            mixed_result
+                            .optimized_definition
+                        ),
+                        mixed_inputs.unbraked,
+                        mixed_inputs.braked,
+                    )
+                )
+                result_template = (
+                    mixed_brake_parameter_template(
+                        result_inputs
+                    )
+                )
+                result_state = (
+                    build_mixed_brake_state(
+                        result_inputs,
+                        result_template,
+                        brake_fraction=(
+                            result_brake
+                            / 100.0
+                        ),
+                    )
+                )
+            else:
+                result_state = None
+        except WorkflowError as error:
+            st.error(str(error))
+            result_state = None
+        st.download_button(
+            "Ergebnis-HTML herunterladen",
+            data=mixed_result.html,
+            file_name=(
+                "mixed_brake_result.html"
+            ),
+            mime="text/html",
+        )
+        if mixed_result.mechanism_csv:
+            st.download_button(
+                "Optimierte Mechanik "
+                "herunterladen (CSV)",
+                data=mixed_result.mechanism_csv,
+                file_name=(
+                    "mechanism_optimized.csv"
+                ),
+                mime="text/csv",
+            )
+        if result_state is not None:
+            st.components.v1.html(
+                _single_mechanism_report(
+                    (
+                        "TraSim — Ergebnis "
+                        "(optimierte Geometrie, "
+                        f"Bremsstellung "
+                        f"{result_brake} %)"
+                    ),
+                    result_state,
+                    show_actual=True,
+                ),
+                height=900,
+                scrolling=True,
+            )
+elif result is not None:
     with result_tab:
         st.write(
             f"**Stopgrund:** "
@@ -961,213 +1463,3 @@ if result is not None:
             height=900,
             scrolling=True,
         )
-
-
-# ----------------------------------------------------------------------
-# Mixer (mixed brake) mode
-# ----------------------------------------------------------------------
-
-
-def _mixed_brake_example_dir():
-    meipass = getattr(sys, "_MEIPASS", None)
-    if meipass is not None:
-        return Path(meipass) / "examples"
-    return (
-        Path(__file__).resolve().parent.parent
-        / "examples"
-    )
-
-
-with st.expander(
-    "Mischer-Modus (Mixed Brake, 5 Bremsstellungen)"
-):
-    st.caption(
-        "Optimierung eines Mischerhebels "
-        "(pivot_on) über 5 Bremsstellungen "
-        "(0/25/50/75/100 % Bremsweg) mit "
-        "interpolierten Zielkurven und weichem "
-        "Minimum-Übertragungswinkel-Kriterium."
-    )
-    mechanism_upload_mixer = st.file_uploader(
-        "Mechanismus (mixed_brake_mechanism.csv)",
-        type=["csv"],
-        key="mechanism_mixer",
-    )
-    unbraked_upload = st.file_uploader(
-        "Zielkurve ungebremst",
-        type=["csv"],
-        key="target_unbraked",
-    )
-    braked_upload = st.file_uploader(
-        "Zielkurve voll gebremst",
-        type=["csv"],
-        key="target_braked",
-    )
-    load_examples = st.button(
-        "Beispiel-Dateien laden"
-    )
-    if (
-        load_examples
-        or "mixer_loaded" in st.session_state
-    ):
-        if load_examples:
-            example_dir = _mixed_brake_example_dir()
-            st.session_state["mixer_loaded"] = (
-                example_dir
-            )
-        st.session_state.setdefault(
-            "mixer_loaded",
-            _mixed_brake_example_dir(),
-        )
-        example_dir = st.session_state[
-            "mixer_loaded"
-        ]
-        mixer_file = (
-            example_dir
-            / "mixed_brake_mechanism.csv"
-        ).read_text(encoding="utf-8")
-        unbraked_file = (
-            example_dir
-            / "target_curve_unbraked.csv"
-        ).read_text(encoding="utf-8")
-        braked_file = (
-            example_dir
-            / "target_curve_braked.csv"
-        ).read_text(encoding="utf-8")
-    elif (
-        mechanism_upload_mixer is not None
-        and unbraked_upload is not None
-        and braked_upload is not None
-    ):
-        mixer_file = mechanism_upload_mixer \
-            .getvalue() \
-            .decode("utf-8")
-        unbraked_file = unbraked_upload \
-            .getvalue() \
-            .decode("utf-8")
-        braked_file = braked_upload \
-            .getvalue() \
-            .decode("utf-8")
-    else:
-        mixer_file = None
-
-    if mixer_file is None:
-        st.info(
-            "Beispiel-Dateien laden oder drei "
-            "CSVs hochladen."
-        )
-    else:
-        brake_positions = st.slider(
-            "Bremsstellungen",
-            min_value=3,
-            max_value=5,
-            value=5,
-            step=1,
-        )
-        transmission_angle = st.slider(
-            "Min. Übertragungswinkel (°)",
-            min_value=0.0,
-            max_value=45.0,
-            value=20.0,
-            step=1.0,
-        )
-        start_mixer = st.button(
-            "Mischer-Optimierung starten",
-            type="primary",
-        )
-        if start_mixer:
-            try:
-                mixer_inputs = (
-                    load_mixed_brake_inputs(
-                        mixer_file,
-                        unbraked_file,
-                        braked_file,
-                    )
-                )
-            except WorkflowError as error:
-                st.error(str(error))
-                st.stop()
-            template_mixer = (
-                mixed_brake_parameter_template(
-                    mixer_inputs,
-                )
-            )
-            mixer_settings = MixedBrakeSettings(
-                brake_positions=int(
-                    brake_positions
-                ),
-                transmission_angle_deg=(
-                    float(transmission_angle)
-                ),
-            )
-            progress_mixer = st.progress(
-                0.0,
-                text=(
-                    "Mischer-Optimierung läuft …"
-                ),
-            )
-
-            def report_mixer(
-                generation: int,
-                best_score: float,
-            ) -> None:
-                progress_mixer.progress(
-                    min(
-                        generation
-                        / mixer_settings.max_generations,
-                        1.0,
-                    ),
-                    text=(
-                        f"Generation {generation} · "
-                        f"Fitness {best_score:.6f}"
-                    ),
-                )
-
-            try:
-                mixer_result = (
-                    run_mixed_brake_optimization(
-                        mixer_inputs,
-                        template_mixer,
-                        mixer_settings,
-                        progress=report_mixer,
-                    )
-                )
-            except WorkflowError as error:
-                st.error(str(error))
-                st.stop()
-            progress_mixer.empty()
-            st.write(
-                f"**Stopgrund:** "
-                f"{mixer_result.stop_reason} · "
-                f"**Beste Fitness:** "
-                f"{mixer_result.best_score:.8f} · "
-                f"**Generationen:** "
-                f"{mixer_result.generations} · "
-                f"**Min. Übertragungswinkel:** "
-                f"{mixer_result.min_transmission_angle_deg:.1f}°"
-            )
-            st.line_chart(
-                {
-                    "Beste Fitness": (
-                        list(
-                            mixer_result.fitness_history,
-                        )
-                    ),
-                },
-                x_label="Generation",
-                y_label="Fitness",
-            )
-            st.components.v1.html(
-                mixer_result.html,
-                height=900,
-                scrolling=True,
-            )
-            st.download_button(
-                "Mischer-Ergebnis-HTML "
-                "herunterladen",
-                data=mixer_result.html,
-                file_name=(
-                    "mixed_brake_result.html"
-                ),
-                mime="text/html",
-            )
