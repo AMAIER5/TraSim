@@ -18,13 +18,16 @@ RADIANS.
 from __future__ import annotations
 
 import math
+import multiprocessing
 import random
 import tempfile
-from pathlib import Path
 from dataclasses import (
     dataclass,
     field,
 )
+from functools import partial
+from pathlib import Path
+from collections.abc import Callable
 
 from analysis.brake_curve_fitness import (
     BrakeCurveFitness,
@@ -43,11 +46,11 @@ from analysis.endpoint_constraint import (
     EndpointConstraint,
 )
 from analysis.target_curve import TargetCurve
-from core.point3d import Point3D
 from analysis.transmission_angle import (
     TransmissionAngleConstraint,
     min_transmission_angle,
 )
+from core.point3d import Point3D
 from gui.workflow import (
     WorkflowError,
     _drive_lever_id,
@@ -117,6 +120,8 @@ class MixedBrakeSettings:
     brake_positions: int = 5
     transmission_angle_deg: float = 20.0
     transmission_weight: float = 1.0
+    gradient_weight: float = 0.0
+    workers: int = 0
     seed: int = 42
 
 
@@ -459,9 +464,15 @@ def _blended_targets(
     evaluated on an arbitrary motion grid) and the
     blended outputs are then placed on the motion
     angles, mirroring the anchoring of the normal
-    workflow.  Otherwise ``blend_target_curves``
-    evaluates the interpolating base curves
-    directly on the motion angles as before.
+    workflow.  The blended curves also blend the
+    base curves' per-support-point weights the same
+    way as their outputs (issue #87: the second
+    target curve must also be weightable): the
+    weight of a support point at brake fraction f is
+    (1 - f) * unbraked weight + f * braked weight.
+    Otherwise ``blend_target_curves`` evaluates the
+    interpolating base curves directly on the
+    motion angles as before.
     """
     support = inputs.input_angles
     if support is None:
@@ -488,12 +499,45 @@ def _blended_targets(
             "St\u00fctzstellen definiert sein: "
             f"{error}",
         ) from error
+    unbraked_weights = getattr(
+        inputs.unbraked,
+        "weights",
+        None,
+    )
+    braked_weights = getattr(
+        inputs.braked,
+        "weights",
+        None,
+    )
+    if (
+        unbraked_weights is not None
+        and braked_weights is not None
+    ):
+        blended_weights = tuple(
+            tuple(
+                (1.0 - fraction) * unbraked
+                + fraction * braked
+                for unbraked, braked in zip(
+                    unbraked_weights,
+                    braked_weights,
+                )
+            )
+            for fraction in fractions
+        )
+    else:
+        blended_weights = tuple(
+            None for _ in fractions
+        )
     return tuple(
-        TargetCurve.from_points(
+        TargetCurve.from_points_strict(
             input_angles=input_angles,
             output_angles=values,
+            weights=weights,
         )
-        for values in outputs
+        for values, weights in zip(
+            outputs,
+            blended_weights,
+        )
     )
 
 
@@ -791,6 +835,59 @@ def mixed_brake_preview(
     )
 
 
+def _mixed_evaluator_factory(
+    inputs: MixedBrakeInputs,
+    settings: MixedBrakeSettings,
+    brake_positions: tuple[float, ...],
+    targets: tuple[TargetCurve, ...],
+) -> Callable[[ParameterSet], float]:
+    """Build a fresh mixed brake evaluator in the
+    calling process.
+
+    In parallel mode this runs once per worker
+    process as the pool initializer's
+    ``evaluator_factory`` (issue #86).  It must live
+    at module level so Windows spawn can pickle it.
+    """
+    builder = MixedBrakeBuilder(
+        inputs.definition,
+    )
+    motion = _motion(inputs)
+    simulator = MechanismSimulator(
+        motion=motion,
+    )
+    fitness = BrakeCurveFitness(
+        weights=tuple(
+            1.0 for _ in brake_positions
+        ),
+        max_weight=1.0,
+        endpoint_constraint=EndpointConstraint(
+            end_angle=0.0,
+            weight=1.0,
+        ),
+        gradient_weight=(
+            settings.gradient_weight
+        ),
+    )
+    constraint = TransmissionAngleConstraint(
+        minimum_angle=math.radians(
+            settings.transmission_angle_deg,
+        ),
+        weight=settings.transmission_weight,
+    )
+    return MixedBrakeOptimizer(
+        builder=builder,
+        simulator=simulator,
+        fitness=fitness,
+        definition=inputs.definition,
+        brake_positions=brake_positions,
+        targets=targets,
+        transmission_angle_constraint=(
+            constraint
+        ),
+    ).evaluate
+
+
 def run_mixed_brake_optimization(
     inputs: MixedBrakeInputs,
     template: ParameterSet,
@@ -820,8 +917,25 @@ def run_mixed_brake_optimization(
         grid.fractions,
         input_angles=input_angles,
     )
-    builder = MixedBrakeBuilder(inputs.definition)
-    simulator = MechanismSimulator(motion=motion)
+    builder = MixedBrakeBuilder(
+        inputs.definition,
+    )
+    simulator = MechanismSimulator(
+        motion=motion,
+    )
+
+    worker_count = settings.workers
+    if worker_count <= 0:
+        worker_count = multiprocessing.cpu_count()
+    worker_count = max(1, worker_count)
+
+    evaluator_factory = partial(
+        _mixed_evaluator_factory,
+        inputs,
+        settings,
+        brake_positions,
+        targets,
+    )
     fitness = BrakeCurveFitness(
         weights=tuple(
             1.0 for _ in brake_positions
@@ -830,6 +944,9 @@ def run_mixed_brake_optimization(
         endpoint_constraint=EndpointConstraint(
             end_angle=0.0,
             weight=1.0,
+        ),
+        gradient_weight=(
+            settings.gradient_weight
         ),
     )
     constraint = TransmissionAngleConstraint(
@@ -857,7 +974,17 @@ def run_mixed_brake_optimization(
     )
     engine = EvolutionEngine(
         population=population,
-        evaluator=optimizer.evaluate,
+        evaluator=(
+            optimizer.evaluate
+            if worker_count == 1
+            else None
+        ),
+        evaluator_factory=(
+            evaluator_factory
+            if worker_count > 1
+            else None
+        ),
+        workers=worker_count,
         selection_count=settings.selection_count,
         reproduction=Reproduction(
             mutation=ParameterMutation(
@@ -881,6 +1008,7 @@ def run_mixed_brake_optimization(
         for score in engine.scores.values()
     )
     if valid == 0:
+        engine.close()
         raise WorkflowError(
             "Keine gültigen Startkandidaten — "
             "die Mechanik ist im Suchraum "
@@ -899,6 +1027,7 @@ def run_mixed_brake_optimization(
                 generations,
                 engine.best_score,
             )
+    engine.close()
     best = engine.best_candidate
     if best is None:
         raise WorkflowError(

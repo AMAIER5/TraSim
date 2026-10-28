@@ -22,19 +22,15 @@ from concurrent.futures import (
 from optimization.parameter_set import (
     ParameterSet,
 )
-
 from optimization.population import (
     Population,
 )
-
 from optimization.reproduction import (
     Reproduction,
 )
-
 from optimization.selection import (
     Selection,
 )
-
 
 _WORKER_EVALUATOR: Callable[
     [ParameterSet],
@@ -307,6 +303,17 @@ class EvolutionEngine:
         scores = pool.map(
             _evaluate_candidate,
             candidates,
+            chunksize=(
+                1
+                if self.workers <= 1
+                else max(
+                    1,
+                    len(candidates)
+                    // (
+                        4 * self.workers
+                    ),
+                )
+            ),
         )
 
         self.scores = {
