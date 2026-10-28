@@ -19,7 +19,7 @@ from solver.objective import stage_error
 MIXER_CSV = """
 id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,driver,coupled,pivot_on
 1,40,100,60,-40,40,0,0,60,0,0,0,1,,,
-2,20,80,50,-60,60,0,50,10,0,0,0,1,1,,lever4@0
+2,20,80,50,-60,60,0,50,10,0,0,0,1,1,,lever4
 3,40,200,100,-30,30,0,180,0,0,0,0,1,2,,
 4,20,80,50,-60,60,0,0,10,0,0,0,1,,,
 """.strip()
@@ -237,7 +237,7 @@ def test_ambiguous_branch_restores_nearest():
             angle_start=math.radians(30),
             axis=Vector3D(0.0, 0.0, 1.0),
             driver=1,
-            pivot_on="lever1@0",
+            pivot_on="lever1",
         ),
         LeverDefinition(
             id=3,
@@ -354,7 +354,7 @@ def test_pivot_on_requires_fixed_pivot_parent():
                 angle_max=1.0,
                 angle_start=0.0,
                 axis=Vector3D(0.0, 0.0, 1.0),
-                pivot_on="lever2@0",
+                pivot_on="lever2",
             ),
             LeverDefinition(
                 id=2,
@@ -366,9 +366,127 @@ def test_pivot_on_requires_fixed_pivot_parent():
                 angle_max=1.0,
                 angle_start=0.0,
                 axis=Vector3D(0.0, 0.0, 1.0),
-                pivot_on="lever1@0",
+                pivot_on="lever1",
             ),
         )
     )
     with pytest.raises(MechanismBuildError):
         MixedBrakeBuilder(definition)
+
+
+def test_mixer_lever_takes_axis_and_reference_from_adjusting_lever():
+    """Requirement 2.2: pivot/axis columns of the mixer lever
+    are ignored; axis and reference direction come from the
+    adjusting lever, the pivot from its current endpoint."""
+    from core.point3d import Point3D
+    from core.vector3d import Vector3D
+    from model.lever_definition import LeverDefinition
+    from model.mechanism_definition import (
+        MechanismDefinition,
+    )
+
+    def lever(id, pivot, driver=None, pivot_on=None):
+        return LeverDefinition(
+            id=id,
+            pivot=pivot,
+            length_min=20,
+            length_max=100,
+            length_start=50,
+            angle_min=math.radians(-60),
+            angle_max=math.radians(60),
+            angle_start=0.0,
+            axis=Vector3D(0.0, 0.0, 1.0),
+            driver=driver,
+            pivot_on=pivot_on,
+        )
+
+    adjusting = lever(5, Point3D(0.0, 0.0, 0.0))
+    # mixer lever: pivot at (999, 999) and axis along X --
+    # both must be ignored
+    mixer = LeverDefinition(
+        id=2,
+        pivot=Point3D(999.0, 999.0, 0.0),
+        length_min=20,
+        length_max=100,
+        length_start=40,
+        angle_min=math.radians(-90),
+        angle_max=math.radians(90),
+        angle_start=0.0,
+        axis=Vector3D(1.0, 0.0, 0.0),
+        driver=1,
+        pivot_on="lever5",
+    )
+    driven = lever(3, Point3D(120.0, 0.0, 0.0), driver=2)
+    drive = LeverDefinition(
+        id=1,
+        pivot=Point3D(-40.0, 0.0, 0.0),
+        length_min=20,
+        length_max=100,
+        length_start=40,
+        angle_min=math.radians(-60),
+        angle_max=math.radians(60),
+        angle_start=0.0,
+        axis=Vector3D(0.0, 0.0, 1.0),
+    )
+    definition = MechanismDefinition(
+        (drive, mixer, driven, adjusting)
+    )
+    builder = MixedBrakeBuilder(definition)
+    mechanism = builder.build(0.0)
+    mixer_lever = mechanism.stages[0].output_lever
+    assert mixer_lever.axis == pytest.approx(
+        Vector3D(0.0, 0.0, 1.0)
+    )
+    assert mixer_lever.pivot == Point3D(
+        50.0,
+        0.0,
+        0.0,
+    )
+    braked = builder.build(math.radians(2))
+    moved = braked.stages[0].output_lever
+    assert moved.axis == pytest.approx(
+        Vector3D(0.0, 0.0, 1.0)
+    )
+    assert moved.pivot != mixer_lever.pivot
+
+
+def test_adjusting_lever_index_arbitrary():
+    """Requirement 2.1: the adjusting lever may have any
+    index -- no 'lever 1' assumption anywhere."""
+    from core.point3d import Point3D
+    from core.vector3d import Vector3D
+    from model.lever_definition import LeverDefinition
+    from model.mechanism_definition import (
+        MechanismDefinition,
+    )
+
+    definition = MechanismDefinition(
+        (
+            LeverDefinition(
+                id=9,
+                pivot=Point3D(0.0, 0.0, 0.0),
+                length_min=20,
+                length_max=100,
+                length_start=50,
+                angle_min=math.radians(-60),
+                angle_max=math.radians(60),
+                angle_start=0.0,
+                axis=Vector3D(0.0, 0.0, 1.0),
+            ),
+            LeverDefinition(
+                id=7,
+                pivot=Point3D(999.0, 999.0, 0.0),
+                length_min=20,
+                length_max=100,
+                length_start=40,
+                angle_min=math.radians(-90),
+                angle_max=math.radians(90),
+                angle_start=0.0,
+                axis=Vector3D(1.0, 0.0, 0.0),
+                pivot_on="lever9",
+            ),
+        )
+    )
+    builder = MixedBrakeBuilder(definition)
+    assert builder._brake_id == 9
+    assert builder._mixer_id == 7

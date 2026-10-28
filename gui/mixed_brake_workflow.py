@@ -239,8 +239,8 @@ def _load_mixed_brake_inputs(
         motion_start_deg=motion_start_deg,
         motion_travel_deg=motion_travel_deg,
         motion_step_deg=motion_step_deg,
-        brake_min_deg=(
-            mixer.pivot_reference.angle_deg
+        brake_min_deg=math.degrees(
+            brake.angle_start
         ),
         brake_max_deg=math.degrees(
             brake.angle_max

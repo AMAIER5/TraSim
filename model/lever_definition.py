@@ -8,8 +8,7 @@ from core.point3d import Point3D
 
 
 _PIVOT_REFERENCE_PATTERN = re.compile(
-    r"^(?:lever)?(?P<lever_id>-?\d+)"
-    r"@(?P<angle_deg>-?\d+(?:\.\d+)?)$"
+    r"^(?:lever)?(?P<lever_id>\d+)$"
 )
 
 
@@ -17,32 +16,43 @@ _PIVOT_REFERENCE_PATTERN = re.compile(
 class PivotReference:
     """
     Parsed ``pivot_on`` reference: the pivot of the referencing
-    lever sits on the endpoint of lever ``lever_id`` at lever
-    angle ``angle_deg`` (degrees).
+    lever (mixer lever) sits on the endpoint of lever
+    ``lever_id`` (the adjusting lever).  The brake position
+    follows from the adjusting lever's angle range
+    (``angle_min`` ... ``angle_max``), not from the reference.
     """
 
     lever_id: int
-    angle_deg: float
 
 
 def parse_pivot_reference(value: str) -> PivotReference:
     """
-    Parse a ``pivot_on`` reference of the form
-    ``lever_id@angle_deg`` (e.g. ``lever3@180`` or
-    ``3@180``; an optional ``lever`` prefix is accepted).
+    Parse a ``pivot_on`` reference of the form ``lever_id``
+    (e.g. ``lever3`` or ``3``; an optional ``lever`` prefix is
+    accepted).
+
+    The angle is NOT part of the reference; the old
+    ``lever_id@angle_deg`` syntax is rejected explicitly.
 
     Raises ``ValueError`` for anything else.
     """
+    if "@" in value:
+        raise ValueError(
+            f"invalid pivot_on reference {value!r}: the "
+            "angle suffix is no longer part of the "
+            "reference; the brake position now follows "
+            "from the angle range (angle_min..angle_max) "
+            "of the referenced lever.  Use 'lever_id' "
+            "instead, e.g. 'lever3'."
+        )
     match = _PIVOT_REFERENCE_PATTERN.match(value.strip())
     if match is None:
         raise ValueError(
             f"invalid pivot_on reference {value!r}: "
-            "expected 'lever_id@angle_deg', "
-            "e.g. 'lever3@180'."
+            "expected 'lever_id', e.g. 'lever3'."
         )
     return PivotReference(
         lever_id=int(match.group("lever_id")),
-        angle_deg=float(match.group("angle_deg")),
     )
 
 
@@ -69,6 +79,12 @@ class LeverDefinition:
     ``Lever._auto_reference_direction``); in that case the angle
     limits are still treated as lever angles, but their physical
     meaning depends on that automatic choice.
+
+    A lever with ``pivot_on`` (mixer lever) has no pivot of its
+    own: ``pivot_x``/``pivot_y``/``pivot_z`` and
+    ``axis_x``/``axis_y``/``axis_z`` are ignored for it.  Its
+    pivot sits on the endpoint of the referenced lever (adjusting
+    lever) and it takes over that lever's axis.
     """
 
     id: int

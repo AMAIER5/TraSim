@@ -43,7 +43,7 @@ from simulation.motion_range import MotionRange
 
 MIXER_CSV = """
 id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,driver,coupled,pivot_on
-1,40,100,60,-40,40,0,0,60,0,0,0,1,,,lever3@180
+1,40,100,60,-40,40,0,0,60,0,0,0,1,,,lever3
 2,20,80,50,-60,60,0,50,10,0,0,0,1,1,,
 3,40,200,100,-30,30,0,180,0,0,0,0,1,2,,
 4,20,80,50,-60,60,0,0,10,0,0,0,1,3,,

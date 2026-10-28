@@ -583,7 +583,7 @@ edited_mechanism = st.data_editor(
         ),
         "pivot_on": st.column_config.TextColumn(
             "pivot_on",
-            help="lever_id@angle_deg (z. B. lever3@180), leer = fester Drehpunkt",
+            help="lever_id (z. B. lever3), leer = fester Drehpunkt",
         ),
     },
 )

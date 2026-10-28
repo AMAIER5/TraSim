@@ -364,7 +364,10 @@ class MixedBrakeBuilder:
         current_angles: dict[int, float],
     ) -> dict[int, Lever]:
         """Create levers; pivot_on levers take their pivot
-        from the current endpoint of their parent lever."""
+        from the current endpoint of their parent lever and
+        ignore their own pivot/axis columns: axis and
+        reference direction come from the parent (adjusting)
+        lever, the pivot from its current endpoint."""
         pending = {
             lever.id: lever
             for lever in definition.levers
@@ -396,12 +399,12 @@ class MixedBrakeBuilder:
                         )
                         levers[lever_id] = Lever(
                             pivot=endpoint,
-                            axis=lever.axis,
+                            axis=parent.axis,
                             length=(
                                 lever.length_start
                             ),
                             reference_direction=(
-                                lever.reference_direction
+                                parent.reference_direction
                             ),
                         )
                         del pending[lever_id]

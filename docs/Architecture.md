@@ -354,20 +354,25 @@ If both are specified: **coupled has priority**, driver is ignored.
 The optional `pivot_on` column moves a lever's pivot onto the
 endpoint of another lever. Format:
 
-```textpivot_on = lever_id@angle_deg
+```textpivot_on = lever_id
 ```
 
-Example: `Lever 1 pivot_on = lever5@180` means: the pivot of
-lever 1 sits on the endpoint of lever 5 when lever 5 is at
-lever angle 180°.
+Example: `Lever 1 pivot_on = lever5` means: the pivot of
+lever 1 sits on the (current) endpoint of lever 5.
 
 Rules:
 
 - The referenced lever must exist and must have a **fixed**
   pivot (it must not have a `pivot_on` entry itself).
-- The `pivot_x`/`pivot_y`/`pivot_z` columns of the referencing
-  lever are ignored; the endpoint of the referenced lever at
-  the given angle becomes the pivot.
+- The `pivot_x`/`pivot_y`/`pivot_z` and
+  `axis_x`/`axis_y`/`axis_z` columns of the referencing
+  lever are ignored; the endpoint of the referenced lever
+  becomes the pivot, its axis and reference direction are
+  taken over.
+- The old `lever_id@angle_deg` syntax is rejected with a
+  validation error; the brake position now follows from the
+  angle range (`angle_start` unbraked reference up to
+  `angle_max` fully braked) of the referenced lever.
 - A mechanism with a `pivot_on` lever is built with the
   `MixedBrakeBuilder` (see `mechanics/mixed_brake_builder.py`);
   the referenced lever acts as the brake lever, the referencing
@@ -376,7 +381,7 @@ Rules:
   `pivot_on`.
 
 Worked example (`examples/mechanism_optimized.csv`): lever 1
-(`pivot_on = lever5@180`) gets its pivot from the endpoint of
+(`pivot_on = lever5`) gets its pivot from the endpoint of
 the mixer lever 5 (pivot `(0, 60, -261)`, length 60, axis
 `(1, 0, 0)`); at lever angle 180° the endpoint — and therefore
 the pivot of lever 1 — is `(0, 0, -261)`.
