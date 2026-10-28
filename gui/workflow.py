@@ -557,7 +557,9 @@ def with_mechanism_levers(
     Each row is a mapping with the keys ``id``,
     ``length_min``, ``length_max``, ``length_start``,
     ``angle_min``, ``angle_max``, ``angle_start``,
-    ``pivot_x``, ``pivot_y``, ``pivot_z``, ``axis_x``,
+    ``pivot_x_start``/``pivot_x``,
+    ``pivot_y_start``/``pivot_y``,
+    ``pivot_z``, ``axis_x``,
     ``axis_y``, ``axis_z`` and optionally ``ref_x``,
     ``ref_y``, ``ref_z``, ``driver``, ``coupled`` and
     ``pivot_on``.
@@ -579,8 +581,12 @@ def with_mechanism_levers(
     def _number(
         row: Mapping[str, object],
         key: str,
+        *,
+        fallback: str | None = None,
     ) -> float:
         value = row.get(key)
+        if value is None and fallback is not None:
+            value = row.get(fallback)
         if value is None or (
             isinstance(value, str)
             and not value.strip()
@@ -666,8 +672,16 @@ def with_mechanism_levers(
                 LeverDefinition(
                     id=lever_id,
                     pivot=Point3D(
-                        x=_number(row, "pivot_x"),
-                        y=_number(row, "pivot_y"),
+                        x=_number(
+                            row,
+                            "pivot_x_start",
+                            fallback="pivot_x",
+                        ),
+                        y=_number(
+                            row,
+                            "pivot_y_start",
+                            fallback="pivot_y",
+                        ),
                         z=_number(row, "pivot_z"),
                     ),
                     length_min=_number(
@@ -736,10 +750,11 @@ def optimized_values(
     radians for angles, millimetres for lengths).
 
     The keys match the names produced by
-    ``CsvParameterFactory`` (``lever.<id>.length`` and
-    ``lever.<id>.angle``), so an optimized definition
-    can be compared with the start template
-    parameter by parameter.
+    ``CsvParameterFactory`` (``lever.<id>.length``,
+    ``lever.<id>.angle``, ``lever.<id>.pivot.x`` and
+    ``lever.<id>.pivot.y``), so an optimized
+    definition can be compared with the start
+    template parameter by parameter.
     """
 
     values: dict[str, float] = {}
@@ -820,7 +835,10 @@ def optimized_display_values(
     rows: Sequence[Mapping[str, object]],
     optimized_map: Mapping[str, float],
     snapshot: Mapping[int, Mapping[str, float]],
-) -> dict[int, tuple[float | None, float | None]]:
+) -> dict[
+    int,
+    tuple[float | None, ...],
+]:
     """Optimized values displayed per lever id.
 
     A value is only displayed while the
@@ -829,11 +847,16 @@ def optimized_display_values(
     started; otherwise the cell is cleared
     (``None``).  Lengths are in millimetres,
     angles in DEGREES (user units).
+
+    The returned tuple is ordered
+    ``(length, angle, pivot_x, pivot_y)``; rows
+    without pivot columns keep ``None`` for the
+    pivot entries.
     """
 
     result: dict[
         int,
-        tuple[float | None, float | None],
+        tuple[float | None, ...],
     ] = {}
     for row in rows:
         if row.get("id") is None:
@@ -844,6 +867,12 @@ def optimized_display_values(
         )
         angle_key = (
             f"lever.{lever_id}.angle"
+        )
+        pivot_x_key = (
+            f"lever.{lever_id}.pivot.x"
+        )
+        pivot_y_key = (
+            f"lever.{lever_id}.pivot.y"
         )
         lever_snapshot = snapshot.get(
             lever_id,
@@ -866,9 +895,31 @@ def optimized_display_values(
             and angle_key in optimized_map
             else None
         )
+        pivot_x_value = (
+            optimized_map[pivot_x_key]
+            if lever_snapshot is not None
+            and lever_snapshot.get(
+                "pivot_x"
+            )
+            == row.get("pivot_x_start")
+            and pivot_x_key in optimized_map
+            else None
+        )
+        pivot_y_value = (
+            optimized_map[pivot_y_key]
+            if lever_snapshot is not None
+            and lever_snapshot.get(
+                "pivot_y"
+            )
+            == row.get("pivot_y_start")
+            and pivot_y_key in optimized_map
+            else None
+        )
         result[lever_id] = (
             length_value,
             angle_value,
+            pivot_x_value,
+            pivot_y_value,
         )
     return result
 
@@ -880,39 +931,67 @@ def adopt_single_optimized_values(
     values as new start values, in place.
 
     Each row may carry ``length_adopt`` /
-    ``angle_adopt`` flags set by the user.  For
-    every set flag whose ``length_optimized`` /
-    ``angle_optimized`` cell is not empty, the
-    optimized value is written into
-    ``length_start`` / ``angle_start`` and the
-    flag is cleared.  Returns ``True`` when at
-    least one value was adopted (the caller then
+    ``angle_adopt`` flags (and, when the pivot
+    columns are shown, ``pivot_x_adopt`` /
+    ``pivot_y_adopt``) set by the user.  For
+    every set flag whose corresponding
+    ``*_optimized`` cell is not empty, the
+    optimized value is written into the
+    corresponding ``*_start`` field and the flag
+    is cleared.  Returns ``True`` when at least
+    one value was adopted (the caller then
     reruns so the table reflects the adoption).
     """
+
+    def _adopt(
+        row: dict,
+        adopt_key: str,
+        optimized_key: str,
+        start_key: str,
+    ) -> bool:
+        if (
+            row.get(adopt_key)
+            and row.get(optimized_key)
+            is not None
+        ):
+            row[start_key] = row[
+                optimized_key
+            ]
+            row[adopt_key] = False
+            return True
+        return False
 
     adopted = False
     for row in rows:
         if row.get("id") is None:
             continue
-        if (
-            row.get("length_adopt")
-            and row["length_optimized"]
-            is not None
+        if _adopt(
+            row,
+            "length_adopt",
+            "length_optimized",
+            "length_start",
         ):
-            row["length_start"] = row[
-                "length_optimized"
-            ]
-            row["length_adopt"] = False
             adopted = True
-        if (
-            row.get("angle_adopt")
-            and row["angle_optimized"]
-            is not None
+        if _adopt(
+            row,
+            "angle_adopt",
+            "angle_optimized",
+            "angle_start",
         ):
-            row["angle_start"] = row[
-                "angle_optimized"
-            ]
-            row["angle_adopt"] = False
+            adopted = True
+        if _adopt(
+            row,
+            "pivot_x_adopt",
+            "pivot_x_optimized",
+            "pivot_x_start",
+        ):
+            adopted = True
+        if _adopt(
+            row,
+            "pivot_y_adopt",
+            "pivot_y_optimized",
+            "pivot_y_start",
+        ):
             adopted = True
     return adopted
 

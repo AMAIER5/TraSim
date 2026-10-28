@@ -29,6 +29,10 @@ from pathlib import Path
 
 import streamlit as st
 
+from optimization.csv_parameter_factory import (
+    DEFAULT_PIVOT_OFFSET,
+)
+
 from analysis.target_curve import (
     MAX_WEIGHT,
 )
@@ -577,6 +581,68 @@ elif (
         )
     )
 
+_PIVOT_COLUMN_ORDER = (
+    "pivot_x_min",
+    "pivot_x_max",
+    "pivot_x_optimize",
+    "pivot_x_optimized",
+    "pivot_x_adopt",
+    "pivot_y_min",
+    "pivot_y_max",
+    "pivot_y_optimize",
+    "pivot_y_optimized",
+    "pivot_y_adopt",
+)
+
+_BASE_COLUMN_ORDER = (
+    "id",
+    "length_min",
+    "length_max",
+    "length_start",
+    "length_optimize",
+    "length_optimized",
+    "length_adopt",
+    "angle_min",
+    "angle_max",
+    "angle_start",
+    "angle_optimize",
+    "angle_optimized",
+    "angle_adopt",
+    "pivot_x_start",
+    "pivot_y_start",
+    "pivot_z",
+    "axis_x",
+    "axis_y",
+    "axis_z",
+    "ref_x",
+    "ref_y",
+    "ref_z",
+    "driver",
+    "coupled",
+    "pivot_on",
+)
+
+
+def _mechanism_column_order(
+    show_pivot_columns: bool,
+) -> tuple[str, ...]:
+    """Column order of the mechanism table.
+
+    The pivot optimization columns
+    (min/max/start/optimize/optimized/adopt per
+    pivot axis) are hidden by default and only
+    shown when the user expands them, keeping
+    the table readable (issue #83).
+    """
+    if not show_pivot_columns:
+        return _BASE_COLUMN_ORDER
+    return (
+        _BASE_COLUMN_ORDER[:14]
+        + _PIVOT_COLUMN_ORDER
+        + _BASE_COLUMN_ORDER[14:]
+    )
+
+
 def _lever_rows(definition) -> list[dict]:
     return [
         {
@@ -599,8 +665,30 @@ def _lever_rows(definition) -> list[dict]:
             "angle_optimize": True,
             "angle_optimized": None,
             "angle_adopt": False,
-            "pivot_x": lever.pivot.x,
-            "pivot_y": lever.pivot.y,
+            "pivot_x_min": (
+                lever.pivot.x
+                - DEFAULT_PIVOT_OFFSET
+            ),
+            "pivot_x_max": (
+                lever.pivot.x
+                + DEFAULT_PIVOT_OFFSET
+            ),
+            "pivot_x_start": lever.pivot.x,
+            "pivot_x_optimize": True,
+            "pivot_x_optimized": None,
+            "pivot_x_adopt": False,
+            "pivot_y_min": (
+                lever.pivot.y
+                - DEFAULT_PIVOT_OFFSET
+            ),
+            "pivot_y_max": (
+                lever.pivot.y
+                + DEFAULT_PIVOT_OFFSET
+            ),
+            "pivot_y_start": lever.pivot.y,
+            "pivot_y_optimize": True,
+            "pivot_y_optimized": None,
+            "pivot_y_adopt": False,
             "pivot_z": lever.pivot.z,
             "axis_x": lever.axis.x,
             "axis_y": lever.axis.y,
@@ -698,14 +786,35 @@ for row in display_rows:
     (
         row["length_optimized"],
         row["angle_optimized"],
+        row["pivot_x_optimized"],
+        row["pivot_y_optimized"],
     ) = display_optimized[
         int(row["id"])
     ]
+
+show_pivot_columns = st.toggle(
+    "Drehpunkt-Optimierung anzeigen",
+    value=False,
+    help=(
+        "Blendet die Spalten zur Freigabe und "
+        "Übernahme der optimierten Drehpunkt-"
+        "Positionen (pivot_x / pivot_y) ein. "
+        "Standardmäßig sind sie ausgeblendet, "
+        "um die Tabelle übersichtlich zu halten; "
+        "die Drehpunkte sind weiterhin Teil der "
+        "Optimierung."
+    ),
+)
 
 edited_mechanism = st.data_editor(
     display_rows,
     num_rows="dynamic",
     width="stretch",
+    column_order=(
+        _mechanism_column_order(
+            show_pivot_columns,
+        )
+    ),
     key=(
         "mechanism_editor_"
         + str(
@@ -796,6 +905,88 @@ edited_mechanism = st.data_editor(
                 help="Optimierten Winkel als Startwert übernehmen",
             )
         ),
+        "pivot_x_min": st.column_config.NumberColumn(
+            "pivot_x_min",
+            format="%.1f",
+        ),
+        "pivot_x_max": st.column_config.NumberColumn(
+            "pivot_x_max",
+            format="%.1f",
+        ),
+        "pivot_x_start": (
+            st.column_config.NumberColumn(
+                "pivot_x_start",
+                format="%.1f",
+                help=(
+                    "Startwert des Drehpunkts in x-"
+                    "Richtung; wird automatisch aus "
+                    "pivot_x befüllt und mit diesem "
+                    "gekoppelt."
+                ),
+            )
+        ),
+        "pivot_x_optimize": (
+            st.column_config.CheckboxColumn(
+                "Optimierung",
+                default=True,
+                help="Drehpunkt-x für die Optimierung freigeben",
+            )
+        ),
+        "pivot_x_optimized": (
+            st.column_config.NumberColumn(
+                "Optimiert",
+                format="%.1f",
+                help="Ergebnis des letzten Optimierungslaufs; wird geleert, sobald der Startwert geändert oder übernommen wird",
+            )
+        ),
+        "pivot_x_adopt": (
+            st.column_config.CheckboxColumn(
+                "Übernehmen",
+                default=False,
+                help="Optimierte Drehpunkt-x-Position als Startwert übernehmen",
+            )
+        ),
+        "pivot_y_min": st.column_config.NumberColumn(
+            "pivot_y_min",
+            format="%.1f",
+        ),
+        "pivot_y_max": st.column_config.NumberColumn(
+            "pivot_y_max",
+            format="%.1f",
+        ),
+        "pivot_y_start": (
+            st.column_config.NumberColumn(
+                "pivot_y_start",
+                format="%.1f",
+                help=(
+                    "Startwert des Drehpunkts in y-"
+                    "Richtung; wird automatisch aus "
+                    "pivot_y befüllt und mit diesem "
+                    "gekoppelt."
+                ),
+            )
+        ),
+        "pivot_y_optimize": (
+            st.column_config.CheckboxColumn(
+                "Optimierung",
+                default=True,
+                help="Drehpunkt-y für die Optimierung freigeben",
+            )
+        ),
+        "pivot_y_optimized": (
+            st.column_config.NumberColumn(
+                "Optimiert",
+                format="%.1f",
+                help="Ergebnis des letzten Optimierungslaufs; wird geleert, sobald der Startwert geändert oder übernommen wird",
+            )
+        ),
+        "pivot_y_adopt": (
+            st.column_config.CheckboxColumn(
+                "Übernehmen",
+                default=False,
+                help="Optimierte Drehpunkt-y-Position als Startwert übernehmen",
+            )
+        ),
         "pivot_on": st.column_config.TextColumn(
             "pivot_on",
             help="lever_id (z. B. lever3), leer = fester Drehpunkt",
@@ -882,8 +1073,24 @@ if optimized_map and st.button(
                     optimized_map[angle_key],
                 )
             )
+        pivot_x_key = (
+            f"lever.{lever_id}.pivot.x"
+        )
+        pivot_y_key = (
+            f"lever.{lever_id}.pivot.y"
+        )
+        if pivot_x_key in optimized_map:
+            row["pivot_x_start"] = (
+                optimized_map[pivot_x_key]
+            )
+        if pivot_y_key in optimized_map:
+            row["pivot_y_start"] = (
+                optimized_map[pivot_y_key]
+            )
         row["length_adopt"] = False
         row["angle_adopt"] = False
+        row["pivot_x_adopt"] = False
+        row["pivot_y_adopt"] = False
     st.session_state[
         "mechanism_rows"
     ] = edited_mechanism
@@ -962,14 +1169,52 @@ for row in edited_mechanism:
         angle_max,
         angle_value,
     )
-    pivot_x = float(row["pivot_x"])
-    pivot_y = float(row["pivot_y"])
+    pivot_x_start = float(
+        row["pivot_x_start"],
+    )
+    pivot_y_start = float(
+        row["pivot_y_start"],
+    )
+    if row.get("pivot_x_optimize", False):
+        pivot_x_min = float(row["pivot_x_min"])
+        pivot_x_max = float(row["pivot_x_max"])
+    else:
+        pivot_x_min = pivot_x_max = (
+            pivot_x_start
+        )
+    if row.get("pivot_y_optimize", False):
+        pivot_y_min = float(row["pivot_y_min"])
+        pivot_y_max = float(row["pivot_y_max"])
+    else:
+        pivot_y_min = pivot_y_max = (
+            pivot_y_start
+        )
+    if pivot_x_max < pivot_x_min:
+        st.error(
+            f"Hebel {lever_id}: "
+            f"pivot_x_max < pivot_x_min."
+        )
+        st.stop()
+    if pivot_y_max < pivot_y_min:
+        st.error(
+            f"Hebel {lever_id}: "
+            f"pivot_y_max < pivot_y_min."
+        )
+        st.stop()
     overrides[
         f"lever.{lever_id}.pivot.x"
-    ] = (pivot_x, pivot_x, pivot_x)
+    ] = (
+        pivot_x_min,
+        pivot_x_max,
+        pivot_x_start,
+    )
     overrides[
         f"lever.{lever_id}.pivot.y"
-    ] = (pivot_y, pivot_y, pivot_y)
+    ] = (
+        pivot_y_min,
+        pivot_y_max,
+        pivot_y_start,
+    )
 
 try:
     active_template = (
@@ -1207,6 +1452,12 @@ with result_tab:
                     "angle": float(
                         row["angle_start"],
                     ),
+                    "pivot_x": float(
+                        row["pivot_x_start"],
+                    ),
+                    "pivot_y": float(
+                        row["pivot_y_start"],
+                    ),
                 }
                 for row in edited_mechanism
                 if row.get("id") is not None
@@ -1288,6 +1539,12 @@ with result_tab:
                 ),
                 "angle": float(
                     row["angle_start"],
+                ),
+                "pivot_x": float(
+                    row["pivot_x_start"],
+                ),
+                "pivot_y": float(
+                    row["pivot_y_start"],
                 ),
             }
             for row in edited_mechanism

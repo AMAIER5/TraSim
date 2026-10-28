@@ -12,6 +12,9 @@ by the GUI:
 - the preview report shows all brake positions
 - the optimization result carries the optimized mechanism
   definition and its CSV export
+- discrete target curves with support points outside the
+  fixed default motion grid still produce a preview
+  (issue #84: the motion follows the support points)
 """
 
 from __future__ import annotations
@@ -206,3 +209,63 @@ def test_mixed_inputs_from_parts_roundtrip(inputs):
     assert rebuilt.brake_max_deg == (
         pytest.approx(inputs.brake_max_deg)
     )
+
+
+def test_preview_with_support_points_outside_default_grid():
+    """Issue #84: discrete target curves whose support
+    points do not coincide with the fixed default
+    motion grid (-10..+10 deg, 2 deg step) must not
+    raise a ValueError when the blended curves are
+    sampled; the motion follows the support points."""
+    import math
+
+    from analysis.target_curve import (
+        TargetCurve,
+    )
+    from gui.mixed_brake_workflow import (
+        mixed_brake_inputs_from_parts,
+    )
+    from mechanism_io.csv_reader import (
+        CsvReader,
+    )
+
+    definition = CsvReader.read_mechanism(
+        MECHANISM_FILE,
+    )
+    angles = tuple(
+        math.radians(angle)
+        for angle in (
+            -10.0,
+            -6.0,
+            -2.5,
+            0.0,
+            1.5,
+            5.0,
+            9.0,
+            10.0,
+        )
+    )
+    unbraked = (
+        TargetCurve.from_points_strict(
+            angles,
+            tuple(
+                math.radians(angle) / 2.0
+                for angle in angles
+            ),
+        )
+    )
+    braked = TargetCurve.from_points_strict(
+        angles,
+        tuple(
+            math.radians(angle)
+            for angle in angles
+        ),
+    )
+    inputs = mixed_brake_inputs_from_parts(
+        definition,
+        unbraked,
+        braked,
+    )
+    assert inputs.input_angles == angles
+    html = mixed_brake_preview(inputs)
+    assert "plot-data" in html
