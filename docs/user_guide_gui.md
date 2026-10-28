@@ -75,6 +75,20 @@ users need no Python knowledge.
      parameter for the optimization, enabled by
      default) and a read-only **Optimiert** value
      from the last optimization run.
+   - The pivot position (`pivot_x_start` /
+     `pivot_y_start`, filled from `pivot_x` /
+     `pivot_y`) is optimizable as well.  Its
+     bounds and release columns
+     (`pivot_x_min`, `pivot_x_max`,
+     `pivot_x_optimize`, `pivot_x_optimized`,
+     `pivot_x_adopt` and the same for `pivot_y`)
+     are hidden by default to keep the table
+     readable; the toggle **Drehpunkt-Optimierung
+     anzeigen** expands them.  The **Alle
+     optimierten Werte als Startwerte übernehmen**
+     button and the per-row **Übernehmen**
+     checkboxes also adopt optimized pivot
+     positions.
    - A click on the **Übernehmen** checkbox next
      to an **Optimiert** value adopts that single
      optimized value as the new start value.

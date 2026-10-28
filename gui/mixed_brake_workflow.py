@@ -50,6 +50,7 @@ from analysis.transmission_angle import (
 )
 from gui.workflow import (
     WorkflowError,
+    _drive_lever_id,
     _text_to_temp_file,
 )
 from mechanics.mixed_brake_builder import (
@@ -81,7 +82,11 @@ from optimization.reproduction import Reproduction
 from simulation.mechanism_simulator import (
     MechanismSimulator,
 )
+from simulation.motion_provider import (
+    MotionProvider,
+)
 from simulation.motion_range import MotionRange
+from simulation.point_motion import PointMotion
 
 __all__ = [
     "MixedBrakeInputs",
@@ -127,6 +132,19 @@ class MixedBrakeInputs:
     motion_step_deg: float
     brake_min_deg: float
     brake_max_deg: float
+    input_angles: (
+        tuple[float, ...] | None
+    ) = None
+
+    """
+    ``input_angles`` is the motion support grid (radians)
+    taken from the support points of the unbraked target
+    curve when that curve is discrete (GUI mixed brake
+    mode).  When ``None`` (e.g. after
+    ``load_mixed_brake_inputs`` with an interpolating
+    curve), the motion falls back to the evenly spaced
+    ``MotionRange`` built from the ``motion_*_deg`` fields.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,6 +281,11 @@ def mixed_brake_inputs_from_parts(
     brake = definition.get_lever(
         mixer.pivot_reference.lever_id
     )
+    support_angles = getattr(
+        unbraked,
+        "input_angles",
+        None,
+    )
     return MixedBrakeInputs(
         definition=definition,
         unbraked=unbraked,
@@ -270,6 +293,11 @@ def mixed_brake_inputs_from_parts(
         motion_start_deg=motion_start_deg,
         motion_travel_deg=motion_travel_deg,
         motion_step_deg=motion_step_deg,
+        input_angles=(
+            tuple(support_angles)
+            if support_angles is not None
+            else None
+        ),
         brake_min_deg=math.degrees(
             brake.angle_start
         ),
@@ -307,10 +335,10 @@ def _load_mixed_brake_inputs(
         brake = definition.get_lever(
             mixer.pivot_reference.lever_id
         )
-        unbraked = TargetCurve.from_csv(
+        unbraked = TargetCurve.from_csv_strict(
             unbraked_path,
         )
-        braked = TargetCurve.from_csv(
+        braked = TargetCurve.from_csv_strict(
             braked_path,
         )
     except WorkflowError:
@@ -327,6 +355,9 @@ def _load_mixed_brake_inputs(
         motion_start_deg=motion_start_deg,
         motion_travel_deg=motion_travel_deg,
         motion_step_deg=motion_step_deg,
+        input_angles=(
+            unbraked.input_angles
+        ),
         brake_min_deg=math.degrees(
             brake.angle_start
         ),
@@ -359,6 +390,110 @@ def _motion_range(
         step=math.radians(
             inputs.motion_step_deg
         ),
+    )
+
+
+def _motion(
+    inputs: MixedBrakeInputs,
+) -> MotionProvider:
+    """Motion provider of the mixed brake workflow.
+
+    When the (unbraked) target curve contributed its
+    support points (``input_angles``), the mechanism is
+    simulated exactly on those support points via
+    ``PointMotion``.  This keeps the blended target
+    curves consistent with a discrete target curve,
+    which is only defined at its support points
+    (issue #84: evaluating it on the fixed default
+    -10..+10 deg grid raised a ValueError).
+
+    The support angles are anchored at the drive
+    lever's start angle, mirroring the normal
+    workflow (``anchored_input_angles``): the drive
+    lever sits at its start angle at the middle
+    support position and every support point keeps
+    its angular distance to that middle.
+
+    Otherwise the evenly spaced ``MotionRange`` from
+    the ``motion_*_deg`` fields is used as before.
+    """
+    if inputs.input_angles is None:
+        return _motion_range(inputs)
+    return PointMotion(
+        angles=_anchored_support_angles(inputs),
+    )
+
+
+def _anchored_support_angles(
+    inputs: MixedBrakeInputs,
+) -> tuple[float, ...]:
+    """Support-point input angles (radians) shifted so
+    that the drive lever sits at its start angle at
+    the middle support position of the target curve
+    (same middle-position convention as the normal
+    workflow)."""
+    angles = inputs.input_angles
+    middle = angles[
+        int(math.floor(len(angles) / 2 + 0.5)) - 1
+    ]
+    drive_angle = inputs.definition.get_lever(
+        _drive_lever_id(inputs.definition),
+    ).angle_start
+    return tuple(
+        angle - middle + drive_angle
+        for angle in angles
+    )
+
+
+def _blended_targets(
+    inputs: MixedBrakeInputs,
+    fractions: tuple[float, ...],
+    input_angles: tuple[float, ...],
+) -> tuple[TargetCurve, ...]:
+    """One blended target curve per brake fraction,
+    defined on the (anchored) motion angles.
+
+    When the base curves are discrete (mixed brake
+    GUI mode), they are evaluated on their own
+    support points (issue #84: they cannot be
+    evaluated on an arbitrary motion grid) and the
+    blended outputs are then placed on the motion
+    angles, mirroring the anchoring of the normal
+    workflow.  Otherwise ``blend_target_curves``
+    evaluates the interpolating base curves
+    directly on the motion angles as before.
+    """
+    support = inputs.input_angles
+    if support is None:
+        return blend_target_curves(
+            inputs.unbraked,
+            inputs.braked,
+            fractions,
+            input_angles=input_angles,
+        )
+    try:
+        outputs = tuple(
+            tuple(
+                (1.0 - fraction)
+                * inputs.unbraked.evaluate(angle)
+                + fraction
+                * inputs.braked.evaluate(angle)
+                for angle in support
+            )
+            for fraction in fractions
+        )
+    except ValueError as error:
+        raise WorkflowError(
+            "Die Zielkurven m\u00fcssen auf denselben "
+            "St\u00fctzstellen definiert sein: "
+            f"{error}",
+        ) from error
+    return tuple(
+        TargetCurve.from_points(
+            input_angles=input_angles,
+            output_angles=values,
+        )
+        for values in outputs
     )
 
 
@@ -409,7 +544,7 @@ def build_mixed_brake_grid(
     definition: MechanismDefinition,
     *,
     position_count: int = 5,
-    motion: MotionRange | None = None,
+    motion: MotionProvider | None = None,
 ) -> _MixedBrakeGrid:
     """Build the mechanism for every brake position of
     the evenly spaced brake grid and simulate it over
@@ -427,13 +562,12 @@ def build_mixed_brake_grid(
         position_count=position_count,
     )
     if motion is None:
-        motion = _motion_range(inputs)
+        motion = _motion(inputs)
     input_angles = tuple(
         angle for angle in motion
     )
-    targets = blend_target_curves(
-        inputs.unbraked,
-        inputs.braked,
+    targets = _blended_targets(
+        inputs,
         grid.fractions,
         input_angles=input_angles,
     )
@@ -525,7 +659,7 @@ def build_mixed_brake_state(
     *,
     brake_fraction: float,
     position_count: int = 5,
-    motion: MotionRange | None = None,
+    motion: MotionProvider | None = None,
 ) -> MixedBrakeState:
     """Simulate one brake position of a (candidate)
     parameter set.
@@ -679,21 +813,10 @@ def run_mixed_brake_optimization(
         position_count=settings.brake_positions,
     )
     brake_positions = make_brake_grid(grid)
-    motion = MotionRange(
-        start_angle=math.radians(
-            inputs.motion_start_deg
-        ),
-        max_angle=math.radians(
-            inputs.motion_travel_deg
-        ),
-        step=math.radians(
-            inputs.motion_step_deg
-        ),
-    )
+    motion = _motion(inputs)
     input_angles = tuple(angle for angle in motion)
-    targets = blend_target_curves(
-        inputs.unbraked,
-        inputs.braked,
+    targets = _blended_targets(
+        inputs,
         grid.fractions,
         input_angles=input_angles,
     )
