@@ -202,6 +202,21 @@ id,...,pivot_on
   Sollkurven interpoliert; die Optimierung
   bewertet den Kandidaten über alle fünf
   Bremsstellungen.
+- Die gebremste Zielkurve erscheint nach dem
+  Hochladen als zweite editierbare Tabelle
+  („Zielkurve voll gebremst“) mit eigener
+  Gewichtsspalte; das Diagramm „Zielkurve“
+  zeigt beide Sollkurven gemeinsam, das
+  Diagramm „Gewichte“ beide Gewichtsläufe.
+  Die Gewichte der Zwischenstellungen werden
+  wie die Ausgangswinkel anteilig gemischt,
+  und die Fitness bewertet jeden Stützpunkt
+  mit seinem (gemischten) Gewicht.
+- Die Optimierung nutzt wie der Normalmodus
+  die **Worker-Prozesse**-Einstellung der
+  Sidebar (0 = automatisch alle verfügbaren
+  CPU-Kerne); der Modus rechnet damit
+  vollständig parallel.
 
 ### Bremsstellungs-Schalter
 

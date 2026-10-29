@@ -31,13 +31,17 @@ from __future__ import annotations
 import logging
 
 from analysis.curve_fitness import (
-    PENALTY_BASE,
     PENALTY_INSUFFICIENT_POINTS,
     PENALTY_MAX_BLOCKING,
+    _matched_pairs,
+    gradient_deviation,
 )
 from analysis.endpoint_constraint import EndpointConstraint
 from analysis.error_metric import ErrorMetric
-from analysis.target_curve import TargetCurve
+from analysis.target_curve import (
+    DiscreteTargetCurve,
+    TargetCurve,
+)
 from analysis.transfer_curve import TransferCurve
 from simulation.simulation_result import SimulationResult
 
@@ -66,6 +70,7 @@ class BrakeCurveFitness:
         weights: tuple[float, ...] | None = None,
         max_weight: float = 1.0,
         endpoint_constraint: EndpointConstraint | None = None,
+        gradient_weight: float = 0.0,
     ) -> None:
         """
         Parameters
@@ -79,10 +84,15 @@ class BrakeCurveFitness:
         endpoint_constraint:
             Optional EndpointConstraint evaluated on the output
             angles of the maximum brake position (the last pair).
+        gradient_weight:
+            Weight of the slope-deviation term added to every
+            non-blocking per-position error (same convention as
+            the single-curve ``CurveFitness``).  0 disables it.
         """
         self._weights = weights
         self._max_weight = max_weight
         self._endpoint_constraint = endpoint_constraint
+        self._gradient_weight = gradient_weight
         self._cache: dict[tuple[float, ...], ErrorMetric] = {}
 
     def _pair_errors(
@@ -94,19 +104,57 @@ class BrakeCurveFitness:
             if len(result.input_angles) < 2:
                 errors.append(PENALTY_INSUFFICIENT_POINTS)
                 continue
-            transfer_curve = TransferCurve(
-                input_angles=result.input_angles,
-                output_angles=result.output_angles,
-            )
-            key = (id(target), transfer_curve.input_angles)
-            if key not in self._cache:
-                self._cache[key] = ErrorMetric(
-                    target=target.sample(transfer_curve.input_angles)
+            error = self._pair_error(target, result)
+            if self._gradient_weight > 0.0:
+                error += self._gradient_weight * gradient_deviation(
+                    target,
+                    result.input_angles,
+                    result.output_angles,
                 )
-            errors.append(
-                self._cache[key].calculate(transfer_curve)
-            )
+            errors.append(error)
         return errors
+
+    def _pair_error(
+        self,
+        target: TargetCurve,
+        result: SimulationResult,
+    ) -> float:
+        """Weighted mean absolute error of one brake
+        position against its target curve.
+
+        A ``DiscreteTargetCurve`` is compared exclusively
+        at its support points, each one weighted by its
+        own fitness weight (issue #87: the second target
+        curve must also be weightable).  Regular
+        (interpolating) curves keep the plain mean
+        absolute error via ``ErrorMetric``.
+        """
+        if isinstance(target, DiscreteTargetCurve):
+            pairs = _matched_pairs(
+                target,
+                result.input_angles,
+                result.output_angles,
+            )
+            if len(pairs) < 2:
+                return PENALTY_INSUFFICIENT_POINTS
+            total = 0.0
+            weight_total = 0.0
+            for target_output, actual_output, weight in pairs:
+                total += weight * abs(actual_output - target_output)
+                weight_total += weight
+            if weight_total <= 0.0:
+                return PENALTY_INSUFFICIENT_POINTS
+            return total / weight_total
+        transfer_curve = TransferCurve(
+            input_angles=result.input_angles,
+            output_angles=result.output_angles,
+        )
+        key = (id(target), transfer_curve.input_angles)
+        if key not in self._cache:
+            self._cache[key] = ErrorMetric(
+                target=target.sample(transfer_curve.input_angles)
+            )
+        return self._cache[key].calculate(transfer_curve)
 
     def evaluate(
         self,

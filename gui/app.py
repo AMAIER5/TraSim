@@ -29,17 +29,13 @@ from pathlib import Path
 
 import streamlit as st
 
-from optimization.csv_parameter_factory import (
-    DEFAULT_PIVOT_OFFSET,
-)
-
-from analysis.target_curve import (
-    MAX_WEIGHT,
-)
 from analysis.curve_plotter import (
     CurvePlotter,
 )
-from analysis.target_curve import TargetCurve
+from analysis.target_curve import (
+    MAX_WEIGHT,
+    TargetCurve,
+)
 from gui.mixed_brake_workflow import (
     MixedBrakeSettings,
     build_mixed_brake_state,
@@ -63,6 +59,9 @@ from gui.workflow import (
     run_optimization,
     with_mechanism_levers,
     with_target_points,
+)
+from optimization.csv_parameter_factory import (
+    DEFAULT_PIVOT_OFFSET,
 )
 
 st.set_page_config(
@@ -286,7 +285,7 @@ def _target_curve_from_csv_text(
     with tempfile.TemporaryDirectory() as temp:
         path = _Path(temp) / "target_curve.csv"
         path.write_text(text, encoding="utf-8")
-        return TargetCurve.from_csv(path)
+        return TargetCurve.from_csv_strict(path)
 
 
 if (
@@ -496,39 +495,185 @@ if mixed_inputs is not None:
         st.error(str(error))
         st.stop()
 
+braked_curve = None
+if mixed_inputs is not None:
+    st.subheader(
+        "Zielkurve voll gebremst"
+    )
+    st.caption(
+        "Die zweite Zielkurve (100 % Bremsweg) "
+        "kann hier direkt bearbeitet, "
+        "ergänzt und gelöscht werden. "
+        "Eingabewinkel müssen aufsteigend "
+        "und eindeutig sein; Gewichte werden "
+        "auf "
+        f"{MAX_WEIGHT:.0f} begrenzt. Beide "
+        "Zielkurven werden im Diagramm "
+        "gemeinsam dargestellt."
+    )
+    braked_rows = [
+        {
+            "Eingabewinkel (°)": (
+                math.degrees(angle)
+            ),
+            "Ausgangswinkel (°)": (
+                math.degrees(
+                    output,
+                )
+            ),
+            "Gewicht": weight,
+        }
+        for angle, output, weight in zip(
+            mixed_inputs.braked.input_angles,
+            mixed_inputs.braked.output_angles,
+            mixed_inputs.braked.weights,
+        )
+    ]
+    edited_braked = st.data_editor(
+        braked_rows,
+        num_rows="dynamic",
+        width="stretch",
+        key="braked_curve_editor",
+        column_config={
+            "Eingabewinkel (°)": (
+                st.column_config.NumberColumn(
+                    "Eingabewinkel (°)",
+                    format="%.1f",
+                )
+            ),
+            "Ausgangswinkel (°)": (
+                st.column_config.NumberColumn(
+                    "Ausgangswinkel (°)",
+                    format="%.1f",
+                )
+            ),
+            "Gewicht": (
+                st.column_config.NumberColumn(
+                    "Gewicht",
+                    format="%.1f",
+                )
+            ),
+        },
+    )
+    edited_braked = sorted(
+        edited_braked,
+        key=lambda row: row[
+            "Eingabewinkel (°)"
+        ],
+    )
+    try:
+        braked_curve = (
+            TargetCurve.from_points_strict(
+                tuple(
+                    math.radians(
+                        row[
+                            "Eingabewinkel (°)"
+                        ],
+                    )
+                    for row in edited_braked
+                ),
+                tuple(
+                    math.radians(
+                        row[
+                            "Ausgangswinkel (°)"
+                        ],
+                    )
+                    for row in edited_braked
+                ),
+                tuple(
+                    float(
+                        row["Gewicht"],
+                    )
+                    for row in edited_braked
+                ),
+            )
+        )
+    except ValueError as error:
+        st.error(
+            f"Ungültige gebremste "
+            f"Zielkurve: {error}",
+        )
+        st.stop()
+    try:
+        mixed_inputs = (
+            mixed_brake_inputs_from_parts(
+                inputs.definition,
+                inputs.target_curve,
+                braked_curve,
+            )
+        )
+    except WorkflowError as error:
+        st.error(str(error))
+        st.stop()
+
 curve_column, weight_column = st.columns(2)
 with curve_column:
     st.subheader("Zielkurve")
+    chart_data = {
+        "Eingabewinkel (°)": [
+            round(math.degrees(angle), 1)
+            for angle in inputs.input_angles
+        ],
+        "Ungebremst (°)": [
+            round(math.degrees(angle), 1)
+            for angle in inputs.output_angles
+        ],
+    }
+    if (
+        mixed_inputs is not None
+        and len(
+            mixed_inputs.braked.input_angles
+        )
+        == len(inputs.input_angles)
+    ):
+        chart_data[
+            "Voll gebremst (°)"
+        ] = [
+            round(
+                math.degrees(angle),
+                1,
+            )
+            for angle in (
+                mixed_inputs.braked.output_angles
+            )
+        ]
     st.line_chart(
-        {
-            "Eingabewinkel (°)": [
-                round(math.degrees(angle), 1)
-                for angle in inputs.input_angles
-            ],
-            "Ausgangswinkel (°)": [
-                round(math.degrees(angle), 1)
-                for angle in inputs.output_angles
-            ],
-        },
+        chart_data,
         x="Eingabewinkel (°)",
-        y="Ausgangswinkel (°)",
+        y=[
+            "Ungebremst (°)",
+            "Voll gebremst (°)",
+        ],
         x_label="Eingabewinkel (°)",
         y_label="Ausgangswinkel (°)",
     )
 with weight_column:
     st.subheader("Gewichte")
+    weight_data = {
+        "Eingabewinkel (°)": [
+            round(math.degrees(angle), 1)
+            for angle in inputs.input_angles
+        ],
+        "Ungebremst": list(
+            inputs.target_curve.weights,
+        ),
+    }
+    if (
+        mixed_inputs is not None
+        and len(
+            mixed_inputs.braked.weights
+        )
+        == len(inputs.input_angles)
+    ):
+        weight_data[
+            "Voll gebremst"
+        ] = list(
+            mixed_inputs.braked.weights,
+        )
     st.bar_chart(
-        {
-            "Eingabewinkel (°)": [
-                round(math.degrees(angle), 1)
-                for angle in inputs.input_angles
-            ],
-            "Gewicht": list(
-                inputs.target_curve.weights,
-            ),
-        },
+        weight_data,
         x="Eingabewinkel (°)",
-        y="Gewicht",
+        y=["Ungebremst", "Voll gebremst"],
         x_label="Eingabewinkel (°)",
         y_label="Gewicht",
     )
@@ -1389,6 +1534,14 @@ with result_tab:
                 ),
                 stagnation_limit=(
                     int(stagnation_limit)
+                ),
+                gradient_weight=(
+                    float(
+                        gradient_weight_input
+                    )
+                ),
+                workers=int(
+                    workers_input
                 ),
                 seed=int(seed),
             )
