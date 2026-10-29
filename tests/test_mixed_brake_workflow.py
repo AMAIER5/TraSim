@@ -287,3 +287,35 @@ def test_brake_positions_two_means_no_interpolation(
             )
         )
     )
+
+
+def test_on_best_reports_improvements(inputs):
+    """Issue #93: the mixed brake optimization also
+    reports best-candidate values via on_best so a
+    UI can persist intermediate results."""
+    settings = MixedBrakeSettings(
+        population_size=6,
+        children_count=6,
+        selection_count=3,
+        max_generations=3,
+        brake_positions=3,
+    )
+    template = mixed_brake_parameter_template(
+        inputs,
+    )
+    reports = []
+
+    def on_best(generation, values):
+        reports.append((generation, dict(values)))
+
+    run_mixed_brake_optimization(
+        inputs,
+        template,
+        settings,
+        on_best=on_best,
+    )
+    assert reports
+    generations = [item[0] for item in reports]
+    assert generations == sorted(generations)
+    names = set(reports[0][1])
+    assert "lever.1.length" in names

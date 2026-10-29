@@ -29,6 +29,7 @@ from pathlib import Path
 
 import streamlit as st
 from streamlit.runtime.scriptrunner import (
+    RerunException,
     StopException,
 )
 
@@ -58,6 +59,7 @@ from gui.workflow import (
     optimized_values,
     parameter_template,
     preview,
+    store_session_state_stop_tolerant,
     run_optimization,
     with_mechanism_levers,
     with_target_points,
@@ -782,6 +784,41 @@ elif (
         )
     )
 
+intermediate_best = st.session_state.get(
+    "intermediate_best",
+)
+intermediate_generation: int | None = (
+    None
+)
+if (
+    not optimized_map
+    and isinstance(
+        intermediate_best,
+        dict,
+    )
+):
+    optimized_map = {
+        str(name): float(value)
+        for name, value in (
+            intermediate_best.get(
+                "values",
+                {},
+            )
+        ).items()
+        if value is not None
+    }
+    optimized_snapshot = (
+        st.session_state.get(
+            "optimized_snapshot",
+            {},
+        )
+    )
+    intermediate_generation = (
+        intermediate_best.get(
+            "generation",
+        )
+    )
+
 _PIVOT_COLUMN_ORDER = (
     "pivot_x_min",
     "pivot_x_max",
@@ -972,6 +1009,10 @@ if (
     )
     st.session_state.pop(
         "optimized_snapshot",
+        None,
+    )
+    st.session_state.pop(
+        "intermediate_best",
         None,
     )
     st.session_state.pop(
@@ -1718,6 +1759,32 @@ with result_tab:
                 key="stop_mixed_button",
             )
 
+            run_snapshot = {
+                int(row["id"]): {
+                    "length": float(
+                        row["length"],
+                    ),
+                    "angle": float(
+                        row["angle"],
+                    ),
+                    "pivot_x": float(
+                        row["pivot_x"],
+                    ),
+                    "pivot_y": float(
+                        row["pivot_y"],
+                    ),
+                    "pivot_z": float(
+                        row["pivot_z"],
+                    ),
+                }
+                for row in edited_mechanism
+                if row.get("id") is not None
+            }
+            store_session_state_stop_tolerant(
+                "optimized_snapshot",
+                run_snapshot,
+            )
+
             def report_mixed(
                 generation: int,
                 best_score: float,
@@ -1742,54 +1809,64 @@ with result_tab:
                             f"{best_score:.6f}"
                         ),
                     )
-                except StopException as error:
+                except (
+                    RerunException,
+                    StopException,
+                ) as error:
                     raise OptimizationStopped(
                         "Mischer-Optimierung vom "
                         "Benutzer gestoppt.",
                     ) from error
 
+            def persist_best_mixed(
+                generation: int,
+                values: dict[str, float],
+            ) -> None:
+                store_session_state_stop_tolerant(
+                    "intermediate_best",
+                    {
+                        "mode": "mixed",
+                        "generation": (
+                            generation
+                        ),
+                        "values": dict(
+                            values,
+                        ),
+                    },
+                )
+
             try:
-                result = run_mixed_brake_optimization(
-                    mixed_inputs,
-                    active_template,
-                    mixed_settings,
-                    progress=report_mixed,
+                result = (
+                    run_mixed_brake_optimization(
+                        mixed_inputs,
+                        active_template,
+                        mixed_settings,
+                        progress=report_mixed,
+                        on_best=(
+                            persist_best_mixed
+                        ),
+                    )
                 )
             except WorkflowError as error:
                 st.error(str(error))
                 st.stop()
-            progress_mixed.empty()
-            st.session_state[
-                "mixed_brake_result"
-            ] = result
-            st.session_state.pop(
+            store_session_state_stop_tolerant(
+                "mixed_brake_result",
+                result,
+            )
+            store_session_state_stop_tolerant(
                 "result",
                 None,
             )
-            st.session_state[
-                "optimized_snapshot"
-            ] = {
-                int(row["id"]): {
-                    "length": float(
-                        row["length"],
-                    ),
-                    "angle": float(
-                        row["angle"],
-                    ),
-                    "pivot_x": float(
-                        row["pivot_x"],
-                    ),
-                    "pivot_y": float(
-                        row["pivot_y"],
-                    ),
-                    "pivot_z": float(
-                        row["pivot_z"],
-                    ),
-                }
-                for row in edited_mechanism
-                if row.get("id") is not None
-            }
-            st.rerun()
+            store_session_state_stop_tolerant(
+                "intermediate_best",
+                None,
+            )
+            try:
+                progress_mixed.empty()
+                st.rerun()
+            except StopException:
+                pass
         settings = OptimizationSettings(
             population_size=int(population_size),
             children_count=int(children_count),
@@ -1817,6 +1894,32 @@ with result_tab:
         status_text = st.empty()
         score_chart = st.empty()
 
+        run_snapshot = {
+            int(row["id"]): {
+                "length": float(
+                    row["length"],
+                ),
+                "angle": float(
+                    row["angle"],
+                ),
+                "pivot_x": float(
+                    row["pivot_x"],
+                ),
+                "pivot_y": float(
+                    row["pivot_y"],
+                ),
+                "pivot_z": float(
+                    row["pivot_z"],
+                ),
+            }
+            for row in edited_mechanism
+            if row.get("id") is not None
+        }
+        store_session_state_stop_tolerant(
+            "optimized_snapshot",
+            run_snapshot,
+        )
+
         def report_progress(
             generation: int,
             best_score: float,
@@ -1842,11 +1945,31 @@ with result_tab:
                     f"**Beste Fitness:** "
                     f"{best_score:.8f}"
                 )
-            except StopException as error:
+            except (
+                RerunException,
+                StopException,
+            ) as error:
                 raise OptimizationStopped(
                     "Optimierung vom "
                     "Benutzer gestoppt.",
                 ) from error
+
+        def persist_best(
+            generation: int,
+            values: dict[str, float],
+        ) -> None:
+            store_session_state_stop_tolerant(
+                "intermediate_best",
+                {
+                    "mode": "standard",
+                    "generation": (
+                        generation
+                    ),
+                    "values": dict(
+                        values,
+                    ),
+                },
+            )
 
         try:
             result: OptimizationResult = (
@@ -1855,61 +1978,49 @@ with result_tab:
                     active_template,
                     settings,
                     progress=report_progress,
+                    on_best=persist_best,
                 )
             )
         except WorkflowError as error:
             st.error(str(error))
             st.stop()
 
-        progress_bar.empty()
-        st.session_state["result"] = result
-        st.session_state.pop(
+        store_session_state_stop_tolerant(
+            "result",
+            result,
+        )
+        store_session_state_stop_tolerant(
             "mixed_brake_result",
             None,
         )
-        st.session_state[
-            "optimized_snapshot"
-        ] = {
-            int(row["id"]): {
-                "length": float(
-                    row["length"],
-                ),
-                "angle": float(
-                    row["angle"],
-                ),
-                "pivot_x": float(
-                    row["pivot_x"],
-                ),
-                "pivot_y": float(
-                    row["pivot_y"],
-                ),
-                "pivot_z": float(
-                    row["pivot_z"],
-                ),
-            }
-            for row in edited_mechanism
-            if row.get("id") is not None
-        }
+        store_session_state_stop_tolerant(
+            "intermediate_best",
+            None,
+        )
         history = (
             result.fitness_history
         )
-        if history:
-            status_text.empty()
-            score_chart.line_chart(
-                {
-                    "Beste Fitness": [
-                        score
-                        if math.isfinite(
+        try:
+            progress_bar.empty()
+            if history:
+                status_text.empty()
+                score_chart.line_chart(
+                    {
+                        "Beste Fitness": [
                             score
-                        )
-                        else float("nan")
-                        for score in history
-                    ],
-                },
-                x_label="Generation",
-                y_label="Fitness",
-            )
-        st.rerun()
+                            if math.isfinite(
+                                score
+                            )
+                            else float("nan")
+                            for score in history
+                        ],
+                    },
+                    x_label="Generation",
+                    y_label="Fitness",
+                )
+            st.rerun()
+        except StopException:
+            pass
 
 result = st.session_state.get("result")
 mixed_result = st.session_state.get(
@@ -2062,4 +2173,17 @@ elif result is not None:
         st.iframe(
             result.html,
             height=900,
+        )
+elif intermediate_generation is not None:
+    with result_tab:
+        st.info(
+            "Die Optimierung wurde vom Benutzer "
+            "gestoppt; die Spalten „Optimiert“ "
+            "zeigen den bis dahin besten "
+            "Zwischenstand (Generation "
+            f"{intermediate_generation}). "
+            "Die Werte lassen sich über "
+            "„Übernehmen“ als Startwerte "
+            "übernehmen und dann erneut "
+            "optimieren."
         )

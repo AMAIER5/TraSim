@@ -951,11 +951,21 @@ def run_mixed_brake_optimization(
     template: ParameterSet,
     settings: MixedBrakeSettings | None = None,
     progress=None,
+    on_best: (
+        Callable[[int, dict[str, float]], None]
+        | None
+    ) = None,
 ) -> MixedBrakeResult:
     """Run the mixed brake optimization.
 
     ``progress(generation, best_score)`` is called once per
     generation so UIs can show live progress.
+    ``on_best(generation, values)`` is called whenever the
+    best candidate improves, with the generation number
+    and the best candidate's parameter values (internal
+    units); UIs use it to persist intermediate results so
+    a user stop still yields the best values found so far
+    (issue #93).
 
     Raises WorkflowError with a user-facing message when the
     optimization cannot produce a result.
@@ -1075,11 +1085,22 @@ def run_mixed_brake_optimization(
         )
     history: list[float] = [engine.best_score]
     generations = 0
+    last_best_score = engine.best_score
     for generation in engine.run(
         children_count=settings.children_count,
     ):
         generations += 1
         history.append(engine.best_score)
+        if (
+            on_best is not None
+            and engine.best_score
+            < last_best_score
+        ):
+            last_best_score = engine.best_score
+            on_best(
+                generations,
+                engine.best_candidate.values(),
+            )
         if progress is not None:
             try:
                 progress(

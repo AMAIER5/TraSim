@@ -138,6 +138,50 @@ class OptimizationStopped(Exception):
     """
 
 
+def store_session_state_stop_tolerant(
+    key: str,
+    value: object,
+) -> bool:
+    """Store ``value`` in the Streamlit session state
+    even when a stop request is pending (issue #93).
+
+    When the user presses Streamlit's toolbar stop
+    button, the runner remembers the STOP request and
+    every subsequent Streamlit call (including the
+    ordinary ``st.session_state[key] = value``) raises
+    ``StopException`` BEFORE executing.  Results
+    computed by a finished optimization run would be
+    lost although the run itself completed.
+
+    This helper writes the value directly into the
+    underlying state dict, bypassing the yield
+    callback that raises.  It returns ``True`` when
+    the value could be stored and ``False`` when no
+    Streamlit script-run context exists (bare mode,
+    e.g. in unit tests).
+    """
+    from streamlit.runtime.scriptrunner_utils import (
+        script_run_context,
+    )
+
+    ctx = (
+        script_run_context.get_script_run_ctx(
+            suppress_warning=True,
+        )
+    )
+    session_state = (
+        getattr(ctx, "session_state", None)
+        if ctx is not None
+        else None
+    )
+    if session_state is None:
+        return False
+    session_state._state._new_session_state[key] = (
+        value
+    )
+    return True
+
+
 @dataclass(frozen=True, slots=True)
 class OptimizationSettings:
     """Settings of the evolutionary optimizer."""
@@ -1296,12 +1340,23 @@ def run_optimization(
     progress: (
         Callable[[int, float], None] | None
     ) = None,
+    on_best: (
+        Callable[[int, dict[str, float]], None]
+        | None
+    ) = None,
 ) -> OptimizationResult:
     """Run the evolutionary optimization.
 
     ``progress(generation, best_score)`` is called
     once per generation so UIs can show live
-    progress.
+    progress.  ``on_best(generation, values)`` is
+    called whenever the best candidate improves
+    with the generation number and the best
+    candidate's parameter values (internal units:
+    radians for angles, millimetres for lengths);
+    UIs use it to persist intermediate results so
+    a user stop still yields the best values found
+    so far (issue #93).
 
     Raises :class:`WorkflowError` with a user-facing
     message when the optimization cannot produce a
@@ -1378,6 +1433,7 @@ def run_optimization(
 
     history: list[float] = [engine.best_score]
     generations = 0
+    last_best_score = engine.best_score
     for generation in engine.run(
         children_count=(
             settings.children_count
@@ -1385,6 +1441,16 @@ def run_optimization(
     ):
         generations += 1
         history.append(engine.best_score)
+        if (
+            on_best is not None
+            and engine.best_score
+            < last_best_score
+        ):
+            last_best_score = engine.best_score
+            on_best(
+                generations,
+                engine.best_candidate.values(),
+            )
         if progress is not None:
             try:
                 progress(
