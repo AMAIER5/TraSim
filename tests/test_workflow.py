@@ -16,6 +16,7 @@ from analysis.target_curve import (
 
 from gui.workflow import (
     OptimizationSettings,
+    OptimizationStopped,
     WorkflowError,
     apply_parameter_overrides,
     load_inputs,
@@ -755,3 +756,46 @@ def test_preview_drive_angle_at_middle_position(
     template = parameter_template(inputs)
     html = preview(inputs, template)
     assert "<html" in html
+
+
+def test_run_optimization_stop_returns_best_so_far(
+    inputs,
+):
+    """Issue #93: stopping the optimization via the
+    progress callback (stop button) must return the
+    best values found so far instead of none."""
+    settings = OptimizationSettings(
+        population_size=20,
+        children_count=20,
+        selection_count=6,
+        max_generations=50,
+        seed=7,
+    )
+    calls: list[int] = []
+
+    def progress(
+        generation: int,
+        best_score: float,
+    ) -> None:
+        calls.append(generation)
+        if generation >= 2:
+            raise OptimizationStopped(
+                "stopped by user",
+            )
+
+    result = run_optimization(
+        inputs,
+        parameter_template(inputs),
+        settings,
+        progress=progress,
+    )
+    assert calls == [1, 2]
+    assert (
+        result.stop_reason
+        == "stopped_by_user"
+    )
+    assert result.generations == 2
+    assert math.isfinite(result.best_score)
+    assert "<html" in result.html
+    assert result.optimized_definition is not None
+    assert len(result.fitness_history) == 3
