@@ -10,6 +10,7 @@ Tests for the GUI mixed brake (mixer) workflow:
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
@@ -20,7 +21,10 @@ from gui.mixed_brake_workflow import (
     mixed_brake_parameter_template,
     run_mixed_brake_optimization,
 )
-from gui.workflow import WorkflowError
+from gui.workflow import (
+    OptimizationStopped,
+    WorkflowError,
+)
 
 EXAMPLES_DIR = (
     Path(__file__).parent.parent / "examples"
@@ -215,3 +219,71 @@ def test_parameter_template_has_free_pivots(inputs):
             )
             assert pivot_x.minimum < pivot_x.maximum
             assert not pivot_x.is_fixed
+
+
+def test_stop_returns_best_so_far(inputs):
+    """Issue #93: a user stop via the progress callback
+    returns the best mixed brake result found so far."""
+    settings = MixedBrakeSettings(
+        population_size=6,
+        children_count=6,
+        selection_count=3,
+        max_generations=20,
+        brake_positions=3,
+    )
+    template = mixed_brake_parameter_template(
+        inputs,
+    )
+    calls = []
+
+    def progress(generation, best_score):
+        calls.append(generation)
+        if generation >= 2:
+            raise OptimizationStopped(
+                "stopped by user",
+            )
+
+    result = run_mixed_brake_optimization(
+        inputs,
+        template,
+        settings,
+        progress=progress,
+    )
+    assert calls == [1, 2]
+    assert (
+        result.stop_reason
+        == "stopped_by_user"
+    )
+    assert result.generations == 2
+    assert math.isfinite(result.best_score)
+    assert result.optimized_definition is not None
+
+
+def test_brake_positions_two_means_no_interpolation(
+    inputs,
+):
+    """Issue #90: brake_positions == 2 optimizes only the
+    unbraked and fully braked limit curves."""
+    settings = MixedBrakeSettings(
+        population_size=6,
+        children_count=6,
+        selection_count=3,
+        max_generations=2,
+        brake_positions=2,
+    )
+    template = mixed_brake_parameter_template(
+        inputs,
+    )
+    result = run_mixed_brake_optimization(
+        inputs,
+        template,
+        settings,
+    )
+    assert result.brake_positions_deg == (
+        pytest.approx(
+            (
+                inputs.brake_min_deg,
+                inputs.brake_max_deg,
+            )
+        )
+    )

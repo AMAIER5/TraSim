@@ -69,15 +69,15 @@ users need no Python knowledge.
    - This single table is the only place where
      start values, bounds and the optimization
      release of every lever property are
-     maintained. Next to `length_start` and
-     `angle_start` two columns each are shown:
-     an **Optimierung** checkbox (release of the
+     maintained. Next to `length` and `angle`
+     two columns each are shown: an
+     **Optimierung** checkbox (release of the
      parameter for the optimization, enabled by
      default) and a read-only **Optimiert** value
      from the last optimization run.
-   - The pivot position (`pivot_x_start` /
-     `pivot_y_start`, filled from `pivot_x` /
-     `pivot_y`) is optimizable as well.  Its
+   - The pivot position (`pivot_x` / `pivot_y`)
+     is optimizable as well.  Its optimization
+     is disabled by default (issue #92); the
      bounds and release columns
      (`pivot_x_min`, `pivot_x_max`,
      `pivot_x_optimize`, `pivot_x_optimized`,
@@ -115,7 +115,7 @@ users need no Python knowledge.
      optimierten Werte als Startwerte übernehmen**
      button writes the optimized length and angle
      values of the last run directly into the
-     `length_start` / `angle_start` cells of the
+     `length` / `angle` cells of the
      mechanism table, so the next iteration starts
      from the optimized mechanism.
    - Optimization of pivot positions and axis
@@ -128,6 +128,13 @@ users need no Python knowledge.
    - Live progress shows the current generation
      and the best fitness; a line chart tracks the
      fitness history.
+   - The **Optimierung stoppen** button aborts
+     the run at any time. The best values found
+     until then are kept and shown as a regular
+     result (stop reason
+     `stopped_by_user`), so the progress of a run
+     can be used without waiting for the
+     stagnation limit (issue #93).
 7. **Download the result**
    - `simulation_result.html`: the usual result
      document (3D lever diagram + Soll/Ist curve).
@@ -146,9 +153,11 @@ Enthält die geladene `mechanism.csv` einen Hebel mit
 einem Eintrag in der Spalte `pivot_on`, erkennt die GUI das
 automatisch und schaltet in den Mischer-Modus
 (Bremsklappenbetätigung): der Erfolg der
-Optimierung wird über **fünf Bremsstellungen**
-(0 % / 25 % / 50 % / 75 % / 100 % Bremsweg)
-bewertet.
+Optimierung wird über die Bremsstellungen
+zwischen ungebremster und voll gebremster
+Zielkurve bewertet — standardmäßig über
+**fünf Bremsstellungen** (0 % / 25 % / 50 % /
+75 % / 100 % Bremsweg).
 
 ### Bedeutung des pivot_on-Hebels
 
@@ -186,22 +195,30 @@ id,...,pivot_on
 
 ### Aufbau der zwei Sollkurven-Bereiche in der GUI
 
-- Wie im Normalmodus wird die **Zielkurve ungebremst**
-  (`targetcurve.csv`) hochgeladen und in der
-  editierbaren Tabelle gepflegt; sie beschreibt das
-  Ausgangsverhalten bei 0 % Bremsweg.
-- Zusätzlich erscheint der Ausbereich
-  „Mischer-Modus: Zielkurve voll gebremst
-  (target_curve_braked.csv)“: hier wird die zweite
-  Sollkurve für die voll gebremste Stellung
-  (100 % Bremsweg) hochgeladen — eigene Datei
-  oder per Knopfdruck **Beispiel-Dateien laden**.
-  Ohne diese zweite Kurve startet der Modus nicht.
-- Die Zielkurven der Bremsstellungen 25 %, 50 %
-  und 75 % werden zwischen den beiden
-  Sollkurven interpoliert; die Optimierung
-  bewertet den Kandidaten über alle fünf
-  Bremsstellungen.
+- Beide Zielkurven werden im Dateien-Bereich der
+  Sidebar ausgewählt (inhaltlich getrennt von
+  den Optimierungs-Einstellungen, issue #89):
+  die **Zielkurve ungebremst**
+  (`targetcurve.csv`, Ausgangsverhalten bei 0 %
+  Bremsweg) und die **Zielkurve voll gebremst**
+  (`target_curve_braked.csv`, 100 % Bremsweg).
+  Das Auswahlfeld der gebremsten Zielkurve ist
+  ausgegraut, solange kein Mischer-Modus-
+  Mechanismus (Hebel mit `pivot_on`) geladen
+  wurde. Im Mischer-Modus lädt der Ausbereich
+  „Mischer-Modus“ alternativ die Beispiel-Dateien
+  per Knopfdruck; ohne zweite Kurve startet der
+  Modus nicht.
+- Die Anzahl der **interpolierten Bremsstellungen**
+  zwischen der ungebremsten und der voll
+  gebremsten Sollkurve ist in der Sidebar
+  einstellbar (issue #90): 0 = nur die beiden
+  Grenzkurven (schnellste Berechnung), Standard
+  3 = Zwischenstellung alle 25 % Bremsweg.
+  Die Zwischenkurven werden anteilig zwischen
+  den beiden Sollkurven interpoliert; die
+  Optimierung bewertet den Kandidaten über
+  alle so gewählten Bremsstellungen.
 - Die gebremste Zielkurve erscheint nach dem
   Hochladen als zweite editierbare Tabelle
   („Zielkurve voll gebremst“) mit eigener
@@ -228,7 +245,9 @@ id,...,pivot_on
   die Bremsstellung des Ergebnisses (optimierte
   Geometrie); die Soll-/Ist-Kurve des Berichts
   ist jeweils mit „Soll Bremse XX %“ / „Bremse
-  XX %“ beschriftet.
+  XX %“ beschriftet. Die Schalter folgen der in
+  der Sidebar gewählten Anzahl interpolierter
+  Bremsstellungen.
 
 ### Beispiel: kompletter Durchlauf am Mischbrems-Beispiel
 

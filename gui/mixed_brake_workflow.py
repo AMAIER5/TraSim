@@ -52,6 +52,7 @@ from analysis.transmission_angle import (
 )
 from core.point3d import Point3D
 from gui.workflow import (
+    OptimizationStopped,
     WorkflowError,
     _drive_lever_id,
     _text_to_temp_file,
@@ -1023,10 +1024,16 @@ def run_mixed_brake_optimization(
         generations += 1
         history.append(engine.best_score)
         if progress is not None:
-            progress(
-                generations,
-                engine.best_score,
-            )
+            try:
+                progress(
+                    generations,
+                    engine.best_score,
+                )
+            except OptimizationStopped:
+                engine.stop_reason = (
+                    "stopped_by_user"
+                )
+                break
     engine.close()
     best = engine.best_candidate
     if best is None:

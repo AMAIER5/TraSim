@@ -128,6 +128,16 @@ class WorkflowError(Exception):
     """User-facing error in the optimization workflow."""
 
 
+class OptimizationStopped(Exception):
+    """The optimization was stopped by the user.
+
+    Raised by a UI progress callback (e.g. when the
+    user presses the stop button).  The workflow
+    catches it and returns the best result found so
+    far instead of discarding it (issue #93).
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class OptimizationSettings:
     """Settings of the evolutionary optimizer."""
@@ -674,13 +684,13 @@ def with_mechanism_levers(
                     pivot=Point3D(
                         x=_number(
                             row,
-                            "pivot_x_start",
-                            fallback="pivot_x",
+                            "pivot_x",
+                            fallback="pivot_x_start",
                         ),
                         y=_number(
                             row,
-                            "pivot_y_start",
-                            fallback="pivot_y",
+                            "pivot_y",
+                            fallback="pivot_y_start",
                         ),
                         z=_number(row, "pivot_z"),
                     ),
@@ -694,7 +704,8 @@ def with_mechanism_levers(
                     ),
                     length_start=_number(
                         row,
-                        "length_start",
+                        "length",
+                        fallback="length_start",
                     ),
                     angle_min=math.radians(
                         _number(row, "angle_min")
@@ -703,7 +714,11 @@ def with_mechanism_levers(
                         _number(row, "angle_max")
                     ),
                     angle_start=math.radians(
-                        _number(row, "angle_start")
+                        _number(
+                            row,
+                            "angle",
+                            fallback="angle_start",
+                        )
                     ),
                     axis=Vector3D(
                         x=_number(row, "axis_x"),
@@ -881,7 +896,10 @@ def optimized_display_values(
             optimized_map[length_key]
             if lever_snapshot is not None
             and lever_snapshot["length"]
-            == row["length_start"]
+            == row.get(
+                "length",
+                row.get("length_start"),
+            )
             and length_key in optimized_map
             else None
         )
@@ -891,7 +909,10 @@ def optimized_display_values(
             )
             if lever_snapshot is not None
             and lever_snapshot["angle"]
-            == row["angle_start"]
+            == row.get(
+                "angle",
+                row.get("angle_start"),
+            )
             and angle_key in optimized_map
             else None
         )
@@ -901,7 +922,10 @@ def optimized_display_values(
             and lever_snapshot.get(
                 "pivot_x"
             )
-            == row.get("pivot_x_start")
+            == row.get(
+                "pivot_x",
+                row.get("pivot_x_start"),
+            )
             and pivot_x_key in optimized_map
             else None
         )
@@ -911,7 +935,10 @@ def optimized_display_values(
             and lever_snapshot.get(
                 "pivot_y"
             )
-            == row.get("pivot_y_start")
+            == row.get(
+                "pivot_y",
+                row.get("pivot_y_start"),
+            )
             and pivot_y_key in optimized_map
             else None
         )
@@ -969,28 +996,28 @@ def adopt_single_optimized_values(
             row,
             "length_adopt",
             "length_optimized",
-            "length_start",
+            "length",
         ):
             adopted = True
         if _adopt(
             row,
             "angle_adopt",
             "angle_optimized",
-            "angle_start",
+            "angle",
         ):
             adopted = True
         if _adopt(
             row,
             "pivot_x_adopt",
             "pivot_x_optimized",
-            "pivot_x_start",
+            "pivot_x",
         ):
             adopted = True
         if _adopt(
             row,
             "pivot_y_adopt",
             "pivot_y_optimized",
-            "pivot_y_start",
+            "pivot_y",
         ):
             adopted = True
     return adopted
@@ -1334,10 +1361,16 @@ def run_optimization(
         generations += 1
         history.append(engine.best_score)
         if progress is not None:
-            progress(
-                generations,
-                engine.best_score,
-            )
+            try:
+                progress(
+                    generations,
+                    engine.best_score,
+                )
+            except OptimizationStopped:
+                engine.stop_reason = (
+                    "stopped_by_user"
+                )
+                break
 
     best = engine.best_candidate
     if best is None:

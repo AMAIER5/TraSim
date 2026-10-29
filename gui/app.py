@@ -28,6 +28,9 @@ import sys
 from pathlib import Path
 
 import streamlit as st
+from streamlit.runtime.scriptrunner import (
+    StopException,
+)
 
 from analysis.curve_plotter import (
     CurvePlotter,
@@ -48,6 +51,7 @@ from gui.workflow import (
     LoadedInputs,
     OptimizationResult,
     OptimizationSettings,
+    OptimizationStopped,
     WorkflowError,
     adopt_single_optimized_values,
     apply_parameter_overrides,
@@ -84,6 +88,45 @@ st.caption(
     "Ergebnis als HTML-Dokument speichern."
 )
 
+def _csv_sniff_mixed_mode(
+    data: bytes,
+) -> bool:
+    """Cheap check whether the uploaded mechanism CSV
+    contains a lever with pivot_on (mixed brake
+    mode), used to enable the braked target curve
+    picker before the file is fully parsed
+    (issue #89)."""
+    try:
+        text = data.decode(
+            "utf-8",
+            errors="replace",
+        )
+    except AttributeError:
+        return False
+    lines = [
+        line
+        for line in text.splitlines()
+        if line.strip()
+    ]
+    if len(lines) < 2:
+        return False
+    for delimiter in (";", ","):
+        cells = lines[0].split(delimiter)
+        if "pivot_on" in cells:
+            index = cells.index("pivot_on")
+            return any(
+                len(
+                    line.split(delimiter)
+                )
+                > index
+                and line.split(delimiter)[
+                    index
+                ].strip()
+                for line in lines[1:]
+            )
+    return False
+
+
 with st.sidebar:
     st.header("Dateien")
     mechanism_upload = st.file_uploader(
@@ -92,9 +135,31 @@ with st.sidebar:
         key="mechanism",
     )
     target_upload = st.file_uploader(
-        "Zielkurve (targetcurve.csv)",
+        "Zielkurve ungebremst "
+        "(targetcurve.csv)",
         type=["csv"],
         key="target",
+    )
+    mechanism_bytes = (
+        mechanism_upload.getvalue()
+        if mechanism_upload is not None
+        else None
+    )
+    braked_upload = st.file_uploader(
+        "Zielkurve voll gebremst "
+        "(target_curve_braked.csv)",
+        type=["csv"],
+        key="target_braked",
+        disabled=(
+            not _csv_sniff_mixed_mode(
+                mechanism_bytes
+            )
+        ),
+        help=(
+            "Wird erst aktiviert, wenn ein "
+            "Mischer-Modus-Mechanismus (Hebel mit "
+            "pivot_on) geladen wurde."
+        ),
     )
     st.divider()
     st.header("Optimierung")
@@ -210,6 +275,23 @@ with st.sidebar:
             "reproduzierbare Optimierungsläufe."
         ),
     )
+    interpolated_steps = st.number_input(
+        "Interpolierte Bremsstellungen",
+        min_value=0,
+        max_value=20,
+        value=3,
+        step=1,
+        help=(
+            "Anzahl der interpolierten Zwischen-"
+            "stellungen zwischen der ungebremsten "
+            "und der voll gebremsten Zielkurve, "
+            "auf die im Mischer-Modus optimiert "
+            "wird. 0 = nur die beiden Grenzkurven "
+            "(schnellste Berechnung); "
+            "Standard 3 = Zwischenstellung alle "
+            "25 % Bremsweg."
+        ),
+    )
 
 def _mixed_brake_example_dir():
     meipass = getattr(sys, "_MEIPASS", None)
@@ -317,22 +399,17 @@ mixed_mode = _has_pivot_on(inputs.definition)
 mixed_inputs = None
 if mixed_mode:
     with st.expander(
-        "Mischer-Modus: Zielkurve voll gebremst "
-        "(target_curve_braked.csv)"
+        "Mischer-Modus: Beispiel-Dateien laden"
     ):
         st.caption(
             "Der geladene Mechanismus enthält einen "
             "Hebel mit pivot_on (Mischerhebel). "
             "Zusätzlich zur Zielkurve ungebremst wird "
             "eine zweite Zielkurve für die voll "
-            "gebremste Stellung benötigt; die "
+            "gebremste Stellung benötigt (Zielkurve "
+            "voll gebremst); die "
             "Zielkurven der übrigen Bremsstellungen "
             "werden interpoliert."
-        )
-        braked_upload = st.file_uploader(
-            "Zielkurve voll gebremst",
-            type=["csv"],
-            key="target_braked",
         )
         load_examples = st.button(
             "Beispiel-Dateien laden",
@@ -400,7 +477,11 @@ st.success(
         else ""
     )
 )
-st.header("Zielkurve")
+st.header(
+    "Zielkurve ungebremst"
+    if mixed_mode
+    else "Zielkurve"
+)
 st.caption(
     "Die eingelesenen Stützpunkte der Zielkurve "
     "können hier direkt bearbeitet, ergänzt und "
@@ -608,7 +689,11 @@ if mixed_inputs is not None:
 
 curve_column, weight_column = st.columns(2)
 with curve_column:
-    st.subheader("Zielkurve")
+    st.subheader(
+        "Zielkurve ungebremst"
+        if mixed_mode
+        else "Zielkurve"
+    )
     chart_data = {
         "Eingabewinkel (°)": [
             round(math.degrees(angle), 1)
@@ -729,11 +814,13 @@ elif (
 _PIVOT_COLUMN_ORDER = (
     "pivot_x_min",
     "pivot_x_max",
+    "pivot_x",
     "pivot_x_optimize",
     "pivot_x_optimized",
     "pivot_x_adopt",
     "pivot_y_min",
     "pivot_y_max",
+    "pivot_y",
     "pivot_y_optimize",
     "pivot_y_optimized",
     "pivot_y_adopt",
@@ -743,18 +830,18 @@ _BASE_COLUMN_ORDER = (
     "id",
     "length_min",
     "length_max",
-    "length_start",
+    "length",
     "length_optimize",
     "length_optimized",
     "length_adopt",
     "angle_min",
     "angle_max",
-    "angle_start",
+    "angle",
     "angle_optimize",
     "angle_optimized",
     "angle_adopt",
-    "pivot_x_start",
-    "pivot_y_start",
+    "pivot_x",
+    "pivot_y",
     "pivot_z",
     "axis_x",
     "axis_y",
@@ -773,18 +860,18 @@ def _mechanism_column_order(
 ) -> tuple[str, ...]:
     """Column order of the mechanism table.
 
-    The pivot optimization columns
-    (min/max/start/optimize/optimized/adopt per
-    pivot axis) are hidden by default and only
-    shown when the user expands them, keeping
-    the table readable (issue #83).
+    Follows the order requested in issue #92; the
+    pivot optimization columns (min/max/optimize/
+    optimized/adopt per pivot axis) are hidden by
+    default and only shown when the user expands
+    them, keeping the table readable (issue #83).
     """
     if not show_pivot_columns:
         return _BASE_COLUMN_ORDER
     return (
-        _BASE_COLUMN_ORDER[:14]
+        _BASE_COLUMN_ORDER[:13]
         + _PIVOT_COLUMN_ORDER
-        + _BASE_COLUMN_ORDER[14:]
+        + _BASE_COLUMN_ORDER[13:]
     )
 
 
@@ -794,7 +881,7 @@ def _lever_rows(definition) -> list[dict]:
             "id": lever.id,
             "length_min": lever.length_min,
             "length_max": lever.length_max,
-            "length_start": lever.length_start,
+            "length": lever.length_start,
             "length_optimize": True,
             "length_optimized": None,
             "length_adopt": False,
@@ -804,7 +891,7 @@ def _lever_rows(definition) -> list[dict]:
             "angle_max": math.degrees(
                 lever.angle_max,
             ),
-            "angle_start": math.degrees(
+            "angle": math.degrees(
                 lever.angle_start,
             ),
             "angle_optimize": True,
@@ -818,8 +905,8 @@ def _lever_rows(definition) -> list[dict]:
                 lever.pivot.x
                 + DEFAULT_PIVOT_OFFSET
             ),
-            "pivot_x_start": lever.pivot.x,
-            "pivot_x_optimize": True,
+            "pivot_x": lever.pivot.x,
+            "pivot_x_optimize": False,
             "pivot_x_optimized": None,
             "pivot_x_adopt": False,
             "pivot_y_min": (
@@ -830,8 +917,8 @@ def _lever_rows(definition) -> list[dict]:
                 lever.pivot.y
                 + DEFAULT_PIVOT_OFFSET
             ),
-            "pivot_y_start": lever.pivot.y,
-            "pivot_y_optimize": True,
+            "pivot_y": lever.pivot.y,
+            "pivot_y_optimize": False,
             "pivot_y_optimized": None,
             "pivot_y_adopt": False,
             "pivot_z": lever.pivot.z,
@@ -861,9 +948,6 @@ def _lever_rows(definition) -> list[dict]:
     ]
 
 
-mechanism_bytes = (
-    mechanism_upload.getvalue()
-)
 if (
     st.session_state.get(
         "mechanism_rows_source"
@@ -946,8 +1030,8 @@ show_pivot_columns = st.toggle(
         "Positionen (pivot_x / pivot_y) ein. "
         "Standardmäßig sind sie ausgeblendet, "
         "um die Tabelle übersichtlich zu halten; "
-        "die Drehpunkte sind weiterhin Teil der "
-        "Optimierung."
+        "die Drehpunkt-Optimierung ist "
+        "standardmäßig deaktiviert."
     ),
 )
 
@@ -986,8 +1070,8 @@ edited_mechanism = st.data_editor(
             "length_max",
             format="%.1f",
         ),
-        "length_start": st.column_config.NumberColumn(
-            "length_start",
+        "length": st.column_config.NumberColumn(
+            "length",
             format="%.1f",
         ),
         "length_optimize": (
@@ -1019,8 +1103,8 @@ edited_mechanism = st.data_editor(
             "angle_max (°)",
             format="%.1f",
         ),
-        "angle_start": st.column_config.NumberColumn(
-            "angle_start (°)",
+        "angle": st.column_config.NumberColumn(
+            "angle (°)",
             format="%.1f",
             help=(
                 "Startwinkel: Position des Hebels bei der "
@@ -1058,22 +1142,16 @@ edited_mechanism = st.data_editor(
             "pivot_x_max",
             format="%.1f",
         ),
-        "pivot_x_start": (
+        "pivot_x": (
             st.column_config.NumberColumn(
-                "pivot_x_start",
+                "pivot_x",
                 format="%.1f",
-                help=(
-                    "Startwert des Drehpunkts in x-"
-                    "Richtung; wird automatisch aus "
-                    "pivot_x befüllt und mit diesem "
-                    "gekoppelt."
-                ),
             )
         ),
         "pivot_x_optimize": (
             st.column_config.CheckboxColumn(
                 "Optimierung",
-                default=True,
+                default=False,
                 help="Drehpunkt-x für die Optimierung freigeben",
             )
         ),
@@ -1099,22 +1177,16 @@ edited_mechanism = st.data_editor(
             "pivot_y_max",
             format="%.1f",
         ),
-        "pivot_y_start": (
+        "pivot_y": (
             st.column_config.NumberColumn(
-                "pivot_y_start",
+                "pivot_y",
                 format="%.1f",
-                help=(
-                    "Startwert des Drehpunkts in y-"
-                    "Richtung; wird automatisch aus "
-                    "pivot_y befüllt und mit diesem "
-                    "gekoppelt."
-                ),
             )
         ),
         "pivot_y_optimize": (
             st.column_config.CheckboxColumn(
                 "Optimierung",
-                default=True,
+                default=False,
                 help="Drehpunkt-y für die Optimierung freigeben",
             )
         ),
@@ -1209,11 +1281,11 @@ if optimized_map and st.button(
             f"lever.{lever_id}.angle"
         )
         if length_key in optimized_map:
-            row["length_start"] = (
+            row["length"] = (
                 optimized_map[length_key]
             )
         if angle_key in optimized_map:
-            row["angle_start"] = (
+            row["angle"] = (
                 math.degrees(
                     optimized_map[angle_key],
                 )
@@ -1225,11 +1297,11 @@ if optimized_map and st.button(
             f"lever.{lever_id}.pivot.y"
         )
         if pivot_x_key in optimized_map:
-            row["pivot_x_start"] = (
+            row["pivot_x"] = (
                 optimized_map[pivot_x_key]
             )
         if pivot_y_key in optimized_map:
-            row["pivot_y_start"] = (
+            row["pivot_y"] = (
                 optimized_map[pivot_y_key]
             )
         row["length_adopt"] = False
@@ -1261,10 +1333,10 @@ overrides: dict[
 for row in edited_mechanism:
     lever_id = int(row["id"])
     length_value = float(
-        row["length_start"],
+        row["length"],
     )
     angle_value = float(
-        row["angle_start"],
+        row["angle"],
     )
     if row["length_optimize"]:
         length_min = float(
@@ -1314,25 +1386,25 @@ for row in edited_mechanism:
         angle_max,
         angle_value,
     )
-    pivot_x_start = float(
-        row["pivot_x_start"],
+    pivot_x_value = float(
+        row["pivot_x"],
     )
-    pivot_y_start = float(
-        row["pivot_y_start"],
+    pivot_y_value = float(
+        row["pivot_y"],
     )
     if row.get("pivot_x_optimize", False):
         pivot_x_min = float(row["pivot_x_min"])
         pivot_x_max = float(row["pivot_x_max"])
     else:
         pivot_x_min = pivot_x_max = (
-            pivot_x_start
+            pivot_x_value
         )
     if row.get("pivot_y_optimize", False):
         pivot_y_min = float(row["pivot_y_min"])
         pivot_y_max = float(row["pivot_y_max"])
     else:
         pivot_y_min = pivot_y_max = (
-            pivot_y_start
+            pivot_y_value
         )
     if pivot_x_max < pivot_x_min:
         st.error(
@@ -1351,14 +1423,14 @@ for row in edited_mechanism:
     ] = (
         pivot_x_min,
         pivot_x_max,
-        pivot_x_start,
+        pivot_x_value,
     )
     overrides[
         f"lever.{lever_id}.pivot.y"
     ] = (
         pivot_y_min,
         pivot_y_max,
-        pivot_y_start,
+        pivot_y_value,
     )
 
 try:
@@ -1399,9 +1471,39 @@ preview_tab, result_tab = st.tabs(
     ["Vorschau", "Ergebnis"]
 )
 
-BRAKE_POSITIONS = (0, 25, 50, 75, 100)
 PREVIEW_BRAKE_KEY = (
     "mixed_preview_brake_position"
+)
+
+
+def _brake_positions(
+    interpolated_steps: int,
+) -> tuple[int, ...]:
+    """Brake positions (%) of the mixed brake grid.
+
+    ``interpolated_steps`` is the number of
+    intermediate positions between the unbraked
+    (0 %) and fully braked (100 %) curve; 0
+    optimizes only the two limit curves
+    (issue #90).
+    """
+    steps = max(0, int(interpolated_steps))
+    if steps == 0:
+        return (0, 100)
+    return tuple(
+        round(100 * index / (steps + 1))
+        for index in range(steps + 2)
+    )
+
+
+def _position_count(
+    interpolated_steps: int,
+) -> int:
+    return max(2, int(interpolated_steps) + 2)
+
+
+BRAKE_POSITIONS = _brake_positions(
+    interpolated_steps
 )
 
 with preview_tab:
@@ -1471,13 +1573,18 @@ with preview_tab:
                             preview_brake
                             / 100.0
                         ),
+                        position_count=(
+                            _position_count(
+                                interpolated_steps
+                            )
+                        ),
                     )
                 )
             except WorkflowError as error:
                 st.error(str(error))
                 preview_state = None
             if preview_state is not None:
-                st.components.v1.html(
+                st.iframe(
                     _single_mechanism_report(
                         (
                             "TraSim — Vorschau "
@@ -1489,19 +1596,16 @@ with preview_tab:
                         show_actual=True,
                     ),
                     height=900,
-                    scrolling=True,
                 )
             else:
-                st.components.v1.html(
+                st.iframe(
                     preview_html,
                     height=900,
-                    scrolling=True,
                 )
         else:
-            st.components.v1.html(
+            st.iframe(
                 preview_html,
                 height=900,
-                scrolling=True,
             )
     else:
         st.info(
@@ -1552,30 +1656,40 @@ with result_tab:
                     "läuft …"
                 ),
             )
+            st.button(
+                "Optimierung stoppen",
+                key="stop_mixed_button",
+            )
 
             def report_mixed(
                 generation: int,
                 best_score: float,
             ) -> None:
-                progress_mixed.progress(
-                    min(
-                        generation
-                        / max(
-                            1,
-                            (
-                                mixed_settings
-                                .max_generations
+                try:
+                    progress_mixed.progress(
+                        min(
+                            generation
+                            / max(
+                                1,
+                                (
+                                    mixed_settings
+                                    .max_generations
+                                ),
                             ),
+                            1.0,
                         ),
-                        1.0,
-                    ),
-                    text=(
-                        f"Generation "
-                        f"{generation} · "
-                        f"Fitness "
-                        f"{best_score:.6f}"
-                    ),
-                )
+                        text=(
+                            f"Generation "
+                            f"{generation} · "
+                            f"Fitness "
+                            f"{best_score:.6f}"
+                        ),
+                    )
+                except StopException as error:
+                    raise OptimizationStopped(
+                        "Mischer-Optimierung vom "
+                        "Benutzer gestoppt.",
+                    ) from error
 
             try:
                 result = run_mixed_brake_optimization(
@@ -1600,16 +1714,16 @@ with result_tab:
             ] = {
                 int(row["id"]): {
                     "length": float(
-                        row["length_start"],
+                        row["length"],
                     ),
                     "angle": float(
-                        row["angle_start"],
+                        row["angle"],
                     ),
                     "pivot_x": float(
-                        row["pivot_x_start"],
+                        row["pivot_x"],
                     ),
                     "pivot_y": float(
-                        row["pivot_y_start"],
+                        row["pivot_y"],
                     ),
                 }
                 for row in edited_mechanism
@@ -1636,6 +1750,10 @@ with result_tab:
             0.0,
             text="Optimierung läuft …",
         )
+        st.button(
+            "Optimierung stoppen",
+            key="stop_optimization_button",
+        )
         status_text = st.empty()
         score_chart = st.empty()
 
@@ -1651,13 +1769,19 @@ with result_tab:
                 ),
                 1.0,
             )
-            progress_bar.progress(
-                fraction,
-                text=(
-                    f"Generation {generation} · "
-                    f"Fitness {best_score:.6f}"
-                ),
-            )
+            try:
+                progress_bar.progress(
+                    fraction,
+                    text=(
+                        f"Generation {generation} · "
+                        f"Fitness {best_score:.6f}"
+                    ),
+                )
+            except StopException as error:
+                raise OptimizationStopped(
+                    "Optimierung vom "
+                    "Benutzer gestoppt.",
+                ) from error
             status_text.write(
                 f"**Generation:** {generation} · "
                 f"**Beste Fitness:** "
@@ -1688,16 +1812,16 @@ with result_tab:
         ] = {
             int(row["id"]): {
                 "length": float(
-                    row["length_start"],
+                    row["length"],
                 ),
                 "angle": float(
-                    row["angle_start"],
+                    row["angle"],
                 ),
                 "pivot_x": float(
-                    row["pivot_x_start"],
+                    row["pivot_x"],
                 ),
                 "pivot_y": float(
-                    row["pivot_y_start"],
+                    row["pivot_y"],
                 ),
             }
             for row in edited_mechanism
@@ -1789,6 +1913,11 @@ if mixed_result is not None:
                             result_brake
                             / 100.0
                         ),
+                        position_count=(
+                            _position_count(
+                                interpolated_steps
+                            )
+                        ),
                     )
                 )
             else:
@@ -1815,7 +1944,7 @@ if mixed_result is not None:
                 mime="text/csv",
             )
         if result_state is not None:
-            st.components.v1.html(
+            st.iframe(
                 _single_mechanism_report(
                     (
                         "TraSim — Ergebnis "
@@ -1827,7 +1956,6 @@ if mixed_result is not None:
                     show_actual=True,
                 ),
                 height=900,
-                scrolling=True,
             )
 elif result is not None:
     with result_tab:
@@ -1868,8 +1996,7 @@ elif result is not None:
             ),
             mime="text/csv",
         )
-        st.components.v1.html(
+        st.iframe(
             result.html,
             height=900,
-            scrolling=True,
         )
