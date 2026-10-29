@@ -387,8 +387,11 @@ Rules:
   `MixedBrakeBuilder` (see `mechanics/mixed_brake_builder.py`);
   the referenced lever acts as the brake lever, the referencing
   lever as the mixer lever.
-- The mixed brake workflow requires **exactly one** lever with
-  `pivot_on`.
+- Several levers may carry `pivot_on`, provided they all
+  reference the **same** adjusting lever: they then share
+  the common pivot at its endpoint (e.g. two mixer levers
+  rigidly `coupled` on one axis). The mixed brake workflow
+  requires at least one lever with `pivot_on`.
 - All lever endpoints stay optimizable: the mixer lever
   keeps its own `lever.<id>.length` and `lever.<id>.angle`
   parameters, the adjusting lever keeps `length`, `angle`

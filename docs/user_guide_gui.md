@@ -180,9 +180,13 @@ Zielkurve bewertet — standardmäßig über
   übernommen. Die Winkel-Grenzen des
   Mischerhebels behalten ihre übliche Bedeutung
   (Hebelwinkel relativ zur Referenzrichtung).
-- Genau ein Hebel darf `pivot_on` besitzen; der
+- Mindestens ein Hebel muss `pivot_on` besitzen; der
   Verweis darf nicht auf einen anderen pivot_on-
-  Hebel zeigen.
+  Hebel zeigen. Mehrere Hebel dürfen `pivot_on`
+  besitzen, wenn sie alle auf denselben
+  Verstellhebel verweisen (z. B. zwei über
+  `coupled` starr verbundene Mischerhebel mit
+  gemeinsamem Drehpunkt).
 
 ### CSV-Format im Überblick
 

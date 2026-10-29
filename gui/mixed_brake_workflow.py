@@ -270,18 +270,30 @@ def mixed_brake_inputs_from_parts(
     curves.
 
     Raises WorkflowError when the definition does not
-    contain exactly one mixer lever with pivot_on.
+    contain at least one mixer lever with pivot_on, or
+    when the pivot_on levers do not share the same
+    adjusting lever.
     """
     mixers = [
         lever
         for lever in definition.levers
         if lever.pivot_on is not None
     ]
-    if len(mixers) != 1:
+    if len(mixers) < 1:
         raise WorkflowError(
-            "Der Mischer-Modus ben\u00f6tigt genau einen "
+            "Der Mischer-Modus ben\u00f6tigt mindestens einen "
             "Hebel mit pivot_on (Mischerhebel); "
             f"gefunden: {len(mixers)}."
+        )
+    reference_ids = {
+        lever.pivot_reference.lever_id
+        for lever in mixers
+    }
+    if len(reference_ids) != 1:
+        raise WorkflowError(
+            "Alle Hebel mit pivot_on m\u00fcssen auf denselben "
+            "Verstellhebel verweisen; gefunden: "
+            f"{sorted(reference_ids)}."
         )
     mixer = mixers[0]
     brake = definition.get_lever(
@@ -331,11 +343,21 @@ def _load_mixed_brake_inputs(
             for lever in definition.levers
             if lever.pivot_on is not None
         ]
-        if len(mixers) != 1:
+        if len(mixers) < 1:
             raise WorkflowError(
-                "Der Mischer-Modus benötigt genau einen "
+                "Der Mischer-Modus benötigt mindestens einen "
                 "Hebel mit pivot_on (Mischerhebel); "
                 f"gefunden: {len(mixers)}."
+            )
+        reference_ids = {
+            lever.pivot_reference.lever_id
+            for lever in mixers
+        }
+        if len(reference_ids) != 1:
+            raise WorkflowError(
+                "Alle Hebel mit pivot_on müssen auf "
+                "denselben Verstellhebel verweisen; gefunden: "
+                f"{sorted(reference_ids)}."
             )
         mixer = mixers[0]
         brake = definition.get_lever(

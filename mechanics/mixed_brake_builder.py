@@ -136,11 +136,21 @@ class MixedBrakeBuilder:
             if lever.pivot_on is not None
         ]
         if mixer_lever_id is None:
-            if len(mixer_candidates) != 1:
+            if len(mixer_candidates) < 1:
                 raise MechanismBuildError(
-                    "exactly one lever with pivot_on is "
+                    "at least one lever with pivot_on is "
                     "required to identify the mixer lever; "
                     f"found {len(mixer_candidates)}"
+                )
+            reference_ids = {
+                lever.pivot_reference.lever_id
+                for lever in mixer_candidates
+            }
+            if len(reference_ids) != 1:
+                raise MechanismBuildError(
+                    "all levers with pivot_on must reference "
+                    "the same adjusting lever; found "
+                    f"{sorted(reference_ids)}"
                 )
             mixer = mixer_candidates[0]
         else:
