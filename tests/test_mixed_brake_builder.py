@@ -490,3 +490,102 @@ def test_adjusting_lever_index_arbitrary():
     builder = MixedBrakeBuilder(definition)
     assert builder._brake_id == 9
     assert builder._mixer_id == 7
+
+
+def test_two_coupled_mixers_share_pivot_on_same_adjusting_lever():
+    """Two mixer levers coupled on one axis may both use
+    pivot_on with the same adjusting lever; they share the
+    pivot at its endpoint."""
+    from core.point3d import Point3D
+    from core.vector3d import Vector3D
+    from model.lever_definition import LeverDefinition
+    from model.mechanism_definition import (
+        MechanismDefinition,
+    )
+
+    def lever(id, pivot, driver=None, coupled=None,
+              pivot_on=None):
+        return LeverDefinition(
+            id=id,
+            pivot=pivot,
+            length_min=20,
+            length_max=100,
+            length_start=50,
+            angle_min=math.radians(-60),
+            angle_max=math.radians(60),
+            angle_start=0.0,
+            axis=Vector3D(0.0, 0.0, 1.0),
+            driver=driver,
+            coupled=coupled,
+            pivot_on=pivot_on,
+        )
+
+    adjusting = lever(5, Point3D(0.0, 0.0, 0.0))
+    mixer_a = lever(2, Point3D(999.0, 999.0, 0.0),
+                    pivot_on="lever5")
+    mixer_b = lever(3, Point3D(999.0, 999.0, 0.0),
+                    coupled=2, pivot_on="lever5")
+    driven = lever(4, Point3D(120.0, 0.0, 0.0),
+                   driver=2)
+    drive = LeverDefinition(
+        id=1,
+        pivot=Point3D(-80.0, 0.0, 0.0),
+        length_min=20,
+        length_max=100,
+        length_start=60,
+        angle_min=math.radians(-60),
+        angle_max=math.radians(60),
+        angle_start=0.0,
+        axis=Vector3D(0.0, 0.0, 1.0),
+        driver=None,
+    )
+    definition = MechanismDefinition(
+        (drive, mixer_a, mixer_b, driven, adjusting)
+    )
+    builder = MixedBrakeBuilder(definition)
+    assert builder._brake_id == 5
+    mechanism = builder.build(0.0)
+    lever_a = mechanism.levers[1].lever
+    lever_b = mechanism.levers[2].lever
+    assert lever_a.pivot == pytest.approx(
+        lever_b.pivot
+    )
+    assert lever_a.axis == lever_b.axis
+
+
+def test_pivot_on_levers_must_share_adjusting_lever():
+    """pivot_on levers referencing different adjusting
+    levers are rejected."""
+    from core.point3d import Point3D
+    from core.vector3d import Vector3D
+    from model.lever_definition import LeverDefinition
+    from model.mechanism_definition import (
+        MechanismDefinition,
+    )
+
+    def lever(id, pivot, pivot_on=None):
+        return LeverDefinition(
+            id=id,
+            pivot=pivot,
+            length_min=20,
+            length_max=100,
+            length_start=50,
+            angle_min=math.radians(-60),
+            angle_max=math.radians(60),
+            angle_start=0.0,
+            axis=Vector3D(0.0, 0.0, 1.0),
+            pivot_on=pivot_on,
+        )
+
+    definition = MechanismDefinition(
+        (
+            lever(5, Point3D(0.0, 0.0, 0.0)),
+            lever(6, Point3D(0.0, 40.0, 0.0)),
+            lever(2, Point3D(0.0, 0.0, 0.0),
+                  pivot_on="lever5"),
+            lever(3, Point3D(0.0, 0.0, 0.0),
+                  pivot_on="lever6"),
+        )
+    )
+    with pytest.raises(MechanismBuildError):
+        MixedBrakeBuilder(definition)
