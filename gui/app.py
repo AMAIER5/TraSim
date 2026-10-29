@@ -694,13 +694,15 @@ with curve_column:
                 mixed_inputs.braked.output_angles
             )
         ]
+    y_columns = ["Ungebremst (°)"]
+    if "Voll gebremst (°)" in chart_data:
+        y_columns.append(
+            "Voll gebremst (°)"
+        )
     st.line_chart(
         chart_data,
         x="Eingabewinkel (°)",
-        y=[
-            "Ungebremst (°)",
-            "Voll gebremst (°)",
-        ],
+        y=y_columns,
         x_label="Eingabewinkel (°)",
         y_label="Ausgangswinkel (°)",
     )
@@ -727,10 +729,15 @@ with weight_column:
         ] = list(
             mixed_inputs.braked.weights,
         )
+    weight_y_columns = ["Ungebremst"]
+    if "Voll gebremst" in weight_data:
+        weight_y_columns.append(
+            "Voll gebremst"
+        )
     st.bar_chart(
         weight_data,
         x="Eingabewinkel (°)",
-        y=["Ungebremst", "Voll gebremst"],
+        y=weight_y_columns,
         x_label="Eingabewinkel (°)",
         y_label="Gewicht",
         stack=False,
