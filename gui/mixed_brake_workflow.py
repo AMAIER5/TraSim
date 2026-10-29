@@ -574,7 +574,10 @@ def _parameter_definition(
                             f"lever.{lever.id}.pivot.y",
                             lever.pivot.y,
                         ),
-                        z=lever.pivot.z,
+                        z=values.get(
+                            f"lever.{lever.id}.pivot.z",
+                            lever.pivot.z,
+                        ),
                     )
                     if lever.pivot_on is None
                     else lever.pivot
@@ -773,18 +776,29 @@ def _brake_position_report(
         if state is None:
             continue
         fraction = state.brake_fraction
-        input_deg = state.input_angles_deg
+        input_rad = tuple(
+            math.radians(angle)
+            for angle in (
+                state.input_angles_deg
+            )
+        )
         plotter.add_target_curve(
-            input_deg,
-            state.target_deg,
+            input_rad,
+            tuple(
+                math.radians(angle)
+                for angle in state.target_deg
+            ),
             label=(
                 f"Soll Bremse "
                 f"{100 * fraction:.0f} %"
             ),
         )
         plotter.add_actual_curve(
-            input_deg,
-            state.actual_deg,
+            input_rad,
+            tuple(
+                math.radians(angle)
+                for angle in state.actual_deg
+            ),
             label=(
                 f"Bremse "
                 f"{100 * fraction:.0f} %"
@@ -795,6 +809,49 @@ def _brake_position_report(
             plotter.add_mechanism_state(
                 state
             )
+    return plotter.build_html()
+
+
+def single_brake_position_report(
+    title: str,
+    state: MixedBrakeState,
+    *,
+    show_actual: bool = True,
+) -> str:
+    """HTML report of one brake position (issue #96:
+    the degree values of the state are converted to
+    radians for the plotter, so the diagram shows
+    the usual degree axes)."""
+    plotter = CurvePlotter(title=title)
+    input_angles_rad = tuple(
+        math.radians(angle)
+        for angle in state.input_angles_deg
+    )
+    plotter.add_target_curve(
+        input_angles_rad,
+        tuple(
+            math.radians(angle)
+            for angle in state.target_deg
+        ),
+        label=(
+            f"Soll Bremse "
+            f"{100 * state.brake_fraction:.0f} %"
+        ),
+    )
+    if show_actual:
+        plotter.add_actual_curve(
+            input_angles_rad,
+            tuple(
+                math.radians(angle)
+                for angle in state.actual_deg
+            ),
+            label=(
+                f"Bremse "
+                f"{100 * state.brake_fraction:.0f} %"
+            ),
+        )
+    for snapshot in state.states:
+        plotter.add_mechanism_state(snapshot)
     return plotter.build_html()
 
 

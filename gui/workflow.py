@@ -786,6 +786,9 @@ def optimized_values(
         values[
             f"lever.{lever.id}.pivot.y"
         ] = lever.pivot.y
+        values[
+            f"lever.{lever.id}.pivot.z"
+        ] = lever.pivot.z
     return values
 
 
@@ -864,9 +867,9 @@ def optimized_display_values(
     angles in DEGREES (user units).
 
     The returned tuple is ordered
-    ``(length, angle, pivot_x, pivot_y)``; rows
-    without pivot columns keep ``None`` for the
-    pivot entries.
+    ``(length, angle, pivot_x, pivot_y,
+    pivot_z)``; rows without pivot columns keep
+    ``None`` for the pivot entries.
     """
 
     result: dict[
@@ -942,11 +945,25 @@ def optimized_display_values(
             and pivot_y_key in optimized_map
             else None
         )
+        pivot_z_key = (
+            f"lever.{lever_id}.pivot.z"
+        )
+        pivot_z_value = (
+            optimized_map[pivot_z_key]
+            if lever_snapshot is not None
+            and lever_snapshot.get(
+                "pivot_z"
+            )
+            == row.get("pivot_z")
+            and pivot_z_key in optimized_map
+            else None
+        )
         result[lever_id] = (
             length_value,
             angle_value,
             pivot_x_value,
             pivot_y_value,
+            pivot_z_value,
         )
     return result
 
@@ -960,7 +977,8 @@ def adopt_single_optimized_values(
     Each row may carry ``length_adopt`` /
     ``angle_adopt`` flags (and, when the pivot
     columns are shown, ``pivot_x_adopt`` /
-    ``pivot_y_adopt``) set by the user.  For
+    ``pivot_y_adopt`` / ``pivot_z_adopt``) set
+    by the user.  For
     every set flag whose corresponding
     ``*_optimized`` cell is not empty, the
     optimized value is written into the
@@ -1018,6 +1036,13 @@ def adopt_single_optimized_values(
             "pivot_y_adopt",
             "pivot_y_optimized",
             "pivot_y",
+        ):
+            adopted = True
+        if _adopt(
+            row,
+            "pivot_z_adopt",
+            "pivot_z_optimized",
+            "pivot_z",
         ):
             adopted = True
     return adopted

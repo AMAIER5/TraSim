@@ -33,8 +33,8 @@ def test_create_parameter_template_from_csv(
     # Each lever creates:
     # - length parameter
     # - angle parameter
-    # - pivot.x / pivot.y parameters
-    assert len(parameters) == 16
+    # - pivot.x / pivot.y / pivot.z parameters
+    assert len(parameters) == 20
 
     lever_1 = parameters.get(
         "lever.1.length",
@@ -115,12 +115,18 @@ def test_pivot_parameters_free_by_default(
         pivot_y = parameters.get(
             f"lever.{lever.id}.pivot.y",
         )
+        pivot_z = parameters.get(
+            f"lever.{lever.id}.pivot.z",
+        )
         assert pivot_x.minimum < pivot_x.maximum
         assert pivot_x.value == lever.pivot.x
         assert not pivot_x.is_fixed
         assert pivot_y.minimum < pivot_y.maximum
         assert pivot_y.value == lever.pivot.y
         assert not pivot_y.is_fixed
+        assert pivot_z.minimum < pivot_z.maximum
+        assert pivot_z.value == lever.pivot.z
+        assert not pivot_z.is_fixed
 
 
 def test_pivot_bounds_zero_fixes_pivots(

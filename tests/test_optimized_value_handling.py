@@ -40,6 +40,9 @@ def _rows() -> list[dict]:
             "pivot_y": -40.0,
             "pivot_y_optimized": -35.0,
             "pivot_y_adopt": False,
+            "pivot_z": 5.0,
+            "pivot_z_optimized": 7.0,
+            "pivot_z_adopt": False,
         },
         {
             "id": 2,
@@ -55,6 +58,9 @@ def _rows() -> list[dict]:
             "pivot_y": 0.0,
             "pivot_y_optimized": None,
             "pivot_y_adopt": False,
+            "pivot_z": 0.0,
+            "pivot_z_optimized": None,
+            "pivot_z_adopt": False,
         },
     ]
 
@@ -66,12 +72,14 @@ def _snapshot() -> dict:
             "angle": 10.0,
             "pivot_x": 100.0,
             "pivot_y": -40.0,
+            "pivot_z": 5.0,
         },
         2: {
             "length": 50.0,
             "angle": -5.0,
             "pivot_x": 0.0,
             "pivot_y": 0.0,
+            "pivot_z": 0.0,
         },
     }
 
@@ -82,6 +90,7 @@ def _optimized_map() -> dict:
         "lever.1.angle": math.radians(12.0),
         "lever.1.pivot.x": 110.0,
         "lever.1.pivot.y": -35.0,
+        "lever.1.pivot.z": 7.0,
     }
 
 
@@ -98,7 +107,9 @@ def test_display_shows_optimized_values_for_matching_starts():
     )
     assert values[1][2] == 110.0
     assert values[1][3] == -35.0
+    assert values[1][4] == 7.0
     assert values[2] == (
+        None,
         None,
         None,
         None,
@@ -141,6 +152,7 @@ def test_display_is_empty_without_result():
     )
     assert all(
         value == (
+            None,
             None,
             None,
             None,

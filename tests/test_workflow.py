@@ -372,10 +372,12 @@ def test_optimized_values_maps_definition(inputs):
         "lever.1.angle": math.radians(90.0),
         "lever.1.pivot.x": 0.0,
         "lever.1.pivot.y": 0.0,
+        "lever.1.pivot.z": 0.0,
         "lever.2.length": 60.0,
         "lever.2.angle": math.radians(90.0),
         "lever.2.pivot.x": 100.0,
         "lever.2.pivot.y": 0.0,
+        "lever.2.pivot.z": 0.0,
     }
 
 
@@ -425,10 +427,12 @@ def test_parameter_template_matches_definition(
         "lever.1.angle",
         "lever.1.pivot.x",
         "lever.1.pivot.y",
+        "lever.1.pivot.z",
         "lever.2.length",
         "lever.2.angle",
         "lever.2.pivot.x",
         "lever.2.pivot.y",
+        "lever.2.pivot.z",
     }
 
 
@@ -769,6 +773,7 @@ def test_run_optimization_stop_returns_best_so_far(
         children_count=20,
         selection_count=6,
         max_generations=50,
+        target_fitness=0.0,
         seed=7,
     )
     calls: list[int] = []

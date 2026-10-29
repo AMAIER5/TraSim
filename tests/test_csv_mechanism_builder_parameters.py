@@ -160,3 +160,49 @@ def test_missing_parameter_keeps_csv_value():
     )
 
     assert mechanism is not None
+
+def test_pivot_parameters_move_lever_pivots():
+    """Issue #95: the builder applies the pivot.x /
+    pivot.y / pivot.z parameters onto the lever
+    definitions, so released pivots (including
+    pivot_z) are actually optimized."""
+
+    definition = create_definition()
+
+    builder = CsvMechanismBuilder(
+        definition,
+    )
+
+    parameters = ParameterSet(
+        parameters=(
+            Parameter(
+                name="lever.1.pivot.x",
+                minimum=80,
+                maximum=120,
+                value=110,
+            ),
+            Parameter(
+                name="lever.1.pivot.y",
+                minimum=-20,
+                maximum=20,
+                value=15,
+            ),
+            Parameter(
+                name="lever.1.pivot.z",
+                minimum=-20,
+                maximum=20,
+                value=5,
+            ),
+        )
+    )
+
+    mechanism = builder.build(parameters)
+
+    lever = mechanism.stages[0].output_lever
+    assert lever.pivot.x == 110
+    assert lever.pivot.y == 15
+    assert lever.pivot.z == 5
+    assert (
+        definition.levers[1].pivot
+        == Point3D(100, 0, 0)
+    )

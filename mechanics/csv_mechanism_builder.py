@@ -28,6 +28,7 @@ from mechanics.mechanism import (
     MechanismLever,
 )
 from mechanics.stage import Stage
+from core.point3d import Point3D
 from model.mechanism_definition import MechanismDefinition
 from optimization.mechanism_builder import MechanismBuilder
 from optimization.parameter_set import ParameterSet
@@ -159,11 +160,30 @@ class CsvMechanismBuilder(MechanismBuilder):
                 lever.angle_start,
             )
 
+            if lever.pivot_on is not None:
+                pivot = lever.pivot
+            else:
+                pivot = Point3D(
+                    x=values.get(
+                        f"lever.{lever.id}.pivot.x",
+                        lever.pivot.x,
+                    ),
+                    y=values.get(
+                        f"lever.{lever.id}.pivot.y",
+                        lever.pivot.y,
+                    ),
+                    z=values.get(
+                        f"lever.{lever.id}.pivot.z",
+                        lever.pivot.z,
+                    ),
+                )
+
             levers.append(
                 replace(
                     lever,
                     length_start=length,
                     angle_start=angle,
+                    pivot=pivot,
                 )
             )
 

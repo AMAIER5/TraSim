@@ -303,14 +303,22 @@ class MixedBrakeOptimizer:
                 f"lever.{lever.id}.pivot.y",
                 lever.pivot.y,
             )
+            pivot_z = values.get(
+                f"lever.{lever.id}.pivot.z",
+                lever.pivot.z,
+            )
             lever = replace(
                 lever,
                 length_start=length,
                 angle_start=angle,
-                pivot=Point3D(
-                    x=pivot_x,
-                    y=pivot_y,
-                    z=lever.pivot.z,
+                pivot=(
+                    Point3D(
+                        x=pivot_x,
+                        y=pivot_y,
+                        z=pivot_z,
+                    )
+                    if lever.pivot_on is None
+                    else lever.pivot
                 ),
             )
             levers.append(lever)

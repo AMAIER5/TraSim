@@ -269,3 +269,69 @@ def test_preview_with_support_points_outside_default_grid():
     assert inputs.input_angles == angles
     html = mixed_brake_preview(inputs)
     assert "plot-data" in html
+
+
+def test_preview_curves_use_degree_axes(inputs):
+    """Issue #96: the plot data of the mixed brake
+    preview must show the support angles in degrees
+    (-10..+10 for the example), not values scaled by
+    an accidental degree/radian double conversion."""
+    html = mixed_brake_preview(inputs)
+    payload = _plot_data(html)
+    for series in payload["curves"]:
+        assert max(series["input_angles"]) <= 10.0
+        assert min(series["input_angles"]) >= -10.0
+        assert max(
+            abs(angle)
+            for angle in series["output_angles"]
+        ) < 20.0
+
+
+def test_single_position_report_uses_degree_axes(
+    inputs,
+):
+    """Issue #96: the single brake position report
+    of the preview/result tab plots target and
+    actual curve on the degree axis of the
+    target-curve support points, not on values
+    scaled by an accidental second degree/radian
+    conversion."""
+    from gui.mixed_brake_workflow import (
+        build_mixed_brake_state,
+        mixed_brake_parameter_template,
+        single_brake_position_report,
+    )
+
+    template = mixed_brake_parameter_template(
+        inputs
+    )
+    state = build_mixed_brake_state(
+        inputs,
+        template,
+        brake_fraction=1.0,
+    )
+    html = single_brake_position_report(
+        "report",
+        state,
+        show_actual=True,
+    )
+    payload = _plot_data(html)
+    assert len(payload["curves"]) == 2
+    for series in payload["curves"]:
+        assert series["input_angles"][0] == (
+            pytest.approx(-10.0)
+        )
+        assert series["input_angles"][-1] == (
+            pytest.approx(10.0)
+        )
+    target = next(
+        series
+        for series in payload["curves"]
+        if series["label"].startswith("Soll")
+    )
+    assert target["output_angles"][0] == (
+        pytest.approx(-9.5)
+    )
+    assert target["output_angles"][-1] == (
+        pytest.approx(0.0)
+    )
