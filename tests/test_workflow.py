@@ -804,3 +804,68 @@ def test_run_optimization_stop_returns_best_so_far(
     assert "<html" in result.html
     assert result.optimized_definition is not None
     assert len(result.fitness_history) == 3
+
+
+def test_run_optimization_on_best_reports_improvements(
+    inputs,
+):
+    """Issue #93: on_best is called with the best
+    candidate's parameter values whenever the best
+    score improves, so a UI can persist intermediate
+    results while the optimization runs."""
+    settings = OptimizationSettings(
+        population_size=20,
+        children_count=20,
+        selection_count=6,
+        max_generations=5,
+        target_fitness=0.0,
+        seed=7,
+    )
+    reports: list[tuple[int, dict]] = []
+
+    def on_best(
+        generation: int,
+        values: dict[str, float],
+    ) -> None:
+        reports.append(
+            (generation, dict(values)),
+        )
+
+    result = run_optimization(
+        inputs,
+        parameter_template(inputs),
+        settings,
+        on_best=on_best,
+    )
+    assert reports
+    generations = [
+        generation for generation, _ in reports
+    ]
+    assert generations == sorted(
+        generations,
+    )
+    assert generations[0] >= 1
+    last_generation, last_values = reports[-1]
+    assert last_generation <= result.generations
+    template = parameter_template(inputs)
+    assert set(last_values) == {
+        parameter.name
+        for parameter in template.parameters
+    }
+
+
+def test_store_session_state_stop_tolerant_bare():
+    """Without a Streamlit script-run context (bare
+    mode / unit tests) the stop-tolerant store
+    reports that it could not store the value."""
+    from gui.workflow import (
+        store_session_state_stop_tolerant,
+    )
+
+    assert (
+        store_session_state_stop_tolerant(
+            "key",
+            1,
+        )
+        is False
+    )
