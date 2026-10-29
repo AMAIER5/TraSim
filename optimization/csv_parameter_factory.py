@@ -119,6 +119,16 @@ class CsvParameterFactory:
                     value=lever.pivot.y,
                 )
             )
+            parameters.append(
+                Parameter(
+                    name=(
+                        f"lever.{lever.id}.pivot.z"
+                    ),
+                    minimum=lever.pivot.z + offset_min,
+                    maximum=lever.pivot.z + offset_max,
+                    value=lever.pivot.z,
+                )
+            )
         return ParameterSet(
             parameters=tuple(parameters),
         )
