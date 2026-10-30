@@ -81,6 +81,19 @@ class MixedBrakeOptimizer:
         by increasing brake position.
     targets:
         One TargetCurve per brake position.
+    anchor_output:
+        When True, the simulated output angles are shifted
+        into the raw target-curve frame before scoring: the
+        output lever's (clamped) start angle is mapped onto
+        the reference output angle.  This keeps the free
+        twist of the output shaft (an optimizable lever
+        angle) out of the error, while the target-side
+        difference between the braked and the unbraked
+        curve stays fixed by the data.
+    reference_output_angle:
+        Raw target output of the unbraked curve at the
+        middle support position (radians); the anchor
+        offset is ``output_start - reference``.
     """
 
     def __init__(
@@ -95,6 +108,8 @@ class MixedBrakeOptimizer:
         transmission_angle_constraint: (
             TransmissionAngleConstraint | None
         ) = None,
+        anchor_output: bool = False,
+        reference_output_angle: float = 0.0,
     ) -> None:
         if len(brake_positions) == 0:
             raise ValueError(
@@ -113,6 +128,10 @@ class MixedBrakeOptimizer:
         self._targets = tuple(targets)
         self._transmission_constraint = (
             transmission_angle_constraint
+        )
+        self._anchor_output = anchor_output
+        self._reference_output_angle = (
+            reference_output_angle
         )
         self._cache: dict[
             tuple[ParameterSet, float],
@@ -138,6 +157,11 @@ class MixedBrakeOptimizer:
         receive a hard penalty instead of raising.
         """
         self._evaluations += 1
+        offset = (
+            self._output_offset(parameters)
+            if self._anchor_output
+            else 0.0
+        )
         pairs = []
         mechanisms = []
         for beta, target in zip(
@@ -156,7 +180,15 @@ class MixedBrakeOptimizer:
                     beta,
                 )
                 return PENALTY_MAX_BLOCKING
-            pairs.append((result, target))
+            pairs.append(
+                (
+                    self._anchored_result(
+                        result,
+                        offset,
+                    ),
+                    target,
+                )
+            )
             if self._transmission_constraint is not None:
                 mechanism = self._cached_mechanism(
                     parameters,
@@ -256,7 +288,52 @@ class MixedBrakeOptimizer:
         results = self._simulator.simulate(mechanism)
         if len(results) == 0:
             return None
-        return results[-1]
+        return self._combined_result(results)
+
+    @staticmethod
+    def _combined_result(
+        results: tuple[SimulationResult, ...],
+    ) -> SimulationResult:
+        """Combine the per-stage simulations into one
+        overall result: the drive lever's input angles
+        (the support points of the target curve, stage
+        0) paired with the final stage's output
+        angles, and success only when EVERY stage
+        succeeded (same convention as the normal
+        workflow's CurveFitness).  For a single stage
+        this is the stage's own result."""
+        if len(results) == 1:
+            return results[0]
+        blocked = next(
+            (
+                result.blocked_at
+                for result in results
+                if (
+                    not result.success
+                    and result.blocked_at is not None
+                )
+            ),
+            None,
+        )
+        count = min(
+            len(results[0].input_angles),
+            len(results[-1].output_angles),
+        )
+        success = all(
+            result.success for result in results
+        )
+        return SimulationResult(
+            input_angles=(
+                results[0].input_angles[:count]
+            ),
+            output_angles=(
+                results[-1].output_angles[:count]
+            ),
+            success=success,
+            blocked_at=(
+                blocked if not success else None
+            ),
+        )
 
     def _builder_for(
         self,
@@ -340,6 +417,59 @@ class MixedBrakeOptimizer:
             brake.angle_min,
             brake.angle_max,
         )
+
+    def _output_offset(
+        self,
+        parameters: ParameterSet,
+    ) -> float:
+        """Anchor offset (radians) of the output shaft:
+        the candidate's (clamped) start angle of the
+        output lever minus the raw reference output of
+        the unbraked target curve at the middle support
+        position."""
+        lever = self._definition.get_lever(
+            self._output_lever_id
+        )
+        angle = parameters.values().get(
+            f"lever.{lever.id}.angle",
+            lever.angle_start,
+        )
+        angle = self._clamp(
+            angle,
+            lever.angle_min,
+            lever.angle_max,
+        )
+        return angle - self._reference_output_angle
+
+    @staticmethod
+    def _anchored_result(
+        result: SimulationResult,
+        offset: float,
+    ) -> SimulationResult:
+        """Simulation result shifted into the raw
+        target-curve frame by subtracting the anchor
+        offset from every output angle."""
+        if offset == 0.0:
+            return result
+        return SimulationResult(
+            input_angles=result.input_angles,
+            output_angles=tuple(
+                angle - offset
+                for angle in result.output_angles
+            ),
+            success=result.success,
+            blocked_at=result.blocked_at,
+        )
+
+    @property
+    def _output_lever_id(self) -> int:
+        output_id = None
+        for lever in self._definition.levers:
+            if lever.driver is not None:
+                output_id = lever.id
+        if output_id is None:
+            output_id = self._definition.levers[-1].id
+        return output_id
 
     @property
     def _brake_lever_id(self) -> int:
