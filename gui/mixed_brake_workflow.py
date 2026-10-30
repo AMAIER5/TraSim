@@ -55,6 +55,7 @@ from gui.workflow import (
     OptimizationStopped,
     WorkflowError,
     _drive_lever_id,
+    _output_lever_id,
     _text_to_temp_file,
 )
 from mechanics.mixed_brake_builder import (
@@ -473,6 +474,69 @@ def _anchored_support_angles(
     )
 
 
+def _middle_support_index(
+    angles: tuple[float, ...],
+) -> int:
+    """Zero-based index of the middle support position
+    (same round-half-up convention as the normal
+    workflow's ``middle_position_index``)."""
+    return int(math.floor(len(angles) / 2 + 0.5)) - 1
+
+
+def _reference_output_angle(
+    inputs: MixedBrakeInputs,
+) -> float:
+    """Raw target output of the unbraked curve at the
+    middle support position (radians).  This is the
+    anchor the output lever's start angle is mapped
+    onto; the braked curve stays in the same raw
+    frame, so the data-side difference (e.g. 60 deg
+    at input 0) is preserved."""
+    support = inputs.input_angles
+    if support is None:
+        motion = _motion_range(inputs)
+        support = tuple(angle for angle in motion)
+    index = _middle_support_index(support)
+    return inputs.unbraked.evaluate(support[index])
+
+
+def _output_offset(
+    inputs: MixedBrakeInputs,
+    definition: MechanismDefinition,
+) -> float:
+    """Anchor offset (radians) between the output
+    lever's start angle and the raw reference output
+    of the unbraked target curve."""
+    output_angle = definition.get_lever(
+        _output_lever_id(definition),
+    ).angle_start
+    return output_angle - _reference_output_angle(
+        inputs,
+    )
+
+
+def _endpoint_constraint(
+    inputs: MixedBrakeInputs,
+    brake_positions: tuple[float, ...],
+) -> EndpointConstraint:
+    """Endpoint constraint in the anchored target
+    frame: at the maximum brake position the output
+    at the last motion point must reach the raw
+    braked curve value there (0 deg for the shipped
+    example, whose braked curve returns to zero)."""
+    del brake_positions
+    support = inputs.input_angles
+    if support is None:
+        support = tuple(
+            angle for angle in _motion_range(inputs)
+        )
+    return EndpointConstraint(
+        end_angle=inputs.braked.evaluate(
+            support[-1],
+        ),
+        weight=1.0,
+    )
+
 def _blended_targets(
     inputs: MixedBrakeInputs,
     fractions: tuple[float, ...],
@@ -643,6 +707,10 @@ def build_mixed_brake_grid(
     )
     builder = MixedBrakeBuilder(definition)
     simulator = MechanismSimulator(motion=motion)
+    output_offset = _output_offset(
+        inputs,
+        definition,
+    )
     targets_deg = tuple(
         tuple(
             math.degrees(angle)
@@ -698,7 +766,12 @@ def build_mixed_brake_grid(
                 input_angles_deg=input_deg,
                 target_deg=target_deg,
                 actual_deg=tuple(
-                    round(math.degrees(angle), 1)
+                    round(
+                        math.degrees(
+                            angle - output_offset
+                        ),
+                        1,
+                    )
                     for angle in results[
                         -1
                     ].output_angles
@@ -941,9 +1014,11 @@ def _mixed_evaluator_factory(
             1.0 for _ in brake_positions
         ),
         max_weight=1.0,
-        endpoint_constraint=EndpointConstraint(
-            end_angle=0.0,
-            weight=1.0,
+        endpoint_constraint=(
+            _endpoint_constraint(
+                inputs,
+                brake_positions,
+            )
         ),
         gradient_weight=(
             settings.gradient_weight
@@ -964,6 +1039,10 @@ def _mixed_evaluator_factory(
         targets=targets,
         transmission_angle_constraint=(
             constraint
+        ),
+        anchor_output=True,
+        reference_output_angle=(
+            _reference_output_angle(inputs)
         ),
     ).evaluate
 
@@ -1031,9 +1110,11 @@ def run_mixed_brake_optimization(
             1.0 for _ in brake_positions
         ),
         max_weight=1.0,
-        endpoint_constraint=EndpointConstraint(
-            end_angle=0.0,
-            weight=1.0,
+        endpoint_constraint=(
+            _endpoint_constraint(
+                inputs,
+                brake_positions,
+            )
         ),
         gradient_weight=(
             settings.gradient_weight
@@ -1053,6 +1134,10 @@ def run_mixed_brake_optimization(
         brake_positions=brake_positions,
         targets=targets,
         transmission_angle_constraint=constraint,
+        anchor_output=True,
+        reference_output_angle=(
+            _reference_output_angle(inputs)
+        ),
     )
     rng = random.Random(settings.seed)
     population = PopulationFactory(
