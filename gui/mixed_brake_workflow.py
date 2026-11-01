@@ -460,18 +460,33 @@ def _anchored_support_angles(
     that the drive lever sits at its start angle at
     the middle support position of the target curve
     (same middle-position convention as the normal
-    workflow)."""
+    workflow).
+
+    If that shift would move any support point outside
+    the admissible lever-angle segment of the drive
+    lever (the simulation blocks such input angles),
+    the shift is clamped so the whole support range
+    stays inside [angle_min, angle_max]."""
     angles = inputs.input_angles
     middle = angles[
         int(math.floor(len(angles) / 2 + 0.5)) - 1
     ]
-    drive_angle = inputs.definition.get_lever(
+    drive = inputs.definition.get_lever(
         _drive_lever_id(inputs.definition),
-    ).angle_start
-    return tuple(
-        angle - middle + drive_angle
-        for angle in angles
     )
+    offset = drive.angle_start - middle
+    lowest = min(angles)
+    highest = max(angles)
+    lower_bound = drive.angle_min - lowest
+    upper_bound = drive.angle_max - highest
+    if lower_bound <= upper_bound:
+        offset = min(
+            max(offset, lower_bound),
+            upper_bound,
+        )
+    else:
+        offset = (lower_bound + upper_bound) / 2.0
+    return tuple(angle + offset for angle in angles)
 
 
 def _middle_support_index(
