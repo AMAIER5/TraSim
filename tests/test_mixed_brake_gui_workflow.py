@@ -335,3 +335,72 @@ def test_single_position_report_uses_degree_axes(
     assert target["output_angles"][-1] == (
         pytest.approx(0.0)
     )
+
+
+def test_support_anchor_clamped_into_drive_angle_limits():
+    """Regression: when anchoring the target-curve support
+    points at the drive lever's start angle would push a
+    support point outside the drive lever's admissible
+    angle segment, the anchor shift is clamped so the
+    whole support range stays inside the limits and
+    every brake position can be built and simulated
+    (previously the result view failed with "Die Mechanik
+    kann ... nicht aufgebaut werden")."""
+    import math
+    from dataclasses import replace
+
+    from analysis.target_curve import TargetCurve
+    from gui.mixed_brake_workflow import (
+        _anchored_support_angles,
+        _drive_lever_id,
+        mixed_brake_inputs_from_parts,
+    )
+    from mechanism_io.csv_reader import CsvReader
+    from model.mechanism_definition import (
+        MechanismDefinition,
+    )
+
+    definition = CsvReader.read_mechanism(
+        MECHANISM_FILE,
+    )
+    drive_id = _drive_lever_id(definition)
+    drive = definition.get_lever(drive_id)
+    drive = replace(
+        drive,
+        angle_min=math.radians(-5.0),
+        angle_max=math.radians(30.0),
+    )
+    definition = MechanismDefinition(
+        tuple(
+            drive if lever.id == drive_id else lever
+            for lever in definition.levers
+        )
+    )
+    span = math.radians(20.0)
+    angles = tuple(
+        drive.angle_start - span / 2.0 + index * span / 10.0
+        for index in range(11)
+    )
+    unbraked = TargetCurve.from_points_strict(
+        angles,
+        tuple(angle / 2.0 for angle in angles),
+    )
+    braked = TargetCurve.from_points_strict(
+        angles,
+        tuple(angle for angle in angles),
+    )
+    inputs = mixed_brake_inputs_from_parts(
+        definition,
+        unbraked,
+        braked,
+    )
+    anchored = _anchored_support_angles(inputs)
+    assert min(anchored) >= drive.angle_min - 1e-9
+    assert max(anchored) <= drive.angle_max + 1e-9
+    grid = build_mixed_brake_grid(
+        inputs,
+        inputs.definition,
+    )
+    assert all(
+        state is not None for state in grid.states
+    )
