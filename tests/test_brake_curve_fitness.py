@@ -171,3 +171,111 @@ def test_endpoint_constraint_grows_quadratically_in_fitness():
 
 def test_penalty_max_blocking_exported():
     assert PENALTY_MAX_BLOCKING == 100000.0
+
+
+def discrete_offset_simulation(
+    target: TargetCurve,
+    offset: float,
+) -> SimulationResult:
+    inputs = target.input_angles
+    return SimulationResult(
+        input_angles=inputs,
+        output_angles=tuple(
+            target.evaluate(angle) + offset
+            for angle in inputs
+        ),
+        success=True,
+    )
+
+
+def test_point_weights_scale_curves_globally():
+    """Issue #105: the point weights must act across curves.
+
+    The unbraked curve is weighted 2 at every point, the braked
+    curve 1 at every point; both are off by the same offset, so
+    the unbraked curve must contribute twice as much to the
+    weighted sum as the braked one.
+    """
+    unbraked = TargetCurve.from_points_strict(
+        (0.0, 1.0, 2.0),
+        (0.0, 1.0, 2.0),
+        weights=(2.0, 2.0, 2.0),
+    )
+    braked = TargetCurve.from_points_strict(
+        (0.0, 1.0, 2.0),
+        (0.0, 2.0, 4.0),
+        weights=(1.0, 1.0, 1.0),
+    )
+    offset = 1.0
+    pairs = [
+        (discrete_offset_simulation(unbraked, offset), unbraked),
+        (discrete_offset_simulation(braked, offset), braked),
+    ]
+    fitness = BrakeCurveFitness().evaluate(pairs)
+    # both pair errors are 1.0 (weighted mean within each curve);
+    # curve scales are 2.0 and 1.0:
+    # weighted_sum = 1*2*1 + 1*1*1 = 3, max_term = 1*max(1, 1) = 1
+    assert isclose(fitness, 4.0)
+
+
+def test_point_weights_change_relative_curve_influence():
+    """Issue #105: a higher-weighted curve must influence the
+    fitness more strongly when its error is the larger one."""
+    unbraked = TargetCurve.from_points_strict(
+        (0.0, 1.0, 2.0),
+        (0.0, 1.0, 2.0),
+        weights=(2.0, 2.0, 2.0),
+    )
+    braked = TargetCurve.from_points_strict(
+        (0.0, 1.0, 2.0),
+        (0.0, 2.0, 4.0),
+        weights=(1.0, 1.0, 1.0),
+    )
+    pairs_weighted = [
+        (discrete_offset_simulation(unbraked, 2.0), unbraked),
+        (discrete_offset_simulation(braked, 0.0), braked),
+    ]
+    pairs_unweighted = [
+        (
+            discrete_offset_simulation(
+                TargetCurve.from_points_strict(
+                    (0.0, 1.0, 2.0),
+                    (0.0, 1.0, 2.0),
+                ),
+                2.0,
+            ),
+            TargetCurve.from_points_strict(
+                (0.0, 1.0, 2.0),
+                (0.0, 1.0, 2.0),
+            ),
+        ),
+        (discrete_offset_simulation(braked, 0.0), braked),
+    ]
+    weighted = BrakeCurveFitness().evaluate(pairs_weighted)
+    unweighted = BrakeCurveFitness().evaluate(pairs_unweighted)
+    # weighted:   1*2*2 + 1*1*0 + 1*2 = 6
+    # unweighted: 1*1*2 + 1*1*0 + 1*2 = 4
+    assert isclose(weighted, 6.0)
+    assert isclose(unweighted, 4.0)
+    assert weighted > unweighted
+
+
+def test_default_point_weights_keep_neutral_scale():
+    """Curves with the default weight 1 at every point are
+    unaffected by the cross-curve scaling (issue #105)."""
+    first = TargetCurve.from_points_strict(
+        (0.0, 1.0, 2.0),
+        (0.0, 1.0, 2.0),
+    )
+    second = TargetCurve.from_points_strict(
+        (0.0, 1.0, 2.0),
+        (0.0, 2.0, 4.0),
+    )
+    offset = 1.0
+    pairs = [
+        (discrete_offset_simulation(first, offset), first),
+        (discrete_offset_simulation(second, offset), second),
+    ]
+    fitness = BrakeCurveFitness().evaluate(pairs)
+    # weighted_sum = 1*1 + 1*1 = 2, max_term = 1
+    assert isclose(fitness, 3.0)
