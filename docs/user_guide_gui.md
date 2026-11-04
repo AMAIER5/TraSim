@@ -94,7 +94,11 @@ users need no Python knowledge.
      optimized value as the new start value.
    - A cleared checkbox fixes the parameter at
      its start value (minimum = maximum), so it
-     is excluded from the optimization.
+     is excluded from the optimization.  The
+     checkbox selection is only reset to the
+     initial state when a new mechanism is loaded;
+     optimization restarts, parameter edits and
+     adopting optimized values keep it (issue #106).
    - The **Optimiert** cells are cleared as soon
      as the corresponding start value is edited
      or adopted, so every displayed value is
@@ -232,7 +236,14 @@ id,...,pivot_on
   Die Gewichte der Zwischenstellungen werden
   wie die Ausgangswinkel anteilig gemischt,
   und die Fitness bewertet jeden Stützpunkt
-  mit seinem (gemischten) Gewicht.
+  mit seinem (gemischten) Gewicht.  Die
+  Gewichtung wirkt außerdem kurvenübergreifend
+  (issue #105): Ist z. B. die ungebremste Kurve
+  in allen Punkten mit Gewicht 2 und die
+  gebremste mit Gewicht 1 bewertet, geht die
+  ungebremste Zielkurve stärker in den
+  Fitnesswert ein und hat somit mehr Einfluss
+  auf die Zielgeometrie.
 - Die Optimierung nutzt wie der Normalmodus
   die **Worker-Prozesse**-Einstellung der
   Sidebar (0 = automatisch alle verfügbaren

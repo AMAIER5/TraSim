@@ -6,10 +6,16 @@ Fitness over multiple brake positions.
 A candidate is evaluated over ALL (brake position, target curve)
 pairs simultaneously:
 
-    fitness = sum_k w_k * error_k
+    fitness = sum_k w_k * c_k * error_k
               + w_max * max_k error_k
               + blocking penalties
               + endpoint constraint term
+
+where c_k is the target curve's own weight level (the mean of
+its per-support-point weights, issue #105): point weights act
+within their curve (the pair error is the weighted mean) AND
+across curves, so a curve whose points all carry weight 2
+contributes twice as much as a curve with weight 1.
 
 The per-position errors use the established ErrorMetric/TransferCurve
 machinery from analysis.error_metric.  The max term prevents the
@@ -58,10 +64,15 @@ class BrakeCurveFitness:
     Fitness across multiple (brake position, target curve) pairs.
 
     Each pair contributes a mean absolute error (via ErrorMetric)
-    weighted by its per-position weight w_k.  The maximum error is
-    added with weight w_max so no single brake position can be
-    sacrificed.  Blocking in ANY pair yields a hard penalty for the
-    entire candidate.
+    weighted by its per-position weight w_k.  Additionally each
+    target curve's own point-weight level scales its contribution
+    across curves (issue #105): a ``DiscreteTargetCurve`` whose
+    support points all carry weight 2 enters the fitness twice as
+    strongly as one with weight 1 everywhere, while the per-point
+    weights keep their relative effect within each curve.  The
+    maximum error is added with weight w_max so no single brake
+    position can be sacrificed.  Blocking in ANY pair yields a
+    hard penalty for the entire candidate.
     """
 
     def __init__(
@@ -94,6 +105,22 @@ class BrakeCurveFitness:
         self._endpoint_constraint = endpoint_constraint
         self._gradient_weight = gradient_weight
         self._cache: dict[tuple[float, ...], ErrorMetric] = {}
+
+    @staticmethod
+    def _curve_weight_scale(target: TargetCurve) -> float:
+        """Cross-curve weight level of one target curve.
+
+        The per-support-point weights of a
+        ``DiscreteTargetCurve`` act within their curve (the
+        pair error is the weighted mean); their mean
+        additionally scales the curve's contribution when
+        several curves are combined (issue #105).  Curves
+        without per-point weights keep the neutral scale 1.
+        """
+        weights = getattr(target, "weights", None)
+        if not weights:
+            return 1.0
+        return sum(weights) / len(weights)
 
     def _pair_errors(
         self,
@@ -195,7 +222,12 @@ class BrakeCurveFitness:
 
         errors = self._pair_errors(pairs)
         weighted_sum = sum(
-            weight * error for weight, error in zip(weights, errors)
+            weight * self._curve_weight_scale(target) * error
+            for (_, target), weight, error in zip(
+                pairs,
+                weights,
+                errors,
+            )
         )
         max_term = self._max_weight * max(errors)
 

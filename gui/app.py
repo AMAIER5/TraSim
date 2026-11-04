@@ -1288,6 +1288,9 @@ edited_mechanism = st.data_editor(
 st.session_state["last_edited_rows"] = (
     edited_mechanism
 )
+st.session_state["mechanism_rows"] = (
+    edited_mechanism
+)
 
 adopt_single = (
     adopt_single_optimized_values(
