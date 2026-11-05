@@ -272,6 +272,69 @@ def test_brake_angle_outside_bounds(mixer_definition):
         builder.build(math.radians(90))
 
 
+def test_reference_pose_outside_angle_segment_builds(
+    tmp_path,
+):
+    """Issue #108: the reference pose must NOT be rejected when
+    the drive lever's ``angle_start`` lies outside its admissible
+    segment ``[angle_min, angle_max]``.
+
+    The standard builder (CsvMechanismBuilder) builds such
+    reference poses with ``validate_reference=False``; the
+    admissible segment is enforced by the StageMotionValidator
+    over the actual motion range.  The mixed builder used to
+    raise ``MechanismBuildError`` for the reference input angle,
+    so for an optimized/hand-edited mixer mechanism with
+    ``angle_start`` outside the segment EVERY build failed and
+    the mixed-brake optimization could not produce a valid
+    result, while the normal single-curve optimization still
+    worked.
+    """
+    from dataclasses import replace
+    from model.mechanism_definition import (
+        MechanismDefinition,
+    )
+
+    # shipped example mixer mechanism; the brake lever (id 3)
+    # spans 170..190 deg with angle_start 180 deg
+    path = tmp_path / "mixer.csv"
+    path.write_text(
+        "id,length_min,length_max,length_start,angle_min,"
+        "angle_max,angle_start,pivot_x,pivot_y,pivot_z,"
+        "axis_x,axis_y,axis_z,driver,coupled,pivot_on\n"
+        "1,40,100,60,-12,12,0,0,0,0,0,0,1,,,lever3\n"
+        "2,40,200,100,-120,120,0,100,60,0,0,0,1,1,,\n"
+        "3,40,100,60,170,190,180,0,0,0,0,0,1,,,\n",
+        encoding="utf-8",
+    )
+    definition = CsvReader.read_mechanism(path)
+    levers = [
+        replace(
+            lever,
+            angle_start=(
+                lever.angle_max + math.radians(3.0)
+            ),
+        )
+        if lever.id == 1
+        else lever
+        for lever in definition.levers
+    ]
+    shifted = MechanismDefinition(tuple(levers))
+    drive = shifted.get_lever(1)
+    assert drive.angle_start > drive.angle_max
+    builder = MixedBrakeBuilder(shifted)
+    for beta_deg in (180.0, 185.0, 190.0):
+        mechanism = builder.build(math.radians(beta_deg))
+        assert len(mechanism.stages) == len(
+            MixedBrakeBuilder(definition).build(
+                math.radians(180.0)
+            ).stages
+        )
+    # the brake angle bounds are still enforced
+    with pytest.raises(MechanismBuildError):
+        builder.build(math.radians(200.0))
+
+
 def test_reference_rod_lengths_not_cached_across_builders(
     mixer_definition,
 ):

@@ -310,18 +310,18 @@ class MixedBrakeBuilder:
             input_lever = levers[spec.driver_id]
             output_lever = levers[spec.driven_id]
             input_angle = current_angles[spec.driver_id]
-            if not (
-                spec.input_angle_min
-                <= input_angle
-                <= spec.input_angle_max
-            ):
-                raise MechanismBuildError(
-                    f"input angle {input_angle} of stage "
-                    f"{spec.driver_id}->"
-                    f"{spec.driven_id} outside bounds "
-                    f"[{spec.input_angle_min}, "
-                    f"{spec.input_angle_max}]"
-                )
+            # The reference pose is NOT rejected when a lever's
+            # start angle lies outside its admissible segment:
+            # the standard builder (CsvMechanismBuilder) builds
+            # such reference poses with validate_reference=False,
+            # and the admissible segment is enforced by the
+            # StageMotionValidator over the actual motion range.
+            # Rejecting the reference pose here made the whole
+            # mixed-brake optimization fail (every candidate
+            # received the blocking penalty) for optimized or
+            # hand-edited mechanisms whose angle_start falls
+            # outside [angle_min, angle_max], while the normal
+            # single-curve optimization still worked (issue #108).
             output_angle = self._restore_output_angle(
                 input_lever=input_lever,
                 output_lever=output_lever,
