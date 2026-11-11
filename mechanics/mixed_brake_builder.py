@@ -34,6 +34,7 @@ penalty.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from mechanics.lever import Lever
@@ -86,6 +87,12 @@ class MixedBrakeBuilder:
     Reference rod lengths are computed per builder instance
     (never cached globally), so every optimization candidate
     gets its own frozen rods.
+
+    ``rod_lengths`` optionally maps a driven lever id to an
+    explicit (locked) rod length; such stages keep that length
+    instead of the automatically computed reference distance
+    (manual optimization: changing a pivot or lever length does
+    not recalculate a locked coupler rod).
     """
 
     search_step = math.radians(0.05)
@@ -100,6 +107,7 @@ class MixedBrakeBuilder:
         brake_lever_id: int | None = None,
         mixer_lever_id: int | None = None,
         validator: StageMotionValidator | None = None,
+        rod_lengths: Mapping[int, float] | None = None,
     ) -> None:
         self._definition = definition
         self._validator = (
@@ -118,7 +126,15 @@ class MixedBrakeBuilder:
             )
         )
         self._validate_pivot_topology(definition)
-        self._specs = self._build_specs(definition)
+        self._rod_lengths = (
+            dict(rod_lengths)
+            if rod_lengths is not None
+            else {}
+        )
+        self._specs = self._build_specs(
+            definition,
+            self._rod_lengths,
+        )
 
     # ------------------------------------------------------------------
     # Role resolution and topology
@@ -207,11 +223,30 @@ class MixedBrakeBuilder:
     @staticmethod
     def _build_specs(
         definition: MechanismDefinition,
+        rod_lengths: Mapping[int, float] | None = None,
     ) -> tuple[_StageSpec, ...]:
+        rod_lengths = (
+            rod_lengths
+            if rod_lengths is not None
+            else {}
+        )
         definitions = {
             lever.id: lever
             for lever in definition.levers
         }
+        driven_ids = {
+            lever.id
+            for lever in definition.levers
+            if lever.driver is not None
+        }
+        unknown = sorted(
+            set(rod_lengths) - driven_ids
+        )
+        if unknown:
+            raise MechanismBuildError(
+                "rod_lengths reference unknown driven "
+                f"levers: {unknown}"
+            )
         resolved_pivots = {}
         for lever in definition.levers:
             if lever.pivot_on is None:
@@ -254,8 +289,13 @@ class MixedBrakeBuilder:
                     driver_id=driver.id,
                     driven_id=lever.id,
                     rod_length=(
-                        output_endpoint - input_endpoint
-                    ).norm(),
+                        rod_lengths[lever.id]
+                        if lever.id in rod_lengths
+                        else (
+                            output_endpoint
+                            - input_endpoint
+                        ).norm()
+                    ),
                     unbraked_output_angle=(
                         lever.angle_start
                     ),

@@ -37,6 +37,11 @@ from analysis.target_curve import (
     MAX_WEIGHT,
     TargetCurve,
 )
+from gui.manual_workflow import (
+    brake_lever,
+    coupler_rod_stages,
+    manual_transmission_curves,
+)
 from gui.mixed_brake_workflow import (
     MixedBrakeSettings,
     build_mixed_brake_state,
@@ -1575,9 +1580,15 @@ if mixed_inputs is not None:
         st.error(str(error))
         st.stop()
 
-preview_tab, result_tab = st.tabs(
-    ["Vorschau", "Ergebnis"]
-)
+if mixed_inputs is not None:
+    preview_tab, manual_tab, result_tab = st.tabs(
+        ["Vorschau", "Manuelle Optimierung", "Ergebnis"]
+    )
+else:
+    preview_tab, result_tab = st.tabs(
+        ["Vorschau", "Ergebnis"]
+    )
+    manual_tab = None
 
 PREVIEW_BRAKE_KEY = (
     "mixed_preview_brake_position"
@@ -1721,6 +1732,240 @@ with preview_tab:
             "die geladene Mechanik und die "
             "Zielkurve darzustellen."
         )
+
+if manual_tab is not None:
+    with manual_tab:
+        st.subheader("Manuelle Optimierung")
+        st.caption(
+            "Koppelstangen sperren und einen Lagerpunkt "
+            "oder den Drehwinkel des Bremshebels "
+            "verstellen, dann die erzielte "
+            "Übertragungskurve berechnen. Gesperrte "
+            "Koppelstangen behalten ihre Länge; nicht "
+            "gesperrte werden aus der aktuellen Geometrie "
+            "neu berechnet."
+        )
+        rod_stages = coupler_rod_stages(inputs.definition)
+        auto_lengths = {
+            stage.driven_id: stage.length
+            for stage in rod_stages
+        }
+        rod_source = (
+            mechanism_bytes,
+            st.session_state.get(
+                "mechanism_rows_version",
+                0,
+            ),
+        )
+        if (
+            st.session_state.get("manual_rod_source")
+            != rod_source
+        ):
+            st.session_state["manual_rod_rows"] = [
+                {
+                    "Stufe": stage.stage_index + 1,
+                    "Antrieb": stage.driver_id,
+                    "Abtrieb": stage.driven_id,
+                    "Länge (mm)": stage.length,
+                    "Sperren": False,
+                }
+                for stage in rod_stages
+            ]
+            st.session_state["manual_rod_source"] = rod_source
+            st.session_state["manual_rod_version"] = (
+                st.session_state.get(
+                    "manual_rod_version",
+                    0,
+                )
+                + 1
+            )
+            st.session_state.pop("manual_curve", None)
+        auto_signature = tuple(
+            sorted(
+                (driven_id, round(length, 6))
+                for driven_id, length in auto_lengths.items()
+            )
+        )
+        if (
+            st.session_state.get(
+                "manual_rod_auto_signature"
+            )
+            != auto_signature
+        ):
+            rod_rows = st.session_state.get(
+                "manual_rod_rows"
+            )
+            if rod_rows is not None:
+                for row in rod_rows:
+                    driven_id = row.get("Abtrieb")
+                    if (
+                        not row.get("Sperren")
+                        and driven_id in auto_lengths
+                    ):
+                        row["Länge (mm)"] = auto_lengths[
+                            driven_id
+                        ]
+                st.session_state["manual_rod_version"] = (
+                    st.session_state.get(
+                        "manual_rod_version",
+                        0,
+                    )
+                    + 1
+                )
+            st.session_state[
+                "manual_rod_auto_signature"
+            ] = auto_signature
+        st.subheader("Koppelstangen")
+        edited_rods = st.data_editor(
+            st.session_state["manual_rod_rows"],
+            num_rows="fixed",
+            width="stretch",
+            key=(
+                "manual_rod_editor_"
+                + str(
+                    st.session_state.get(
+                        "manual_rod_version",
+                        0,
+                    )
+                )
+            ),
+            disabled=["Stufe", "Antrieb", "Abtrieb"],
+            column_config={
+                "Stufe": st.column_config.NumberColumn(
+                    "Stufe",
+                    format="%d",
+                ),
+                "Antrieb": st.column_config.NumberColumn(
+                    "Antrieb (Hebel)",
+                    format="%d",
+                ),
+                "Abtrieb": st.column_config.NumberColumn(
+                    "Abtrieb (Hebel)",
+                    format="%d",
+                ),
+                "Länge (mm)": st.column_config.NumberColumn(
+                    "Länge (mm)",
+                    format="%.2f",
+                    help=(
+                        "Gesperrt: Länge bleibt bei diesem "
+                        "Wert, auch wenn Lagerpunkte oder "
+                        "Hebellängen verändert werden. Nicht "
+                        "gesperrt: Länge wird aus der "
+                        "aktuellen Geometrie neu berechnet."
+                    ),
+                ),
+                "Sperren": st.column_config.CheckboxColumn(
+                    "Sperren",
+                    default=False,
+                    help=(
+                        "Koppelstange von der Neuberechnung "
+                        "ausnehmen (Länge bleibt fix)."
+                    ),
+                ),
+            },
+        )
+        st.session_state["manual_rod_rows"] = edited_rods
+
+        brake = brake_lever(inputs.definition)
+        brake_min_deg = math.degrees(brake.angle_min)
+        brake_max_deg = math.degrees(brake.angle_max)
+        brake_start_deg = min(
+            max(
+                math.degrees(brake.angle_start),
+                brake_min_deg,
+            ),
+            brake_max_deg,
+        )
+        brake_angle_deg = st.slider(
+            f"Drehwinkel Bremshebel (Hebel {brake.id})",
+            min_value=brake_min_deg,
+            max_value=brake_max_deg,
+            value=brake_start_deg,
+            step=0.5,
+            format="%.1f°",
+            key="manual_brake_angle",
+            help=(
+                "Manueller Drehwinkel des Bremshebels; "
+                "bestimmt die Bremsstellung der "
+                "Übertragungskurve."
+            ),
+        )
+        if st.button(
+            "Übertragungskurve berechnen",
+            type="primary",
+            key="manual_curve_button",
+        ):
+            locked_rod_lengths = {
+                int(row["Abtrieb"]): float(
+                    row["Länge (mm)"]
+                )
+                for row in edited_rods
+                if row.get("Sperren")
+                and row.get("Abtrieb") is not None
+            }
+            try:
+                st.session_state["manual_curve"] = (
+                    manual_transmission_curves(
+                        mixed_inputs,
+                        inputs.definition,
+                        rod_lengths=locked_rod_lengths,
+                        brake_angle_deg=float(
+                            brake_angle_deg
+                        ),
+                    )
+                )
+            except WorkflowError as error:
+                st.session_state.pop(
+                    "manual_curve",
+                    None,
+                )
+                st.error(str(error))
+        manual_curve = st.session_state.get("manual_curve")
+        if manual_curve is not None:
+            brake_pct = round(
+                100 * manual_curve.brake_fraction
+            )
+            curve_chart_data = {
+                "Eingabewinkel (°)": list(
+                    manual_curve.input_angles_deg
+                ),
+                "Soll ungebremst (°)": list(
+                    manual_curve.unbraked_deg
+                ),
+                "Soll voll gebremst (°)": list(
+                    manual_curve.braked_deg
+                ),
+                f"Soll Bremse {brake_pct} % (°)": list(
+                    manual_curve.target_deg
+                ),
+                f"Ist Bremse {brake_pct} % (°)": list(
+                    manual_curve.actual_deg
+                ),
+            }
+            curve_y_columns = [
+                column
+                for column in curve_chart_data
+                if column != "Eingabewinkel (°)"
+            ]
+            st.line_chart(
+                curve_chart_data,
+                x="Eingabewinkel (°)",
+                y=curve_y_columns,
+                x_label="Eingabewinkel (°)",
+                y_label="Ausgangswinkel (°)",
+            )
+            st.caption(
+                "Drehwinkel Bremshebel: "
+                f"{manual_curve.brake_angle_deg:.1f}° "
+                f"(Bremsstellung {brake_pct} %)."
+            )
+        else:
+            st.info(
+                "„Übertragungskurve berechnen“ klicken, "
+                "um die gebremste und ungebremste "
+                "Solkurve sowie die erzielte "
+                "Übertragungskurve darzustellen."
+            )
 
 with result_tab:
     st.subheader("Ergebnis")

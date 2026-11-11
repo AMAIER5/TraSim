@@ -264,6 +264,37 @@ id,...,pivot_on
   der Sidebar gewählten Anzahl interpolierter
   Bremsstellungen.
 
+### Manuelle Optimierung
+
+- Der Tab **Manuelle Optimierung** (nur im
+  Mischer-Modus) erlaubt es, eine bereits für die
+  ungebremste Sollkurve optimierte Grundmechanik
+  manuell weiterzuverstellen, ohne die Optimierung
+  erneut laufen zu lassen.
+- **Koppelstangen-Tabelle:** Jede Koppelstange
+  (Stufe) wird mit Antriebs-/Abtriebshebel und ihrer
+  automatisch berechneten Länge angezeigt. Die Länge
+  ist editierbar; über die Spalte **Sperren** wird die
+  Koppelstange von der Neuberechnung ausgenommen. Wird
+  ein Lagerpunkt oder eine Hebellänge in der
+  Parametertabelle verändert, bleiben gesperrte
+  Koppelstangen auf ihrem (gesperrten) Wert, nicht
+  gesperrte werden aus der aktuellen Geometrie neu
+  berechnet und in der Tabelle aktualisiert.
+- **Drehwinkel Bremshebel:** Schieberegler für den
+  manuellen Drehwinkel des Bremshebels (Verstellhebels)
+  innerhalb seines zulässigen Winkelbereichs
+  (`angle_min` … `angle_max`); daraus ergibt sich die
+  Bremsstellung (0 % = Startwinkel = ungebremst,
+  100 % = `angle_max` = voll gebremst).
+- **Übertragungskurve berechnen:** Auf Knopfdruck wird
+  die Mechanik mit den gesperrten Koppelstangen beim
+  gewählten Drehwinkel aufgebaut und simuliert; das
+  Diagramm zeigt die ungebremste und die voll gebremste
+  Sollkurve, die gemittelte Sollkurve der gewählten
+  Bremsstellung und die erzielte Ist-(
+  Übertragungs-)kurve gemeinsam.
+
 ### Beispiel: kompletter Durchlauf am Mischbrems-Beispiel
 
 1. **CSV vorbereiten:** `examples/mixed_brake_mechanism.csv`
