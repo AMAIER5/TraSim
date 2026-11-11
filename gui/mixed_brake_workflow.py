@@ -874,7 +874,15 @@ def _brake_position_report(
 ) -> str:
     """HTML report showing all blended target curves
     and actual curves plus the mechanism snapshots of
-    the middle brake position."""
+    the middle brake position.
+
+    The blended target curve of EVERY brake position is
+    drawn, even when the mechanism cannot be built there:
+    the target curve exists independently of the mechanism,
+    and hiding it made a result look empty whenever the
+    optimized mechanism was only buildable at a subset of
+    the brake positions (issue #113).  Only the actual
+    curve is limited to the buildable positions."""
     plotter = CurvePlotter(title=title)
     middle = len(grid.fractions) // 2
     middle_state = (
@@ -882,27 +890,41 @@ def _brake_position_report(
         if grid.states
         else None
     )
-    for state in grid.states:
-        if state is None:
-            continue
-        fraction = state.brake_fraction
-        input_rad = tuple(
-            math.radians(angle)
-            for angle in (
-                state.input_angles_deg
-            )
+    if middle_state is None:
+        # The middle brake position may be unbuildable while
+        # others are not (issue #113); show the snapshots of
+        # the first buildable position instead of none.
+        middle_state = next(
+            (
+                state
+                for state in grid.states
+                if state is not None
+            ),
+            None,
         )
+    input_rad = tuple(
+        math.radians(angle)
+        for angle in grid.input_angles_deg
+    )
+    for fraction, target_deg in zip(
+        grid.fractions,
+        grid.targets_deg,
+    ):
         plotter.add_target_curve(
             input_rad,
             tuple(
                 math.radians(angle)
-                for angle in state.target_deg
+                for angle in target_deg
             ),
             label=(
                 f"Soll Bremse "
                 f"{100 * fraction:.0f} %"
             ),
         )
+    for state in grid.states:
+        if state is None:
+            continue
+        fraction = state.brake_fraction
         plotter.add_actual_curve(
             input_rad,
             tuple(
