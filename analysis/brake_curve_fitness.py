@@ -183,9 +183,19 @@ class BrakeCurveFitness:
             )
         return self._cache[key].calculate(transfer_curve)
 
+    @property
+    def weights(
+        self,
+    ) -> tuple[float, ...] | None:
+        """The configured per-position weights (None when the
+        fitness defaults to 1 for every pair)."""
+        return self._weights
+
     def evaluate(
         self,
         pairs: list[tuple[SimulationResult, TargetCurve]],
+        *,
+        weights: tuple[float, ...] | None = None,
     ) -> float:
         """
         Evaluate a candidate over all brake positions.
@@ -196,6 +206,11 @@ class BrakeCurveFitness:
             One (SimulationResult, TargetCurve) pair per brake
             position, ordered by increasing brake position; the
             last pair is the maximum brake position (outermost).
+        weights:
+            Optional per-pair weights overriding the configured
+            ones for this call (used when only a subset of the
+            brake positions could be evaluated, issue #111).
+            Must match the number of pairs when given.
 
         Returns
         -------
@@ -208,7 +223,8 @@ class BrakeCurveFitness:
                 "At least one (simulation, target) pair is required."
             )
 
-        weights = self._weights
+        if weights is None:
+            weights = self._weights
         if weights is None:
             weights = tuple(1.0 for _ in pairs)
         if len(weights) != len(pairs):

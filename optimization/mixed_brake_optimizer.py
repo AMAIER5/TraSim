@@ -15,8 +15,14 @@ positions (lever angles ``beta_k`` of the brake lever):
    the multi-curve ``BrakeCurveFitness`` from S3.
 
 A ``MechanismBuildError`` never crashes the optimization:
-the candidate receives a hard penalty value instead
-(``PENALTY_MAX_BLOCKING``).
+the affected brake position is skipped and the remaining
+positions are still scored; only when no brake position can
+be built at all does the candidate receive the hard penalty
+value (``PENALTY_MAX_BLOCKING``).  Skipping (instead of a
+flat all-or-nothing penalty) keeps a fitness gradient when
+some brake positions are geometrically unreachable, so the
+optimizer no longer collapses onto blocking-only solutions
+(issue #111).
 
 Simulation results are cached per (candidate, beta) pair, so
 re-evaluating the same candidate does not rebuild and
@@ -152,9 +158,14 @@ class MixedBrakeOptimizer:
     ) -> float:
         """Evaluate one candidate over all brake positions.
 
-        Returns the fitness (lower is better).  Candidates
-        that cannot be built for at least one brake position
-        receive a hard penalty instead of raising.
+        Returns the fitness (lower is better).  A brake
+        position for which the mechanism cannot be built does
+        not abort the evaluation: the remaining positions are
+        still scored, so the optimizer keeps a gradient instead
+        of every candidate collapsing onto the same hard
+        penalty (issue #111).  Only when NO brake position can
+        be built at all does the candidate receive the hard
+        penalty ``PENALTY_MAX_BLOCKING``.
         """
         self._evaluations += 1
         offset = (
@@ -164,9 +175,12 @@ class MixedBrakeOptimizer:
         )
         pairs = []
         mechanisms = []
-        for beta, target in zip(
-            self._brake_positions,
-            self._targets,
+        evaluated: list[int] = []
+        for index, (beta, target) in enumerate(
+            zip(
+                self._brake_positions,
+                self._targets,
+            )
         ):
             result = self._cached_simulation(
                 parameters,
@@ -175,11 +189,12 @@ class MixedBrakeOptimizer:
             if result is None:
                 logger.debug(
                     "Build error for candidate %s at "
-                    "beta=%s; penalty applied.",
+                    "beta=%s; position skipped.",
                     parameters,
                     beta,
                 )
-                return PENALTY_MAX_BLOCKING
+                continue
+            evaluated.append(index)
             pairs.append(
                 (
                     self._anchored_result(
@@ -196,7 +211,21 @@ class MixedBrakeOptimizer:
                 )
                 if mechanism is not None:
                     mechanisms.append(mechanism)
-        fitness = self._fitness.evaluate(pairs)
+        if not pairs:
+            return PENALTY_MAX_BLOCKING
+        configured_weights = self._fitness.weights
+        weights = (
+            None
+            if configured_weights is None
+            else tuple(
+                configured_weights[index]
+                for index in evaluated
+            )
+        )
+        fitness = self._fitness.evaluate(
+            pairs,
+            weights=weights,
+        )
         if self._transmission_constraint is not None:
             fitness += (
                 self._transmission_constraint.evaluate(
