@@ -2386,6 +2386,15 @@ if mixed_result is not None:
                 ),
                 height=900,
             )
+        else:
+            # The selected brake position cannot be built
+            # (issue #113): fall back to the overall report,
+            # which still shows the target curves of every
+            # brake position, instead of showing no curve.
+            st.iframe(
+                mixed_result.html,
+                height=900,
+            )
 elif result is not None:
     with result_tab:
         st.write(
