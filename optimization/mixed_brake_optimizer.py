@@ -28,15 +28,16 @@ that blocks at the unbraked curve must always score worse
 than a non-blocking one and must never be generated once a
 non-blocking unbraked solution is possible (issue #115).
 
-The brake positions are not fixed absolute angles: they
-follow from the angle range of the CANDIDATE's brake lever
-(``angle_start`` = unbraked reference up to ``angle_max`` =
-fully braked), so moving the brake lever's ``angle``
-parameter during optimization really moves the brake lever
-instead of only compromising the target geometry between
-the curves (issue #118).  The grid fractions of the base
-``brake_positions`` are re-applied to the candidate's own
-``[angle_start, angle_max]`` range.
+The brake positions are not fixed absolute angles: the
+grid fractions of the base ``brake_positions`` are re-applied
+as a rigid translation of the base brake travel to the
+CANDIDATE's brake lever start angle (``angle_start``), so
+moving the brake lever's ``angle`` parameter during
+optimization really moves the brake lever while keeping the
+0 %..100 % travel intact (issue #118).  The brake lever
+therefore switches between the unbraked and braked state
+instead of collapsing onto a single position, and the
+geometry is not forced into a compromise between the curves.
 
 Simulation results are cached per (candidate, beta) pair, so
 re-evaluating the same candidate does not rebuild and
@@ -100,9 +101,10 @@ class MixedBrakeOptimizer:
         Lever angles (radians) of the BASE definition's
         brake lever, ordered by increasing brake position.
         Only their grid fractions are used: for every
-        candidate the positions are re-derived from the
-        candidate's own brake lever angle range (issue
-        #118, see ``brake_positions_for``).
+        candidate the grid is rigidly translated by the
+        candidate's brake lever start angle, keeping the
+        base brake travel (issue #118, see
+        ``brake_positions_for``).
     targets:
         One TargetCurve per brake position.
     anchor_output:
@@ -155,6 +157,14 @@ class MixedBrakeOptimizer:
         )
         base_start = brake.angle_start
         base_span = brake.angle_max - base_start
+        # The brake TRAVEL (span between the unbraked and the
+        # fully braked position) is kept at the base value:
+        # moving the brake lever's angle translates the whole
+        # grid rigidly instead of shrinking the travel, so the
+        # brake lever keeps switching between the unbraked and
+        # braked state and never collapses onto a single
+        # position (issue #118).
+        self._base_span = max(base_span, 0.0)
         if base_span > 0.0:
             self._fractions = tuple(
                 (beta - base_start) / base_span
@@ -291,23 +301,24 @@ class MixedBrakeOptimizer:
         candidate is evaluated.
 
         The grid fractions of the base ``brake_positions``
-        are re-applied to the candidate's own brake lever
-        angle range: position ``k`` is
-        ``angle_start + fraction_k * (angle_max -
-        angle_start)``, clamped to the brake lever's
-        admissible angle segment.  Moving the brake lever's
-        ``angle`` parameter therefore moves every evaluated
-        brake position with it (issue #118): the brake lever
-        position is a real optimization degree of freedom
-        instead of a fixed grid.
+        are re-applied as a rigid translation of the base
+        brake travel: position ``k`` is
+        ``angle_start + fraction_k * base_span``, clamped to
+        the brake lever's admissible angle segment, where
+        ``base_span`` is the travel of the BASE definition.
+        Moving the brake lever's ``angle`` parameter therefore
+        moves every evaluated brake position with it while
+        keeping the 0 %..100 % travel intact (issue #118): the
+        brake lever switches between the unbraked and braked
+        state instead of collapsing onto a single position or
+        a fixed grid.
         """
         definition = self._apply_parameters(parameters)
         brake = definition.get_lever(self._brake_lever_id)
         start = brake.angle_start
-        span = brake.angle_max - start
         return tuple(
             self._clamp(
-                start + fraction * span,
+                start + fraction * self._base_span,
                 brake.angle_min,
                 brake.angle_max,
             )
