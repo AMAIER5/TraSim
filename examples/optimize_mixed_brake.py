@@ -321,17 +321,23 @@ def main() -> None:
 
     print("\nSIMULATED CURVES OF BEST CANDIDATE")
     mechanisms = []
-    for fraction, beta_deg in zip(
+    # The evaluated brake positions follow from the best
+    # candidate's own brake lever angle range (issue #118).
+    best_brake_positions = optimizer.brake_positions_for(
+        engine.best_candidate
+    )
+    for fraction, beta in zip(
         grid.fractions,
-        grid.brake_positions_deg,
+        best_brake_positions,
     ):
+        beta_deg = math.degrees(beta)
         result = optimizer._cached_simulation(
             engine.best_candidate,
-            math.radians(beta_deg),
+            beta,
         )
         mechanism = optimizer._cached_mechanism(
             engine.best_candidate,
-            math.radians(beta_deg),
+            beta,
         )
         if mechanism is not None:
             mechanisms.append(mechanism)
