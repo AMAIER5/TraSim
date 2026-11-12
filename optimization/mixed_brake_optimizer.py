@@ -22,7 +22,11 @@ value (``PENALTY_MAX_BLOCKING``).  Skipping (instead of a
 flat all-or-nothing penalty) keeps a fitness gradient when
 some brake positions are geometrically unreachable, so the
 optimizer no longer collapses onto blocking-only solutions
-(issue #111).
+(issue #111).  The unbraked position (first brake position)
+is the exception: it is never skipped, because a solution
+that blocks at the unbraked curve must always score worse
+than a non-blocking one and must never be generated once a
+non-blocking unbraked solution is possible (issue #115).
 
 Simulation results are cached per (candidate, beta) pair, so
 re-evaluating the same candidate does not rebuild and
@@ -158,14 +162,23 @@ class MixedBrakeOptimizer:
     ) -> float:
         """Evaluate one candidate over all brake positions.
 
-        Returns the fitness (lower is better).  A brake
-        position for which the mechanism cannot be built does
-        not abort the evaluation: the remaining positions are
-        still scored, so the optimizer keeps a gradient instead
-        of every candidate collapsing onto the same hard
-        penalty (issue #111).  Only when NO brake position can
-        be built at all does the candidate receive the hard
-        penalty ``PENALTY_MAX_BLOCKING``.
+        Returns the fitness (lower is better).  A braked
+        position (index > 0) for which the mechanism cannot be
+        built does not abort the evaluation: the remaining
+        positions are still scored, so the optimizer keeps a
+        gradient instead of every candidate collapsing onto the
+        same hard penalty (issue #111).  Only when NO brake
+        position can be built at all does the candidate receive
+        the hard penalty ``PENALTY_MAX_BLOCKING``.
+
+        The unbraked position (index 0) is mandatory and is
+        never skipped: when it cannot be built, the candidate
+        receives ``PENALTY_MAX_BLOCKING`` directly, so a
+        candidate that blocks at the unbraked curve always
+        scores worse than one with a non-blocking unbraked
+        curve and can never become the generated solution once
+        a non-blocking unbraked solution is possible
+        (issue #115).
         """
         self._evaluations += 1
         offset = (
@@ -187,6 +200,14 @@ class MixedBrakeOptimizer:
                 beta,
             )
             if result is None:
+                if index == 0:
+                    logger.debug(
+                        "Build error at the unbraked "
+                        "position for candidate %s; hard "
+                        "penalty (issue #115).",
+                        parameters,
+                    )
+                    return PENALTY_MAX_BLOCKING
                 logger.debug(
                     "Build error for candidate %s at "
                     "beta=%s; position skipped.",
