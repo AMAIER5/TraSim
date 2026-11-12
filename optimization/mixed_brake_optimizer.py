@@ -31,12 +31,12 @@ non-blocking unbraked solution is possible (issue #115).
 The brake positions are not fixed absolute angles: they
 follow from the angle range of the CANDIDATE's brake lever
 (``angle_start`` = unbraked reference up to ``angle_max`` =
-fully braked), so moving the brake lever's ``angle``
-parameter during optimization really moves the brake lever
-instead of only compromising the target geometry between
-the curves (issue #118).  The grid fractions of the base
-``brake_positions`` are re-applied to the candidate's own
-``[angle_start, angle_max]`` range.
+fully braked), so moving the brake lever's ``angle`` and
+``angle_max`` parameters during optimization really moves
+the brake lever instead of only compromising the target
+geometry between the curves (issue #118).  The grid
+fractions of the base ``brake_positions`` are re-applied
+to the candidate's own ``[angle_start, angle_max]`` range.
 
 Simulation results are cached per (candidate, beta) pair, so
 re-evaluating the same candidate does not rebuild and
@@ -473,13 +473,25 @@ class MixedBrakeOptimizer:
                 f"lever.{lever.id}.length",
                 lever.length_start,
             )
+            # The brake lever's angle_max (fully braked
+            # position) is optimizable in mixed brake mode
+            # (issue #118); clamp it into the admissible
+            # segment first, then keep angle <= angle_max.
+            angle_max = self._clamp(
+                values.get(
+                    f"lever.{lever.id}.angle_max",
+                    lever.angle_max,
+                ),
+                lever.angle_min,
+                lever.angle_max,
+            )
             angle = self._clamp(
                 values.get(
                     f"lever.{lever.id}.angle",
                     lever.angle_start,
                 ),
                 lever.angle_min,
-                lever.angle_max,
+                angle_max,
             )
             pivot_x = values.get(
                 f"lever.{lever.id}.pivot.x",
@@ -497,6 +509,7 @@ class MixedBrakeOptimizer:
                 lever,
                 length_start=length,
                 angle_start=angle,
+                angle_max=angle_max,
                 pivot=(
                     Point3D(
                         x=pivot_x,

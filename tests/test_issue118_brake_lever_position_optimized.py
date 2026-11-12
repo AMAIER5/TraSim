@@ -218,3 +218,107 @@ def test_brake_lever_angle_changes_simulation(
     assert result_a.output_angles != pytest.approx(
         result_b.output_angles
     )
+
+
+def _candidate(
+    definition,
+    **overrides: float,
+) -> ParameterSet:
+    from optimization.parameter import Parameter
+
+    template = CsvParameterFactory.create(definition)
+    brake = definition.get_lever(3)
+    parameters = list(template.parameters)
+    parameters.append(
+        Parameter(
+            name="lever.3.angle_max",
+            minimum=brake.angle_min,
+            maximum=brake.angle_max,
+            value=brake.angle_max,
+        )
+    )
+    parameters = tuple(
+        replace(
+            parameter,
+            value=math.radians(overrides[parameter.name]),
+        )
+        if parameter.name in overrides
+        else parameter
+        for parameter in parameters
+    )
+    return ParameterSet(parameters=parameters)
+
+
+def test_template_offers_brake_angle_max(mixer_definition):
+    """The mixed brake template exposes the brake lever's
+    angle_max (fully braked position) as an optimization
+    parameter within its admissible segment (issue #118)."""
+    from gui.mixed_brake_workflow import (
+        mixed_brake_inputs_from_parts,
+        mixed_brake_parameter_template,
+    )
+
+    unbraked = TargetCurve.from_points(
+        input_angles=(math.radians(-10), math.radians(0)),
+        output_angles=(math.radians(-10), math.radians(0)),
+    )
+    braked = TargetCurve.from_points(
+        input_angles=(math.radians(-10), math.radians(0)),
+        output_angles=(math.radians(-5), math.radians(5)),
+    )
+    inputs = mixed_brake_inputs_from_parts(
+        mixer_definition,
+        unbraked,
+        braked,
+    )
+    template = mixed_brake_parameter_template(inputs)
+    brake = mixer_definition.get_lever(3)
+    param = template.get("lever.3.angle_max")
+    assert param.minimum == pytest.approx(brake.angle_min)
+    assert param.maximum == pytest.approx(brake.angle_max)
+    assert param.value == pytest.approx(brake.angle_max)
+
+
+def test_brake_positions_follow_candidate_angle_max(
+    mixer_definition,
+):
+    """Moving the brake lever's angle_max parameter moves the
+    fully braked brake position: the grid fractions are
+    re-applied to the candidate's own [angle_start,
+    angle_max] (brake lever 3: angle_start = 0 deg,
+    base angle_max = 30 deg, base grid 0/20 deg)."""
+    optimizer = _optimizer(mixer_definition)
+    candidate = _candidate(
+        mixer_definition,
+        **{"lever.3.angle_max": 25.0},
+    )
+    positions = optimizer.brake_positions_for(candidate)
+    expected = (
+        math.radians(0.0),
+        math.radians((20.0 / 30.0) * 25.0),
+    )
+    assert positions == pytest.approx(expected)
+
+
+def test_angle_clamped_to_candidate_angle_max(
+    mixer_definition,
+):
+    """The candidate definition keeps a valid brake range:
+    angle_start is clamped to the (possibly reduced)
+    angle_max, so angle_start <= angle_max always holds."""
+    optimizer = _optimizer(mixer_definition)
+    candidate = _candidate(
+        mixer_definition,
+        **{
+            "lever.3.angle": 30.0,
+            "lever.3.angle_max": 10.0,
+        },
+    )
+    definition = optimizer._apply_parameters(candidate)
+    brake = definition.get_lever(3)
+    assert brake.angle_start == pytest.approx(
+        math.radians(10.0)
+    )
+    assert brake.angle_max == pytest.approx(
+        math.radians(10.0)
+    )
