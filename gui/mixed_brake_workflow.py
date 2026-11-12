@@ -643,6 +643,59 @@ def _blended_targets(
     )
 
 
+def _brake_lever_id(
+    definition: MechanismDefinition,
+) -> int:
+    """Id of the adjusting (brake) lever that carries the
+    mixer pivot: the pivot_on reference of a mixer lever."""
+    mixer = next(
+        lever
+        for lever in definition.levers
+        if lever.pivot_on is not None
+    )
+    return mixer.pivot_reference.lever_id
+
+
+def _braked_blocks_but_unbraked_works(
+    grid: _MixedBrakeGrid,
+) -> bool:
+    """True when the unbraked (first) brake position is
+    buildable and non-blocking but the fully braked (last)
+    position blocks (issue #115)."""
+    return (
+        bool(grid.states)
+        and grid.states[0] is not None
+        and grid.states[-1] is None
+    )
+
+
+def _reduce_brake_travel_to_zero(
+    definition: MechanismDefinition,
+) -> MechanismDefinition:
+    """Reduce the brake lever travel to 0 deg (issue #115):
+    the fully braked position (``angle_max``) is moved onto
+    the unbraked reference (``angle_start``).  The braked
+    position then coincides with the unbraked one, so no
+    blocking solution can be generated for it.
+
+    Only called when the unbraked position is buildable and
+    non-blocking, so ``angle_start`` lies inside the
+    admissible segment and stays a valid ``angle_max``.
+    """
+    from dataclasses import replace
+
+    brake_id = _brake_lever_id(definition)
+    levers = []
+    for lever in definition.levers:
+        if lever.id == brake_id:
+            lever = replace(
+                lever,
+                angle_max=lever.angle_start,
+            )
+        levers.append(lever)
+    return MechanismDefinition(tuple(levers))
+
+
 def _parameter_definition(
     inputs: MixedBrakeInputs,
     parameters: ParameterSet,
@@ -1105,6 +1158,12 @@ def run_mixed_brake_optimization(
     a user stop still yields the best values found so far
     (issue #93).
 
+    When the best solution is non-blocking at the unbraked
+    position but blocks at the fully braked position, the
+    brake lever travel of the returned optimized definition
+    is reduced to 0 deg, so the generated solution can never
+    block in the braked position (issue #115).
+
     Raises WorkflowError with a user-facing message when the
     optimization cannot produce a result.
     """
@@ -1277,6 +1336,19 @@ def run_mixed_brake_optimization(
         ),
         motion=motion,
     )
+    if _braked_blocks_but_unbraked_works(result_grid):
+        # Issue #115: the best solution is non-blocking at the
+        # unbraked position, but blocks (unbuildable or
+        # simulation block) at the fully braked position.
+        # Such a solution must not be generated; in the worst
+        # case the brake lever travel is reduced to 0 deg, so
+        # the braked position coincides with the non-blocking
+        # unbraked one.
+        optimized_definition = (
+            _reduce_brake_travel_to_zero(
+                optimized_definition
+            )
+        )
     html = _brake_position_report(
         result_grid,
         title=(
