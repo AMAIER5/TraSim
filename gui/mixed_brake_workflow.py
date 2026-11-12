@@ -757,10 +757,19 @@ def build_mixed_brake_grid(
     yield a ``None`` entry in ``states`` instead of
     raising, so reports can still show the remaining
     positions.
+
+    The brake grid follows from the angle range of the
+    PASSED definition's brake lever (``angle_start``
+    unbraked up to ``angle_max`` fully braked), so reports
+    of an optimized candidate show the brake lever
+    positions the optimizer actually chose (issue #118).
     """
+    brake = definition.get_lever(
+        _brake_lever_id(definition)
+    )
     grid = BrakeGridSettings(
-        brake_min_deg=inputs.brake_min_deg,
-        brake_max_deg=inputs.brake_max_deg,
+        brake_min_deg=math.degrees(brake.angle_start),
+        brake_max_deg=math.degrees(brake.angle_max),
         position_count=position_count,
     )
     if motion is None:
@@ -1164,6 +1173,13 @@ def run_mixed_brake_optimization(
     is reduced to 0 deg, so the generated solution can never
     block in the braked position (issue #115).
 
+    The brake lever's ``angle`` parameter is a real
+    optimization degree of freedom: every candidate is
+    evaluated on the brake grid re-derived from its own
+    brake lever angle range, and the reported
+    ``brake_positions_deg`` are those of the optimized
+    definition (issue #118).
+
     Raises WorkflowError with a user-facing message when the
     optimization cannot produce a result.
     """
@@ -1377,7 +1393,7 @@ def run_mixed_brake_optimization(
         ),
         generations=generations,
         brake_positions_deg=(
-            grid.brake_positions_deg
+            result_grid.brake_positions_deg
         ),
         fitness_history=tuple(history),
         best_values=best.values(),

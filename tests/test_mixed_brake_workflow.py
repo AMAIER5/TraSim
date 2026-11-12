@@ -17,6 +17,7 @@ import pytest
 
 from gui.mixed_brake_workflow import (
     MixedBrakeSettings,
+    _brake_lever_id,
     load_mixed_brake_inputs,
     mixed_brake_parameter_template,
     run_mixed_brake_optimization,
@@ -120,11 +121,18 @@ def test_short_optimization_over_grid(inputs):
         settings,
     )
     assert len(result.brake_positions_deg) == 5
+    # Issue #118: the reported brake positions follow from
+    # the optimized definition's brake lever angle range,
+    # not from the fixed input grid.
+    assert result.optimized_definition is not None
+    brake = result.optimized_definition.get_lever(
+        _brake_lever_id(result.optimized_definition)
+    )
     assert result.brake_positions_deg[0] == (
-        pytest.approx(180.0)
+        pytest.approx(math.degrees(brake.angle_start))
     )
     assert result.brake_positions_deg[-1] == (
-        pytest.approx(190.0)
+        pytest.approx(math.degrees(brake.angle_max))
     )
     assert result.best_score < float("inf")
     assert result.generations >= 1
@@ -279,11 +287,17 @@ def test_brake_positions_two_means_no_interpolation(
         template,
         settings,
     )
+    # Issue #118: the two reported limit positions are the
+    # optimized definition's own brake lever angle range.
+    assert result.optimized_definition is not None
+    brake = result.optimized_definition.get_lever(
+        _brake_lever_id(result.optimized_definition)
+    )
     assert result.brake_positions_deg == (
         pytest.approx(
             (
-                inputs.brake_min_deg,
-                inputs.brake_max_deg,
+                math.degrees(brake.angle_start),
+                math.degrees(brake.angle_max),
             )
         )
     )

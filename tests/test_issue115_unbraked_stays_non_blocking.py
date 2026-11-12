@@ -228,11 +228,14 @@ def _unbraked_only_optimizer(inputs) -> MixedBrakeOptimizer:
 
 
 def test_candidate_blocking_at_unbraked_scores_worse():
-    """The solution the fixed version generated blocks at the
-    unbraked position (its brake lever start angle moved to
-    357.5 deg, which is unbuildable) while the braked
-    position is non-blocking.  Such a candidate must receive
-    the hard penalty and must score strictly worse than a
+    """The solution the fixed version generated moves the
+    brake lever start angle to 357.5 deg.  Since issue #118
+    the unbraked position follows from the candidate's own
+    brake lever angle range, so this candidate is evaluated
+    at 357.5 deg (where it builds, because the reference rods
+    are frozen there) and at the braked 360 deg.  Its curves
+    block during simulation, so it must still score at
+    least the hard penalty and strictly worse than a
     non-blocking solution of the unbraked curve (issue
     #115)."""
     inputs = _inputs()
@@ -255,7 +258,7 @@ def test_candidate_blocking_at_unbraked_scores_worse():
         blocks_inputs.definition,
     )
     blocking = optimizer.evaluate(blocking_candidate)
-    assert blocking == PENALTY_MAX_BLOCKING
+    assert blocking >= PENALTY_MAX_BLOCKING
     assert blocking > non_blocking
 
 
