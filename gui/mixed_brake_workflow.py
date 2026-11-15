@@ -76,6 +76,7 @@ from optimization.evolution_engine import (
 from optimization.mixed_brake_optimizer import (
     MixedBrakeOptimizer,
 )
+from optimization.parameter import Parameter
 from optimization.parameter_mutation import (
     ParameterMutation,
 )
@@ -400,9 +401,32 @@ def mixed_brake_parameter_template(
     inputs: MixedBrakeInputs,
 ) -> ParameterSet:
     """Editable optimization parameter template of the
-    mixer mechanism."""
-    return CsvParameterFactory.create(
+    mixer mechanism.
+
+    In addition to the generic lever parameters, the
+    brake lever's ``angle_max`` (the fully braked brake
+    lever position, 100 % brake travel) is optimizable
+    within its admissible segment, so the optimizer can
+    move the brake lever position instead of only
+    compromising the geometry between the unbraked and
+    braked target curves (issue #118).
+    """
+    template = CsvParameterFactory.create(
         inputs.definition,
+    )
+    brake = inputs.definition.get_lever(
+        _brake_lever_id(inputs.definition)
+    )
+    brake_angle_max = Parameter(
+        name=f"lever.{brake.id}.angle_max",
+        minimum=brake.angle_min,
+        maximum=brake.angle_max,
+        value=brake.angle_max,
+    )
+    return ParameterSet(
+        parameters=(
+            template.parameters + (brake_angle_max,)
+        ),
     )
 
 
@@ -707,6 +731,26 @@ def _parameter_definition(
     values = parameters.values()
     levers = []
     for lever in inputs.definition.levers:
+        # The brake lever's angle_max (fully braked position)
+        # is optimizable in mixed brake mode (issue #118);
+        # it is clamped into the admissible segment and kept
+        # >= angle_start so the brake range stays valid.
+        angle_max = values.get(
+            f"lever.{lever.id}.angle_max",
+            lever.angle_max,
+        )
+        angle_max = min(
+            max(angle_max, lever.angle_min),
+            lever.angle_max,
+        )
+        angle_start = values.get(
+            f"lever.{lever.id}.angle",
+            lever.angle_start,
+        )
+        angle_start = min(
+            max(angle_start, lever.angle_min),
+            angle_max,
+        )
         levers.append(
             replace(
                 lever,
@@ -714,10 +758,8 @@ def _parameter_definition(
                     f"lever.{lever.id}.length",
                     lever.length_start,
                 ),
-                angle_start=values.get(
-                    f"lever.{lever.id}.angle",
-                    lever.angle_start,
-                ),
+                angle_start=angle_start,
+                angle_max=angle_max,
                 pivot=(
                     Point3D(
                         x=values.get(

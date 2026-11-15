@@ -55,7 +55,6 @@ from gui.mixed_brake_workflow import (
     _reference_output_angle,
     build_mixed_brake_grid,
     load_mixed_brake_inputs,
-    mixed_brake_inputs_from_parts,
     mixed_brake_parameter_template,
     run_mixed_brake_optimization,
 )
@@ -283,13 +282,12 @@ def test_optimization_keeps_unbraked_non_blocking():
     assert result.best_score < PENALTY_MAX_BLOCKING
     optimized = result.optimized_definition
     assert optimized is not None
-    result_inputs = mixed_brake_inputs_from_parts(
-        optimized,
-        inputs.unbraked,
-        inputs.braked,
-    )
+    # Rebuild with the original inputs so the motion stays
+    # anchored exactly as during the evaluation of the
+    # candidate (the reload path re-anchors at the optimized
+    # drive angle, which is a separate concern).
     result_grid = build_mixed_brake_grid(
-        result_inputs,
+        inputs,
         optimized,
         position_count=5,
     )

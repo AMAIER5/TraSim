@@ -383,6 +383,12 @@ Rules:
   angle range (`angle_start` unbraked reference up to
   `angle_max` fully braked) of the referenced lever
   (see `analysis/brake_grid.py`, `BrakeGridSettings`).
+  In the mixed brake optimization both ends of that range
+  are optimizable (`lever.<brake_id>.angle` and
+  `lever.<brake_id>.angle_max`), and every candidate is
+  evaluated on the brake grid re-derived from its own
+  range, so the brake lever position really moves during
+  optimization (issue #118).
 - A mechanism with a `pivot_on` lever is built with the
   `MixedBrakeBuilder` (see `mechanics/mixed_brake_builder.py`);
   the referenced lever acts as the brake lever, the referencing

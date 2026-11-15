@@ -326,7 +326,11 @@ def test_generated_solution_keeps_travel_when_braked_buildable():
     optimized = result.optimized_definition
     assert optimized is not None
     brake = optimized.get_lever(_brake_lever_id(optimized))
-    assert brake.angle_max == pytest.approx(
-        math.radians(190.0)
-    )
+    # Issue #118: angle_max is an optimization parameter, so
+    # it may move inside the admissible segment; the #115
+    # invariant is that the travel is NOT collapsed to 0 deg
+    # when the braked position is buildable.
     assert brake.angle_max > brake.angle_start
+    assert brake.angle_max <= (
+        math.radians(190.0) + 1.0e-9
+    )
