@@ -76,6 +76,24 @@ __all__ = [
 ]
 
 
+def _mean_squared_difference(
+    target: TargetCurve,
+    reference: TargetCurve,
+    support_angles: tuple[float, ...],
+) -> float:
+    """Mean squared output difference between two target
+    curves over the support input angles (radians squared).
+    Zero when the curves are identical."""
+    if not support_angles:
+        return 0.0
+    total = sum(
+        (target.evaluate(angle) - reference.evaluate(angle))
+        ** 2
+        for angle in support_angles
+    )
+    return total / len(support_angles)
+
+
 class MixedBrakeOptimizer:
     """Evaluates candidates over multiple brake positions.
 
@@ -173,6 +191,30 @@ class MixedBrakeOptimizer:
             self._fractions = tuple(
                 0.0 for _ in self._brake_positions
             )
+        # Penalty for an unbuildable brake position k > 0
+        # (issue #118): proportional to how much its target
+        # curve differs from the unbraked target.  When the
+        # braked and unbraked targets are identical the
+        # penalty is exactly 0, so the issue-#111 behaviour
+        # (skipping keeps the single-curve quality) is
+        # unchanged; when the braked target differs, the
+        # optimizer is driven to make the braked position
+        # buildable so the brake lever actually switches
+        # between the unbraked and braked state instead of
+        # silently skipping it.
+        support_angles = tuple(self._simulator.motion)
+        unbraked_target = self._targets[0]
+        self._skipped_position_penalties = tuple(
+            0.0
+            if index == 0
+            else 10.0
+            * _mean_squared_difference(
+                target,
+                unbraked_target,
+                support_angles,
+            )
+            for index, target in enumerate(self._targets)
+        )
         self._transmission_constraint = (
             transmission_angle_constraint
         )
@@ -226,6 +268,7 @@ class MixedBrakeOptimizer:
         pairs = []
         mechanisms = []
         evaluated: list[int] = []
+        skipped_penalty = 0.0
         for index, (beta, target) in enumerate(
             zip(
                 self.brake_positions_for(parameters),
@@ -245,9 +288,20 @@ class MixedBrakeOptimizer:
                         parameters,
                     )
                     return PENALTY_MAX_BLOCKING
+                # An unbuildable braked position is not free:
+                # it adds a penalty proportional to how much
+                # its target differs from the unbraked one,
+                # so the optimizer is driven to make the braked
+                # position buildable and the brake lever really
+                # switches states (issue #118).  Identical
+                # targets yield a zero penalty, keeping the
+                # issue-#111 skip behaviour.
+                skipped_penalty += (
+                    self._skipped_position_penalties[index]
+                )
                 logger.debug(
                     "Build error for candidate %s at "
-                    "beta=%s; position skipped.",
+                    "beta=%s; position penalized.",
                     parameters,
                     beta,
                 )
@@ -284,6 +338,7 @@ class MixedBrakeOptimizer:
             pairs,
             weights=weights,
         )
+        fitness += skipped_penalty
         if self._transmission_constraint is not None:
             fitness += (
                 self._transmission_constraint.evaluate(
@@ -483,25 +538,13 @@ class MixedBrakeOptimizer:
                 f"lever.{lever.id}.length",
                 lever.length_start,
             )
-            # The brake lever's angle_max (fully braked
-            # position) is optimizable in mixed brake mode
-            # (issue #118); clamp it into the admissible
-            # segment first, then keep angle <= angle_max.
-            angle_max = self._clamp(
-                values.get(
-                    f"lever.{lever.id}.angle_max",
-                    lever.angle_max,
-                ),
-                lever.angle_min,
-                lever.angle_max,
-            )
             angle = self._clamp(
                 values.get(
                     f"lever.{lever.id}.angle",
                     lever.angle_start,
                 ),
                 lever.angle_min,
-                angle_max,
+                lever.angle_max,
             )
             pivot_x = values.get(
                 f"lever.{lever.id}.pivot.x",
@@ -519,7 +562,6 @@ class MixedBrakeOptimizer:
                 lever,
                 length_start=length,
                 angle_start=angle,
-                angle_max=angle_max,
                 pivot=(
                     Point3D(
                         x=pivot_x,

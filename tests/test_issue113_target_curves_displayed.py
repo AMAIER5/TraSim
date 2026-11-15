@@ -33,6 +33,7 @@ from pathlib import Path
 import pytest
 
 from analysis.brake_curve_fitness import (
+    PENALTY_MAX_BLOCKING,
     BrakeCurveFitness,
 )
 from analysis.brake_grid import (
@@ -190,7 +191,12 @@ def test_optimized_mechanism_only_buildable_at_zero_percent():
         state is None for state in grid.states[1:]
     )
     optimizer, template = _optimizer(inputs)
-    assert optimizer.evaluate(template) < 1.0
+    fitness = optimizer.evaluate(template)
+    # Issue #118: the unbuildable braked positions now add a
+    # target-spread penalty, but the candidate stays far below
+    # the hard blocking penalty (#111 skip keeps a gradient).
+    assert fitness < PENALTY_MAX_BLOCKING
+    assert fitness > 1.0
 
 
 def test_report_shows_target_curves_of_all_brake_positions():
