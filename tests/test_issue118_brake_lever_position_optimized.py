@@ -127,11 +127,11 @@ def test_brake_positions_follow_base_candidate(
 def test_brake_positions_follow_candidate_angle(
     mixer_definition,
 ):
-    """Moving the brake lever's angle parameter moves every
-    evaluated brake position with it: the grid fractions of
-    the base grid are re-applied to the candidate's own
-    [angle_start, angle_max] range (brake lever 3:
-    angle_max = 30 deg)."""
+    """Moving the brake lever's angle parameter rigidly
+    translates every evaluated brake position: the grid
+    fractions of the base grid are re-applied to the BASE
+    brake travel (brake lever 3: base travel = 30 deg), so
+    the 0 %..100 % span is preserved (issue #118)."""
     optimizer = _optimizer(mixer_definition)
     candidate = _candidate_with_brake_angle(
         mixer_definition,
@@ -140,16 +140,42 @@ def test_brake_positions_follow_candidate_angle(
     positions = optimizer.brake_positions_for(candidate)
     expected = (
         math.radians(10.0),
-        math.radians(10.0 + (20.0 / 30.0) * 20.0),
+        math.radians(10.0 + (20.0 / 30.0) * 30.0),
     )
     assert positions == pytest.approx(expected)
+
+
+def test_brake_travel_preserved_when_angle_moves(
+    mixer_definition,
+):
+    """The 0 % and 100 % positions of a moved candidate stay
+    one base travel apart (they never collapse onto the same
+    brake lever position), so moving the brake lever keeps
+    switching between the unbraked and braked state (issue
+    #118)."""
+    optimizer = _optimizer(mixer_definition)
+    base = _candidate_with_brake_angle(mixer_definition, 0.0)
+    moved = _candidate_with_brake_angle(
+        mixer_definition,
+        10.0,
+    )
+    base_positions = optimizer.brake_positions_for(base)
+    moved_positions = optimizer.brake_positions_for(moved)
+    base_travel = base_positions[-1] - base_positions[0]
+    moved_travel = moved_positions[-1] - moved_positions[0]
+    assert base_travel == pytest.approx(math.radians(20.0))
+    assert moved_travel == pytest.approx(base_travel)
+    assert moved_positions[-1] != pytest.approx(
+        moved_positions[0]
+    )
 
 
 def test_brake_positions_clamped_to_lever_bounds(
     mixer_definition,
 ):
-    """A brake angle at the upper bound collapses the grid
-    onto angle_max and stays inside the admissible segment."""
+    """A brake angle at the upper bound keeps the positions
+    inside the admissible segment (the translated grid is
+    clamped onto angle_max)."""
     optimizer = _optimizer(mixer_definition)
     candidate = _candidate_with_brake_angle(
         mixer_definition,
