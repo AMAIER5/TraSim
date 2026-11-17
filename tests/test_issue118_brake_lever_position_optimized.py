@@ -246,105 +246,74 @@ def test_brake_lever_angle_changes_simulation(
     )
 
 
-def _candidate(
-    definition,
-    **overrides: float,
-) -> ParameterSet:
-    from optimization.parameter import Parameter
 
-    template = CsvParameterFactory.create(definition)
-    brake = definition.get_lever(3)
-    parameters = list(template.parameters)
-    parameters.append(
-        Parameter(
-            name="lever.3.angle_max",
-            minimum=brake.angle_min,
-            maximum=brake.angle_max,
-            value=brake.angle_max,
-        )
-    )
-    parameters = tuple(
-        replace(
-            parameter,
-            value=math.radians(overrides[parameter.name]),
-        )
-        if parameter.name in overrides
-        else parameter
-        for parameter in parameters
-    )
-    return ParameterSet(parameters=parameters)
-
-
-def test_template_offers_brake_angle_max(mixer_definition):
-    """The mixed brake template exposes the brake lever's
-    angle_max (fully braked position) as an optimization
-    parameter within its admissible segment (issue #118)."""
-    from gui.mixed_brake_workflow import (
-        mixed_brake_inputs_from_parts,
-        mixed_brake_parameter_template,
-    )
-
-    unbraked = TargetCurve.from_points(
-        input_angles=(math.radians(-10), math.radians(0)),
-        output_angles=(math.radians(-10), math.radians(0)),
-    )
-    braked = TargetCurve.from_points(
-        input_angles=(math.radians(-10), math.radians(0)),
-        output_angles=(math.radians(-5), math.radians(5)),
-    )
-    inputs = mixed_brake_inputs_from_parts(
-        mixer_definition,
-        unbraked,
-        braked,
-    )
-    template = mixed_brake_parameter_template(inputs)
-    brake = mixer_definition.get_lever(3)
-    param = template.get("lever.3.angle_max")
-    assert param.minimum == pytest.approx(brake.angle_min)
-    assert param.maximum == pytest.approx(brake.angle_max)
-    assert param.value == pytest.approx(brake.angle_max)
-
-
-def test_brake_positions_follow_candidate_angle_max(
+def test_skipped_braked_position_is_penalized(
     mixer_definition,
 ):
-    """Moving the brake lever's angle_max parameter moves the
-    fully braked brake position: the grid fractions are
-    re-applied to the candidate's own [angle_start,
-    angle_max] (brake lever 3: angle_start = 0 deg,
-    base angle_max = 30 deg, base grid 0/20 deg)."""
+    """An unbuildable braked position (index > 0) is not free:
+    it adds a penalty proportional to how much its target
+    differs from the unbraked target, so the optimizer is
+    driven to make the braked position buildable and the
+    brake lever really switches states (issue #118)."""
     optimizer = _optimizer(mixer_definition)
-    candidate = _candidate(
+    assert optimizer._skipped_position_penalties[0] == 0.0
+    assert optimizer._skipped_position_penalties[1] > 0.0
+    candidate = _candidate_with_brake_angle(
         mixer_definition,
-        **{"lever.3.angle_max": 25.0},
+        0.0,
     )
-    positions = optimizer.brake_positions_for(candidate)
-    expected = (
-        math.radians(0.0),
-        math.radians((20.0 / 30.0) * 25.0),
-    )
-    assert positions == pytest.approx(expected)
+    real = optimizer._cached_simulation
+    state = {"calls": 0}
+
+    def fake(parameters, beta):
+        state["calls"] += 1
+        if state["calls"] == 2:
+            return None
+        return real(parameters, beta)
+
+    optimizer._cached_simulation = fake
+    fitness_penalized = optimizer.evaluate(candidate)
+    optimizer._cached_simulation = real
+    fitness_unpenalized = optimizer.evaluate(candidate)
+    assert fitness_penalized > fitness_unpenalized
 
 
-def test_angle_clamped_to_candidate_angle_max(
+def test_skipped_position_free_when_targets_identical(
     mixer_definition,
 ):
-    """The candidate definition keeps a valid brake range:
-    angle_start is clamped to the (possibly reduced)
-    angle_max, so angle_start <= angle_max always holds."""
-    optimizer = _optimizer(mixer_definition)
-    candidate = _candidate(
-        mixer_definition,
-        **{
-            "lever.3.angle": 30.0,
-            "lever.3.angle_max": 10.0,
-        },
+    """When the braked target is identical to the unbraked
+    one, the skip penalty is exactly zero, preserving the
+    issue-#111 behaviour (skipping keeps the single-curve
+    quality)."""
+    motion = MotionRange(
+        start_angle=math.radians(-10),
+        max_angle=math.radians(20),
+        step=math.radians(2),
     )
-    definition = optimizer._apply_parameters(candidate)
-    brake = definition.get_lever(3)
-    assert brake.angle_start == pytest.approx(
-        math.radians(10.0)
+    same = TargetCurve.from_points(
+        input_angles=(
+            math.radians(-10),
+            math.radians(0),
+            math.radians(10),
+        ),
+        output_angles=(
+            math.radians(-5),
+            math.radians(0),
+            math.radians(5),
+        ),
     )
-    assert brake.angle_max == pytest.approx(
-        math.radians(10.0)
+    optimizer = MixedBrakeOptimizer(
+        builder=MixedBrakeBuilder(mixer_definition),
+        simulator=MechanismSimulator(motion=motion),
+        fitness=BrakeCurveFitness(),
+        definition=mixer_definition,
+        brake_positions=tuple(
+            math.radians(angle)
+            for angle in BRAKE_POSITIONS_DEG
+        ),
+        targets=(same, same),
+    )
+    assert optimizer._skipped_position_penalties == (
+        0.0,
+        0.0,
     )
