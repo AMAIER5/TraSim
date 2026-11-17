@@ -349,7 +349,16 @@ id,...,pivot_on
    (`mixed_brake_result.html`), **Optimierte
    Mechanik herunterladen (CSV)** die optimierte
    Geometrie als `mechanism_optimized.csv` in der
-   Konvention der Eingabedateien.
+   Konvention der Eingabedateien. **Debug-Datei
+   herunterladen (JSON)** direkt darunter exportiert
+   `debug_export.json` mit allen zum Debuggen
+   unerwünschten Verhaltens nötigen Werten:
+   Start-Mechanismus (als JSON und CSV), optimierte
+   Mechanik (JSON und CSV), Zielkurve(n) mit Stützpunkten
+   und Gewichten, alle Optimierungs-Einstellungen, die
+   manuellen Einstellungen (optimierbare Parameter mit
+   Grenzen) sowie Stopgrund, Fitness-Verlauf und die
+   besten Parameterwerte des Laufs.
 
 ## Starting the app (developer machine)
 

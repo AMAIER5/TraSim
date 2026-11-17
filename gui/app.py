@@ -42,6 +42,12 @@ from gui.manual_workflow import (
     coupler_rod_stages,
     manual_transmission_curves,
 )
+from gui.debug_export import (
+    debug_export_json,
+    debug_result_info,
+    parameters_dict,
+    target_curve_dict,
+)
 from gui.mixed_brake_workflow import (
     MixedBrakeSettings,
     build_mixed_brake_state,
@@ -60,6 +66,7 @@ from gui.workflow import (
     adopt_single_optimized_values,
     apply_parameter_overrides,
     load_inputs,
+    mechanism_csv_text,
     optimized_display_values,
     optimized_values,
     parameter_template,
@@ -2281,6 +2288,123 @@ result = st.session_state.get("result")
 mixed_result = st.session_state.get(
     "mixed_brake_result"
 )
+
+
+def _debug_download_data() -> str:
+    """JSON debug export of the current run: initial
+    mechanism definition, optimized mechanism, target
+    curve(s), all optimization settings, the manual settings
+    (per-point weights, optimizable parameters with bounds)
+    and the run outcome."""
+    settings: dict = {
+        "population_size": int(population_size),
+        "children_count": int(children_count),
+        "mutation_strength": float(mutation_strength),
+        "max_generations": int(max_generations),
+        "stagnation_limit": int(stagnation_limit),
+        "gradient_weight": float(gradient_weight_input),
+        "workers": int(workers_input),
+        "seed": int(seed),
+    }
+    extra: dict = {
+        "run_snapshot": (
+            st.session_state.get(
+                "optimized_snapshot"
+            )
+        ),
+    }
+    if mixed_inputs is not None:
+        mode = "mixed_brake"
+        result_obj = mixed_result
+        settings["interpolated_steps"] = int(
+            interpolated_steps
+        )
+        settings["brake_positions"] = _position_count(
+            interpolated_steps
+        )
+        target_curves = [
+            target_curve_dict(
+                "unbraked",
+                mixed_inputs.unbraked,
+                inputs.input_angles,
+            ),
+            target_curve_dict(
+                "braked",
+                mixed_inputs.braked,
+                inputs.input_angles,
+            ),
+        ]
+        extra["brake_min_deg"] = (
+            mixed_inputs.brake_min_deg
+        )
+        extra["brake_max_deg"] = (
+            mixed_inputs.brake_max_deg
+        )
+        extra["motion_start_deg"] = (
+            mixed_inputs.motion_start_deg
+        )
+        extra["motion_travel_deg"] = (
+            mixed_inputs.motion_travel_deg
+        )
+        extra["motion_step_deg"] = (
+            mixed_inputs.motion_step_deg
+        )
+        extra["result_brake_position_percent"] = (
+            st.session_state.get(
+                "mixed_result_brake_position"
+            )
+        )
+        optimized_definition = (
+            mixed_result.optimized_definition
+            if mixed_result is not None
+            else None
+        )
+        optimized_csv = (
+            mixed_result.mechanism_csv
+            if mixed_result is not None
+            else ""
+        )
+    else:
+        mode = "single"
+        result_obj = result
+        target_curves = [
+            target_curve_dict(
+                "target_curve",
+                inputs.target_curve,
+                inputs.input_angles,
+            ),
+        ]
+        optimized_definition = (
+            result.optimized_definition
+            if result is not None
+            else None
+        )
+        optimized_csv = (
+            result.mechanism_csv
+            if result is not None
+            else ""
+        )
+    return debug_export_json(
+        mode=mode,
+        initial_definition=inputs.definition,
+        target_curves=target_curves,
+        optimization_settings=settings,
+        parameters=parameters_dict(active_template),
+        result=(
+            debug_result_info(result_obj)
+            if result_obj is not None
+            else {}
+        ),
+        optimized_definition=optimized_definition,
+        initial_mechanism_csv=mechanism_csv_text(
+            inputs.definition,
+            inputs.mechanism_convention,
+        ),
+        optimized_mechanism_csv=optimized_csv,
+        extra=extra,
+    )
+
+
 if mixed_result is not None:
     with result_tab:
         st.write(
@@ -2362,6 +2486,12 @@ if mixed_result is not None:
             ),
             mime="text/html",
         )
+        st.download_button(
+            "Debug-Datei herunterladen (JSON)",
+            data=_debug_download_data(),
+            file_name="debug_export.json",
+            mime="application/json",
+        )
         if mixed_result.mechanism_csv:
             st.download_button(
                 "Optimierte Mechanik "
@@ -2424,6 +2554,12 @@ elif result is not None:
                 "simulation_result.html"
             ),
             mime="text/html",
+        )
+        st.download_button(
+            "Debug-Datei herunterladen (JSON)",
+            data=_debug_download_data(),
+            file_name="debug_export.json",
+            mime="application/json",
         )
         st.download_button(
             "Optimierte Mechanik "
