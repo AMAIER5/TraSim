@@ -718,31 +718,123 @@ def _braked_blocks_but_unbraked_works(
     )
 
 
-def _reduce_brake_travel_to_zero(
+def _fully_braked_position_works(
     definition: MechanismDefinition,
-) -> MechanismDefinition:
-    """Reduce the brake lever travel to 0 deg (issue #115):
-    the fully braked position (``angle_max``) is moved onto
-    the unbraked reference (``angle_start``).  The braked
-    position then coincides with the unbraked one, so no
-    blocking solution can be generated for it.
+    beta: float,
+    motion: MotionProvider,
+) -> bool:
+    """True when the mechanism builds and simulates
+    without blocking at the brake lever angle ``beta``."""
+    try:
+        builder = MixedBrakeBuilder(definition)
+        mechanism = builder.build(beta)
+    except MechanismBuildError:
+        return False
+    results = MechanismSimulator(
+        motion=motion,
+    ).simulate(mechanism)
+    if len(results) == 0:
+        return False
+    return all(
+        result.success for result in results
+    )
 
-    Only called when the unbraked position is buildable and
-    non-blocking, so ``angle_start`` lies inside the
+
+def _brake_grid_position(
+    brake_min_deg: float,
+    brake_max_deg: float,
+    *,
+    position_count: int = 2,
+) -> float:
+    """Brake lever angle (degrees) of the fully braked
+    grid position, computed exactly like the brake grids
+    the reports build from a definition (issue #130).
+
+    Testing a candidate fully braked position through
+    this pathway (degrees, re-imported to radians)
+    guarantees the later rebuilt grid evaluates the very
+    same angle; the blocking boundary of the fully braked
+    position is so thin that the conversion round-trip
+    otherwise flips the blocking verdict.
+    """
+    grid = BrakeGridSettings(
+        brake_min_deg=brake_min_deg,
+        brake_max_deg=brake_max_deg,
+        position_count=position_count,
+    )
+    return grid.brake_positions_deg[-1]
+
+
+def _reduce_brake_travel_to_largest_non_blocking(
+    definition: MechanismDefinition,
+    *,
+    motion: MotionProvider,
+    steps: int = 25,
+) -> MechanismDefinition:
+    """Reduce the fully braked position (issue #115) to
+    the LARGEST brake lever angle inside the current
+    travel that still builds and simulates without
+    blocking.
+
+    The old behaviour moved ``angle_max`` all the way
+    onto the unbraked reference (``angle_start``), which
+    silently degenerated the whole mixed mechanism:
+    braked and unbraked position coincided, while the
+    reported brake positions still claimed a full grid
+    (issue #130: "same lever values although the brake
+    lever has clearly different positions").  Only when
+    no larger brake position works at all does the
+    travel collapse onto ``angle_start`` (the degenerate
+    but non-blocking worst case of issue #115).
+
+    Every candidate braked end is checked through the
+    same degrees-based brake grid pathway that the
+    reports and the rebuilt result grid use, so the
+    reduced definition and every later grid agree on
+    whether the braked position blocks.
+
+    Only called when the unbraked position is buildable
+    and non-blocking, so ``angle_start`` lies inside the
     admissible segment and stays a valid ``angle_max``.
     """
     from dataclasses import replace
 
     brake_id = _brake_lever_id(definition)
+    brake = definition.get_lever(brake_id)
+    start_deg = math.degrees(brake.angle_start)
+    end_deg = math.degrees(brake.angle_max)
+    travel_deg = end_deg - start_deg
+    if travel_deg <= 0.0:
+        return definition
+    reduced_deg = start_deg
+    for index in range(steps, 0, -1):
+        candidate_deg = (
+            start_deg
+            + travel_deg * index / steps
+        )
+        position_deg = _brake_grid_position(
+            start_deg,
+            candidate_deg,
+        )
+        if _fully_braked_position_works(
+            definition,
+            math.radians(position_deg),
+            motion,
+        ):
+            reduced_deg = candidate_deg
+            break
     levers = []
     for lever in definition.levers:
         if lever.id == brake_id:
             lever = replace(
                 lever,
-                angle_max=lever.angle_start,
+                angle_max=math.radians(
+                    reduced_deg
+                ),
             )
         levers.append(lever)
     return MechanismDefinition(tuple(levers))
+
 
 
 def _parameter_definition(
@@ -1440,18 +1532,36 @@ def run_mixed_brake_optimization(
         ),
         motion=motion,
     )
-    if _braked_blocks_but_unbraked_works(result_grid):
+    for _ in range(3):
+        if not _braked_blocks_but_unbraked_works(result_grid):
+            break
         # Issue #115: the best solution is non-blocking at the
         # unbraked position, but blocks (unbuildable or
         # simulation block) at the fully braked position.
-        # Such a solution must not be generated; in the worst
-        # case the brake lever travel is reduced to 0 deg, so
-        # the braked position coincides with the non-blocking
-        # unbraked one.
+        # Such a solution must not be generated: the brake
+        # lever travel is reduced to the largest non-blocking
+        # position (issue #130; only if none works at all to
+        # 0 deg, the degenerate worst case of issue #115).
+        # The loop repeats in the unlikely case that the
+        # rebuilt grid still blocks on the boundary of the
+        # floating-point grid conversions.
         optimized_definition = (
-            _reduce_brake_travel_to_zero(
-                optimized_definition
+            _reduce_brake_travel_to_largest_non_blocking(
+                optimized_definition,
+                motion=motion,
             )
+        )
+        # Issue #130: the reported brake positions, states and
+        # the HTML report must always match the FINAL
+        # optimized definition, so the result pages never show
+        # a braked position the definition does not have.
+        result_grid = build_mixed_brake_grid(
+            inputs,
+            optimized_definition,
+            position_count=(
+                settings.brake_positions
+            ),
+            motion=motion,
         )
     html = _brake_position_report(
         result_grid,
