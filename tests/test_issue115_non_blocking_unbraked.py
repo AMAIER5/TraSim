@@ -330,7 +330,14 @@ def test_generated_solution_keeps_travel_when_braked_buildable():
     optimized = result.optimized_definition
     assert optimized is not None
     brake = optimized.get_lever(_brake_lever_id(optimized))
-    assert brake.angle_max == pytest.approx(
-        math.radians(190.0)
+    # Issue #127: the fully braked position is optimized
+    # inside the brake lever's admissible segment, so the
+    # generated solution's brake lever end may now lie
+    # anywhere inside the original bounds - but must keep
+    # a non-zero travel (no over-triggering of the 0 deg
+    # clamp of issue #115).
+    assert (
+        brake.angle_max
+        <= math.radians(190.0)
     )
     assert brake.angle_max > brake.angle_start

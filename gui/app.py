@@ -67,6 +67,7 @@ from gui.workflow import (
     apply_parameter_overrides,
     load_inputs,
     mechanism_csv_text,
+    merge_editor_edits,
     optimized_display_values,
     optimized_values,
     parameter_template,
@@ -1086,6 +1087,44 @@ show_pivot_columns = st.toggle(
     ),
 )
 
+mechanism_editor_key = (
+    "mechanism_editor_"
+    + str(
+        st.session_state.get(
+            "mechanism_rows_version",
+            0,
+        )
+    )
+)
+
+
+def _persist_mechanism_edits():
+    # Issue #126: the first input in the parameter table
+    # must be durable at the moment the edit event is
+    # processed, before the script runs.  Merging the
+    # editor's diff into the source rows here guarantees
+    # the value survives even when the rerun triggered by
+    # the edit aborts early (validation error, st.rerun,
+    # st.stop), so the first input is never withdrawn and
+    # reset to the previous value.
+    edits = st.session_state.get(
+        mechanism_editor_key,
+    )
+    if not edits:
+        return
+    current_rows = st.session_state.get(
+        "mechanism_rows",
+    )
+    if current_rows is None:
+        return
+    st.session_state["mechanism_rows"] = (
+        merge_editor_edits(
+            current_rows,
+            edits,
+        )
+    )
+
+
 edited_mechanism = st.data_editor(
     display_rows,
     num_rows="dynamic",
@@ -1095,15 +1134,8 @@ edited_mechanism = st.data_editor(
             show_pivot_columns,
         )
     ),
-    key=(
-        "mechanism_editor_"
-        + str(
-            st.session_state.get(
-                "mechanism_rows_version",
-                0,
-            )
-        )
-    ),
+    key=mechanism_editor_key,
+    on_change=_persist_mechanism_edits,
     disabled=[
         "length_optimized",
         "angle_optimized",

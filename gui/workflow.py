@@ -801,6 +801,47 @@ def with_mechanism_levers(
     )
 
 
+
+def merge_editor_edits(
+    rows: list[dict],
+    edits,
+) -> list[dict]:
+    """Merge a ``st.data_editor`` widget diff into the
+    table rows (issue #126).
+
+    ``edits`` is the widget state of a keyed data editor:
+    ``{"edited_rows": {index: {column: value}}, ...,
+    "added_rows": [row, ...], "deleted_rows": [index]}``.
+    The rows are merged defensively so a UI can persist
+    the user's first input at the moment the edit event
+    arrives (e.g. in an ``on_change`` callback) instead
+    of only after the rerun completed: the first input is
+    then never withdrawn even when the rerun aborts
+    early (validation error, ``st.rerun``/``st.stop``).
+
+    Missing keys are treated as "no changes"; added rows
+    keep only the cells the frontend sent."""
+    merged = [dict(row) for row in rows]
+    if not isinstance(edits, dict):
+        return merged
+    for index, changes in dict(
+        edits.get("edited_rows") or {},
+    ).items():
+        if isinstance(changes, dict) and (
+            0 <= index < len(merged)
+        ):
+            merged[index].update(changes)
+    for index in sorted(
+        edits.get("deleted_rows") or [],
+        reverse=True,
+    ):
+        if 0 <= index < len(merged):
+            del merged[index]
+    for row in edits.get("added_rows") or []:
+        if isinstance(row, dict):
+            merged.append(dict(row))
+    return merged
+
 def optimized_values(
     definition: MechanismDefinition,
 ) -> dict[str, float]:

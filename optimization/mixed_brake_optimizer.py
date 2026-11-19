@@ -73,7 +73,24 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "PENALTY_MAX_BLOCKING",
     "MixedBrakeOptimizer",
+    "brake_angle_parameter_name",
 ]
+
+
+def brake_angle_parameter_name(
+    brake_lever_id: int,
+) -> str:
+    """Name of the optimizable parameter holding the
+    brake lever's fully braked position (issue #127).
+
+    A candidate may set this parameter to any angle
+    inside the brake lever's admissible segment; the
+    candidate's own ``[angle_start, brake_angle]`` then
+    defines its brake travel.  Candidates without the
+    parameter keep the base definition's travel
+    (``angle_max``), preserving the rigid-translation
+    behaviour of issue #118."""
+    return f"lever.{brake_lever_id}.brake_angle"
 
 
 def _mean_squared_difference(
@@ -366,17 +383,53 @@ class MixedBrakeOptimizer:
         brake lever switches between the unbraked and braked
         state instead of collapsing onto a single position or
         a fixed grid.
+
+        When the candidate carries a ``brake_angle``
+        parameter (issue #127), the.travel is no longer the
+        base span: the candidate's own fully braked
+        position (``angle_max`` after applying the
+        candidate) bounds the grid, so the 100 % braking
+        position is a real degree of freedom inside the
+        admissible segment instead of always ending up
+        at the maximum allowed value.
         """
         definition = self._apply_parameters(parameters)
         brake = definition.get_lever(self._brake_lever_id)
         start = brake.angle_start
+        brake_angle_key = brake_angle_parameter_name(
+            self._brake_lever_id,
+        )
+        if brake_angle_key in parameters.values():
+            # Issue #127: the candidate optimizes its own
+            # fully braked position, so its brake grid is
+            # spanned between its unbraked reference
+            # (angle_start) and its optimized braked end
+            # (angle_max); the base grid fractions are
+            # normalized to the 0 %..100 % travel.
+            span = max(
+                0.0,
+                brake.angle_max - start,
+            )
+            first = self._fractions[0]
+            last = self._fractions[-1]
+            if last > first:
+                fractions = tuple(
+                    (fraction - first)
+                    / (last - first)
+                    for fraction in self._fractions
+                )
+            else:
+                fractions = self._fractions
+        else:
+            span = self._base_span
+            fractions = self._fractions
         return tuple(
             self._clamp(
-                start + fraction * self._base_span,
+                start + fraction * span,
                 brake.angle_min,
                 brake.angle_max,
             )
-            for fraction in self._fractions
+            for fraction in fractions
         )
 
     def _cached_mechanism(
@@ -527,8 +580,14 @@ class MixedBrakeOptimizer:
         parameters: ParameterSet,
     ) -> MechanismDefinition:
         """Apply optimization parameters (length, angle,
-        pivot x/y) onto the base definition.
+        pivot x/y and, when present, the brake lever's
+        fully braked position, issue #127) onto the base
+        definition.
         """
+        from dataclasses import (
+            replace as dataclass_replace,
+        )
+
         from dataclasses import replace
 
         values = parameters.values()
@@ -573,7 +632,50 @@ class MixedBrakeOptimizer:
                 ),
             )
             levers.append(lever)
-        return MechanismDefinition(tuple(levers))
+        definition = MechanismDefinition(
+            tuple(levers),
+        )
+        # Issue #127: a candidate that carries the brake
+        # lever's ``brake_angle`` parameter optimizes its
+        # fully braked position too.  The value is clamped
+        # to the brake lever's admissible angle segment and
+        # never below its (already applied) unbraked start
+        # angle, so the brake travel stays >= 0.
+        brake_id = self._brake_lever_id
+        brake_angle_key = brake_angle_parameter_name(
+            brake_id,
+        )
+        brake_angle = values.get(
+            brake_angle_key,
+        )
+        if brake_angle is not None:
+            brake = definition.get_lever(brake_id)
+            brake_angle = self._clamp(
+                brake_angle,
+                brake.angle_min,
+                brake.angle_max,
+            )
+            brake_angle = max(
+                brake_angle,
+                brake.angle_start,
+            )
+            brake = dataclass_replace(
+                brake,
+                angle_max=brake_angle,
+            )
+            levers = [
+                dataclass_replace(
+                    lever,
+                    angle_max=(brake.angle_max
+                               if lever.id == brake_id
+                               else lever.angle_max),
+                )
+                for lever in definition.levers
+            ]
+            definition = MechanismDefinition(
+                tuple(levers),
+            )
+        return definition
 
     def _clamp_mixer_angle(
         self,
