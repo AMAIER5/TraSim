@@ -107,6 +107,27 @@ class LeverDefinition:
     coupled: int | None = None
     pivot_on: str | None = None
 
+    # Issue #127: the fully braked position of a brake lever as
+    # its OWN attribute.  Historically the braked position was
+    # pinned onto the ``angle_max`` bound, so the optimizer
+    # always started (and effectively stayed) at the maximum
+    # allowed value and the user had no way to prescribe an
+    # initial braked position separately from the bound.
+    # ``None`` keeps the legacy fallback (``angle_max``).
+    brake_position: float | None = None
+
+    @property
+    def resolved_brake_position(self) -> float:
+        """The lever's fully braked position (radians).
+
+        The dedicated ``brake_position`` value when the lever
+        has one, otherwise the legacy fallback ``angle_max``
+        (backward compatible with mechanisms written before
+        the attribute existed)."""
+        if self.brake_position is None:
+            return self.angle_max
+        return self.brake_position
+
     @property
     def pivot_reference(self) -> PivotReference | None:
         """

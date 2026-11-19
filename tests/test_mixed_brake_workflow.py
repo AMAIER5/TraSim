@@ -132,7 +132,11 @@ def test_short_optimization_over_grid(inputs):
         pytest.approx(math.degrees(brake.angle_start))
     )
     assert result.brake_positions_deg[-1] == (
-        pytest.approx(math.degrees(brake.angle_max))
+        pytest.approx(
+            math.degrees(
+                brake.resolved_brake_position
+            )
+        )
     )
     assert result.best_score < float("inf")
     assert result.generations >= 1
@@ -297,7 +301,9 @@ def test_brake_positions_two_means_no_interpolation(
         pytest.approx(
             (
                 math.degrees(brake.angle_start),
-                math.degrees(brake.angle_max),
+                math.degrees(
+                    brake.resolved_brake_position
+                ),
             )
         )
     )

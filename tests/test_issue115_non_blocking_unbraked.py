@@ -277,11 +277,25 @@ def test_brake_travel_reduced_to_largest_non_blocking_when_braked_blocks():
         motion=_motion(inputs),
     )
     brake = reduced.get_lever(_brake_lever_id(reduced))
-    assert brake.angle_max >= brake.angle_start
+    # Issue #127: the reduction is written to the dedicated
+    # brake_position attribute; the angle_max optimization
+    # bound stays untouched.
+    base_brake = inputs.definition.get_lever(
+        _brake_lever_id(inputs.definition),
+    )
+    assert (
+        brake.brake_position is not None
+    )
+    assert brake.resolved_brake_position >= (
+        brake.angle_start
+    )
+    assert brake.angle_max == pytest.approx(
+        base_brake.angle_max,
+    )
     # the reduced fully braked position itself works
     assert _fully_braked_position_works(
         reduced,
-        brake.angle_max,
+        brake.resolved_brake_position,
         _motion(inputs),
     )
     # Reloading the reduced solution (as the GUI does) must
@@ -295,7 +309,9 @@ def test_brake_travel_reduced_to_largest_non_blocking_when_braked_blocks():
     )
     assert reduced_inputs.brake_max_deg == (
         pytest.approx(
-            math.degrees(brake.angle_max)
+            math.degrees(
+                brake.resolved_brake_position
+            )
         )
     )
     reduced_grid = build_mixed_brake_grid(
@@ -337,11 +353,15 @@ def test_optimization_never_generates_blocking_braked_solution():
     assert result.brake_positions_deg[-1] == (
         pytest.approx(
             math.degrees(
-                brake_definition.angle_max,
+                brake_definition
+                .resolved_brake_position,
             )
         )
     )
-    assert brake.angle_max >= brake.angle_start
+    assert (
+        brake.resolved_brake_position
+        >= brake.angle_start
+    )
 
 
 def test_generated_solution_keeps_travel_when_braked_buildable():

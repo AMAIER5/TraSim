@@ -56,6 +56,14 @@ def _lever_dict(lever: Any) -> dict[str, Any]:
         "driver": lever.driver,
         "coupled": lever.coupled,
         "pivot_on": lever.pivot_on,
+        # Issue #127: separate fully braked position of a
+        # brake lever (None = legacy angle_max fallback).
+        "brake_position_deg": (
+            None
+            if getattr(lever, "brake_position", None)
+            is None
+            else _deg(lever.brake_position)
+        ),
     }
 
 

@@ -677,6 +677,32 @@ def with_mechanism_levers(
                 f"Zahl ({value!r})."
             ) from error
 
+    def _optional_brake_angle(
+        row: Mapping[str, object],
+    ) -> float | None:
+        # Issue #127: the fully braked position of a brake
+        # lever as its own optional table column (user
+        # units: degrees).  Absent or empty cells keep the
+        # legacy fallback (angle_max); the value must lie
+        # inside the lever's admissible angle segment.
+        value = row.get("brake_angle")
+        if value is None or (
+            isinstance(value, str)
+            and not value.strip()
+        ):
+            return None
+        try:
+            brake_angle = math.radians(
+                float(value)
+            )
+        except (TypeError, ValueError) as error:
+            raise WorkflowError(
+                f"Hebel {row.get('id', '?')}: "
+                f"Feld 'brake_angle' ist keine "
+                f"Zahl ({value!r})."
+            ) from error
+        return brake_angle
+
     def _pivot_on(
         row: Mapping[str, object],
     ) -> str | None:
@@ -773,6 +799,9 @@ def with_mechanism_levers(
                     driver=driver,
                     coupled=coupled,
                     pivot_on=_pivot_on(row),
+                    brake_position=_optional_brake_angle(
+                        row,
+                    ),
                 )
             )
         except ValueError as error:
@@ -874,6 +903,10 @@ def optimized_values(
         values[
             f"lever.{lever.id}.pivot.z"
         ] = lever.pivot.z
+        if lever.brake_position is not None:
+            values[
+                f"lever.{lever.id}.brake_angle"
+            ] = lever.brake_position
     return values
 
 

@@ -189,6 +189,19 @@ class CsvWriter:
                     "coupled",
                     "pivot_on",
                 )
+                + (
+                    # Issue #127: the fully braked position of a
+                    # brake lever is persisted as its own optional
+                    # column, but only when at least one lever
+                    # carries one, so mechanisms without it keep
+                    # the exact previous CSV layout.
+                    ("brake_angle",)
+                    if any(
+                        lever.brake_position is not None
+                        for lever in mechanism.levers
+                    )
+                    else ()
+                )
             )
 
             for lever in mechanism.levers:
@@ -259,5 +272,22 @@ class CsvWriter:
                         else lever.coupled,
                         "" if lever.pivot_on is None
                         else lever.pivot_on,
+                    )
+                    + tuple(
+                        (
+                            convention.format_float(
+                                math.degrees(
+                                    lever.brake_position
+                                )
+                            )
+                            if lever.brake_position
+                            is not None
+                            else ""
+                        )
+                        for _ in (0,)
+                        if any(
+                            lever.brake_position is not None
+                            for lever in mechanism.levers
+                        )
                     )
                 )

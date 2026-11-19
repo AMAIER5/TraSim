@@ -170,6 +170,7 @@ class MixedBrakeOptimizer:
         ) = None,
         anchor_output: bool = False,
         reference_output_angle: float = 0.0,
+        brake_effect_weight: float = 1.0,
     ) -> None:
         if len(brake_positions) == 0:
             raise ValueError(
@@ -190,7 +191,10 @@ class MixedBrakeOptimizer:
             self._brake_lever_id
         )
         base_start = brake.angle_start
-        base_span = brake.angle_max - base_start
+        base_span = (
+            brake.resolved_brake_position
+            - base_start
+        )
         # The brake TRAVEL (span between the unbraked and the
         # fully braked position) is kept at the base value:
         # moving the brake lever's angle translates the whole
@@ -234,6 +238,19 @@ class MixedBrakeOptimizer:
         )
         self._transmission_constraint = (
             transmission_angle_constraint
+        )
+        # Issue #127: fitness pressure that keeps the brake
+        # lever MOVING during the optimization.  Without it the
+        # optimizer could collapse the brake travel (braked and
+        # unbraked position coincide) whenever that happens to
+        # score slightly better on the (poorly reachable) braked
+        # curve - the "brake lever doesn't move" behaviour.
+        # The term measures how much output change the braking
+        # actually produces versus the change the target curves
+        # prescribe; a collapsed brake pays the full quadratic
+        # deviation, a working brake pays ~0.
+        self._brake_effect_weight = (
+            brake_effect_weight
         )
         self._anchor_output = anchor_output
         self._reference_output_angle = (
@@ -356,6 +373,20 @@ class MixedBrakeOptimizer:
             weights=weights,
         )
         fitness += skipped_penalty
+        # Issue #127: how far the actual brake effect (output
+        # change between the unbraked and the fully braked
+        # position) deviates from the prescribed target
+        # difference.  Zero for a brake that really switches
+        # the mechanism; maximal when the travel collapses.
+        if self._brake_effect_weight != 0.0 and len(
+            pairs,
+        ) >= 2:
+            fitness += (
+                self._brake_effect_weight
+                * self._pair_brake_effect_deviation(
+                    pairs,
+                )
+            )
         if self._transmission_constraint is not None:
             fitness += (
                 self._transmission_constraint.evaluate(
@@ -404,11 +435,11 @@ class MixedBrakeOptimizer:
             # fully braked position, so its brake grid is
             # spanned between its unbraked reference
             # (angle_start) and its optimized braked end
-            # (angle_max); the base grid fractions are
-            # normalized to the 0 %..100 % travel.
+            # (brake_position); the base grid fractions
+            # are normalized to the 0 %..100 % travel.
             span = max(
                 0.0,
-                brake.angle_max - start,
+                brake.resolved_brake_position - start,
             )
             first = self._fractions[0]
             last = self._fractions[-1]
@@ -431,6 +462,50 @@ class MixedBrakeOptimizer:
             )
             for fraction in fractions
         )
+
+    def _pair_brake_effect_deviation(
+        self,
+        pairs,
+    ) -> float:
+        """Brake effect deviation for the evaluated limit
+        positions (first = unbraked, last = fully braked)."""
+        first_result, first_target = pairs[0]
+        last_result, last_target = pairs[-1]
+        angles = first_result.input_angles
+        count = min(
+            len(angles),
+            len(first_result.output_angles),
+            len(last_result.output_angles),
+        )
+        if count == 0:
+            return 0.0
+        angles = angles[:count]
+        target_diff = tuple(
+            braked - unbraked
+            for unbraked, braked in zip(
+                first_target.sample(
+                    angles,
+                ).output_angles,
+                last_target.sample(
+                    angles,
+                ).output_angles,
+            )
+        )
+        actual_diff = tuple(
+            braked - unbraked
+            for unbraked, braked in zip(
+                first_result.output_angles[:count],
+                last_result.output_angles[:count],
+            )
+        )
+        total = sum(
+            (actual - target) ** 2
+            for actual, target in zip(
+                actual_diff,
+                target_diff,
+            )
+        )
+        return total / count
 
     def _cached_mechanism(
         self,
@@ -659,16 +734,21 @@ class MixedBrakeOptimizer:
                 brake_angle,
                 brake.angle_start,
             )
+            # Issue #127: the candidate's braked position lives
+            # in the dedicated ``brake_position`` attribute; the
+            # ``angle_max`` field stays a pure optimization bound.
             brake = dataclass_replace(
                 brake,
-                angle_max=brake_angle,
+                brake_position=brake_angle,
             )
             levers = [
                 dataclass_replace(
                     lever,
-                    angle_max=(brake.angle_max
-                               if lever.id == brake_id
-                               else lever.angle_max),
+                    brake_position=(
+                        brake.brake_position
+                        if lever.id == brake_id
+                        else lever.brake_position
+                    ),
                 )
                 for lever in definition.levers
             ]

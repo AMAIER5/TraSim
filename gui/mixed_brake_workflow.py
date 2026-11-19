@@ -124,6 +124,7 @@ class MixedBrakeSettings:
     brake_positions: int = 5
     transmission_angle_deg: float = 20.0
     transmission_weight: float = 1.0
+    brake_effect_weight: float = 1.0
     gradient_weight: float = 0.0
     workers: int = 0
     seed: int = 42
@@ -323,7 +324,7 @@ def mixed_brake_inputs_from_parts(
             brake.angle_start
         ),
         brake_max_deg=math.degrees(
-            brake.angle_max
+            brake.resolved_brake_position
         ),
     )
 
@@ -393,7 +394,7 @@ def _load_mixed_brake_inputs(
             brake.angle_start
         ),
         brake_max_deg=math.degrees(
-            brake.angle_max
+            brake.resolved_brake_position
         ),
     )
 
@@ -408,11 +409,14 @@ def mixed_brake_parameter_template(
     brake lever's fully braked position is exposed as
     its own optimizable parameter (issue #127): its
     bounds are the brake lever's admissible angle
-    segment ``[angle_min, angle_max]`` and its start
-    value is the current ``angle_max``.  The optimizer
-    can therefore place the 100 % braking position
-    freely inside the admissible segment instead of
-    always pinning it to the maximum allowed value.
+    segment ``[angle_min, angle_max]``; its start value is
+    the lever's dedicated ``brake_position`` attribute when
+    one is set (issue #127: separate initial values for the
+    braked and unbraked brake lever position), otherwise the
+    legacy fallback ``angle_max``.  The optimizer can
+    therefore place the 100 % braking position freely inside
+    the admissible segment instead of always pinning it to
+    the maximum allowed value.
     """
     template = CsvParameterFactory.create(
         inputs.definition,
@@ -427,7 +431,7 @@ def mixed_brake_parameter_template(
             ),
             minimum=brake.angle_min,
             maximum=brake.angle_max,
-            value=brake.angle_max,
+            value=brake.resolved_brake_position,
         ),
     )
     return ParameterSet(
@@ -776,8 +780,9 @@ def _reduce_brake_travel_to_largest_non_blocking(
     travel that still builds and simulates without
     blocking.
 
-    The old behaviour moved ``angle_max`` all the way
-    onto the unbraked reference (``angle_start``), which
+    The old behaviour moved the fully braked position all
+    the way onto the unbraked reference (``angle_start``),
+    which
     silently degenerated the whole mixed mechanism:
     braked and unbraked position coincided, while the
     reported brake positions still claimed a full grid
@@ -795,14 +800,19 @@ def _reduce_brake_travel_to_largest_non_blocking(
 
     Only called when the unbraked position is buildable
     and non-blocking, so ``angle_start`` lies inside the
-    admissible segment and stays a valid ``angle_max``.
+    admissible segment and stays a valid braked position.
+    The reduction writes the dedicated ``brake_position``
+    attribute (issue #127) and leaves the ``angle_max``
+    optimization bound untouched.
     """
     from dataclasses import replace
 
     brake_id = _brake_lever_id(definition)
     brake = definition.get_lever(brake_id)
     start_deg = math.degrees(brake.angle_start)
-    end_deg = math.degrees(brake.angle_max)
+    end_deg = math.degrees(
+        brake.resolved_brake_position,
+    )
     travel_deg = end_deg - start_deg
     if travel_deg <= 0.0:
         return definition
@@ -828,7 +838,7 @@ def _reduce_brake_travel_to_largest_non_blocking(
         if lever.id == brake_id:
             lever = replace(
                 lever,
-                angle_max=math.radians(
+                brake_position=math.radians(
                     reduced_deg
                 ),
             )
@@ -889,6 +899,10 @@ def _parameter_definition(
         brake_angle_parameter_name(brake_id),
     )
     if brake_angle is not None:
+        # Issue #127: the optimized braked position is persisted
+        # in the dedicated ``brake_position`` attribute, so the
+        # ``angle_max`` optimization bound stays untouched and the
+        # next run starts from the optimized braked position.
         brake = definition.get_lever(brake_id)
         brake_angle = max(
             min(
@@ -904,9 +918,11 @@ def _parameter_definition(
         levers = [
             replace(
                 lever,
-                angle_max=(brake_angle
-                           if lever.id == brake_id
-                           else lever.angle_max),
+                brake_position=(
+                    brake_angle
+                    if lever.id == brake_id
+                    else lever.brake_position
+                ),
             )
             for lever in definition.levers
         ]
@@ -942,7 +958,9 @@ def build_mixed_brake_grid(
     )
     grid = BrakeGridSettings(
         brake_min_deg=math.degrees(brake.angle_start),
-        brake_max_deg=math.degrees(brake.angle_max),
+        brake_max_deg=math.degrees(
+            brake.resolved_brake_position,
+        ),
         position_count=position_count,
     )
     if motion is None:
@@ -1316,6 +1334,9 @@ def _mixed_evaluator_factory(
         reference_output_angle=(
             _reference_output_angle(inputs)
         ),
+        brake_effect_weight=(
+            settings.brake_effect_weight
+        ),
     ).evaluate
 
 
@@ -1422,6 +1443,9 @@ def run_mixed_brake_optimization(
         anchor_output=True,
         reference_output_angle=(
             _reference_output_angle(inputs)
+        ),
+        brake_effect_weight=(
+            settings.brake_effect_weight
         ),
     )
     rng = random.Random(settings.seed)
