@@ -311,7 +311,11 @@ def test_on_best_reports_improvements(inputs):
         population_size=6,
         children_count=6,
         selection_count=3,
-        max_generations=3,
+        # issue #127 added the brake lever's fully braked
+        # position as another degree of freedom, so the
+        # seeded short run needs a few more generations
+        # before the initial best is improved.
+        max_generations=8,
         brake_positions=3,
     )
     template = mixed_brake_parameter_template(

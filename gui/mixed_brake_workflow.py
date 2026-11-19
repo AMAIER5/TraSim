@@ -75,7 +75,9 @@ from optimization.evolution_engine import (
 )
 from optimization.mixed_brake_optimizer import (
     MixedBrakeOptimizer,
+    brake_angle_parameter_name,
 )
+from optimization.parameter import Parameter
 from optimization.parameter_mutation import (
     ParameterMutation,
 )
@@ -400,9 +402,36 @@ def mixed_brake_parameter_template(
     inputs: MixedBrakeInputs,
 ) -> ParameterSet:
     """Editable optimization parameter template of the
-    mixer mechanism."""
-    return CsvParameterFactory.create(
+    mixer mechanism.
+
+    In addition to the standard CSV parameters, the
+    brake lever's fully braked position is exposed as
+    its own optimizable parameter (issue #127): its
+    bounds are the brake lever's admissible angle
+    segment ``[angle_min, angle_max]`` and its start
+    value is the current ``angle_max``.  The optimizer
+    can therefore place the 100 % braking position
+    freely inside the admissible segment instead of
+    always pinning it to the maximum allowed value.
+    """
+    template = CsvParameterFactory.create(
         inputs.definition,
+    )
+    brake = inputs.definition.get_lever(
+        _brake_lever_id(inputs.definition),
+    )
+    parameters = tuple(template.parameters) + (
+        Parameter(
+            name=brake_angle_parameter_name(
+                brake.id,
+            ),
+            minimum=brake.angle_min,
+            maximum=brake.angle_max,
+            value=brake.angle_max,
+        ),
+    )
+    return ParameterSet(
+        parameters=parameters,
     )
 
 
@@ -545,11 +574,31 @@ def _endpoint_constraint(
         support = tuple(
             angle for angle in _motion_range(inputs)
         )
+    # Issue #128: the endpoint constraint must not
+    # overrule the target curve's own weighting.  Its
+    # weight therefore follows the braked curve's weight
+    # share of its LAST support point (the very point the
+    # constraint enforces):  a low weight keeps the term
+    # small, the old fixed 1.0 dominated per-point
+    # weights and pulled the result towards the maximum
+    # input angle regardless of the weights.
+    braked_weights = getattr(
+        inputs.braked,
+        "weights",
+        None,
+    )
+    if braked_weights:
+        endpoint_weight = (
+            braked_weights[-1]
+            / sum(braked_weights)
+        )
+    else:
+        endpoint_weight = 1.0
     return EndpointConstraint(
         end_angle=inputs.braked.evaluate(
             support[-1],
         ),
-        weight=1.0,
+        weight=endpoint_weight,
     )
 
 def _blended_targets(
@@ -738,7 +787,39 @@ def _parameter_definition(
                 ),
             )
         )
-    return MechanismDefinition(tuple(levers))
+    definition = MechanismDefinition(tuple(levers))
+    # Issue #127: apply the optimized fully braked
+    # position of the brake lever, too, so the reported
+    # mechanism and its brake grid match the candidate
+    # the optimizer actually scored best.
+    brake_id = _brake_lever_id(inputs.definition)
+    brake_angle = values.get(
+        brake_angle_parameter_name(brake_id),
+    )
+    if brake_angle is not None:
+        brake = definition.get_lever(brake_id)
+        brake_angle = max(
+            min(
+                brake_angle,
+                brake.angle_max,
+            ),
+            brake.angle_min,
+        )
+        brake_angle = max(
+            brake_angle,
+            brake.angle_start,
+        )
+        levers = [
+            replace(
+                lever,
+                angle_max=(brake_angle
+                           if lever.id == brake_id
+                           else lever.angle_max),
+            )
+            for lever in definition.levers
+        ]
+        definition = MechanismDefinition(tuple(levers))
+    return definition
 
 
 def build_mixed_brake_grid(
