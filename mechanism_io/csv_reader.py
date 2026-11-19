@@ -173,6 +173,16 @@ class CsvReader:
         pivot_on = CsvReader._parse_optional_pivot_on(
             row.get("pivot_on", "")
         )
+        # Issue #127: the fully braked position of a brake lever
+        # as its own optional column (degrees).  Absent or empty
+        # cells keep the legacy fallback (angle_max).
+        brake_position = (
+            CsvReader._parse_optional_float(
+                row.get("brake_angle", "")
+            )
+        )
+        if brake_position is not None:
+            brake_position = math.radians(brake_position)
 
         # Coupled has priority over driver
         if coupled is not None:
@@ -225,6 +235,7 @@ class CsvReader:
             driver=driver,
             coupled=coupled,
             pivot_on=pivot_on,
+            brake_position=brake_position,
         )
 
     @staticmethod
@@ -244,6 +255,16 @@ class CsvReader:
             return None
         parse_pivot_reference(value)
         return value.strip()
+
+    @staticmethod
+    def _parse_optional_float(
+        value: str | None,
+    ) -> float | None:
+        """Parse an optional float value (empty CSV cells
+        and missing columns become None)."""
+        if value is None or value.strip() == "":
+            return None
+        return float(value)
 
     @staticmethod
     def _parse_optional_int(

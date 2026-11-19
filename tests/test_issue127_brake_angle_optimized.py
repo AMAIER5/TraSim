@@ -42,6 +42,7 @@ from mechanics.mixed_brake_builder import (
     MixedBrakeBuilder,
 )
 from mechanism_io.csv_reader import CsvReader
+from model.mechanism_definition import MechanismDefinition
 from optimization.csv_parameter_factory import (
     CsvParameterFactory,
 )
@@ -233,7 +234,7 @@ def test_brake_grid_follows_candidate_brake_angle(
     )
 
 
-def test_apply_parameters_sets_candidate_angle_max(
+def test_apply_parameters_sets_candidate_brake_position(
     mixer_definition,
 ):
     optimizer = _optimizer(mixer_definition)
@@ -244,8 +245,18 @@ def test_apply_parameters_sets_candidate_angle_max(
     )
     applied = optimizer._apply_parameters(candidate)
     brake = applied.get_lever(BRAKE_ID)
-    assert brake.angle_max == pytest.approx(
+    # issue #127: the candidate's braked position is held in
+    # the dedicated brake_position attribute; angle_max stays a
+    # pure optimization bound.
+    assert brake.brake_position == pytest.approx(
         braked_deg,
+    )
+    assert brake.resolved_brake_position == (
+        pytest.approx(braked_deg)
+    )
+    base_brake = mixer_definition.get_lever(BRAKE_ID)
+    assert brake.angle_max == pytest.approx(
+        base_brake.angle_max,
     )
 
 
@@ -264,7 +275,7 @@ def test_braked_end_never_below_unbraked_start(
     applied = optimizer._apply_parameters(candidate)
     applied_brake = applied.get_lever(BRAKE_ID)
     assert (
-        applied_brake.angle_max
+        applied_brake.resolved_brake_position
         >= applied_brake.angle_start
     )
 
@@ -282,6 +293,119 @@ def test_parameter_definition_keeps_optimized_brake_end(
         candidate,
     )
     brake = definition.get_lever(BRAKE_ID)
+    assert brake.resolved_brake_position == (
+        pytest.approx(braked_deg)
+    )
+    base_brake = mixer_definition.get_lever(BRAKE_ID)
     assert brake.angle_max == pytest.approx(
+        base_brake.angle_max,
+    )
+
+
+def test_template_honors_dedicated_brake_position(
+    mixer_definition,
+):
+    """Issue #127: the separate initial braked position
+    attribute (``brake_position``) becomes the start value
+    of the optimizable ``brake_angle`` parameter, while
+    ``angle_max`` stays a pure optimization bound."""
+    from dataclasses import replace as _replace
+
+    braked_deg = math.radians(15.0)
+    definition = MechanismDefinition(
+        tuple(
+            _replace(
+                lever,
+                brake_position=(braked_deg
+                                if lever.id == BRAKE_ID
+                                else None),
+            )
+            for lever in mixer_definition.levers
+        ),
+    )
+    inputs = mixed_brake_inputs_from_parts(
+        definition,
+        _curve(),
+        _curve(),
+    )
+    template = mixed_brake_parameter_template(
+        inputs,
+    )
+    parameter = next(
+        parameter
+        for parameter in template.parameters
+        if parameter.name
+        == brake_angle_parameter_name(
+            BRAKE_ID,
+        )
+    )
+    assert parameter.value == pytest.approx(
         braked_deg,
+    )
+    assert parameter.maximum == pytest.approx(
+        definition.get_lever(BRAKE_ID).angle_max,
+    )
+    assert inputs.brake_max_deg == pytest.approx(
+        math.degrees(braked_deg),
+    )
+
+
+def _curve() -> TargetCurve:
+    return TargetCurve.from_points(
+        input_angles=(
+            math.radians(-10),
+            math.radians(0),
+            math.radians(10),
+        ),
+        output_angles=(
+            math.radians(-20),
+            math.radians(0),
+            math.radians(20),
+        ),
+    )
+
+
+def test_brake_grid_follows_dedicated_brake_position(
+    mixer_definition,
+):
+    """Issue #127: the brake grid is spanned between the
+    unbraked start and the DEDICATED braked position, so
+    editing it (independently of angle_max) directly moves
+    the evaluated brake positions."""
+    from dataclasses import replace as _replace
+
+    braked_deg = 15.0
+    definition = MechanismDefinition(
+        tuple(
+            _replace(
+                lever,
+                brake_position=(math.radians(
+                    braked_deg,
+                )
+                    if lever.id == BRAKE_ID
+                    else None),
+            )
+            for lever in mixer_definition.levers
+        ),
+    )
+    optimizer = _optimizer(definition)
+    plain = mixed_brake_parameter_template(
+        mixed_brake_inputs_from_parts(
+            definition,
+            _curve(),
+            _curve(),
+        ),
+    )
+    positions = optimizer.brake_positions_for(plain)
+    brake = definition.get_lever(BRAKE_ID)
+    assert positions[0] == pytest.approx(
+        brake.angle_start,
+    )
+    assert positions[-1] == pytest.approx(
+        math.radians(braked_deg),
+    )
+    # the bound angle_max is untouched
+    base_brake = mixer_definition.get_lever(BRAKE_ID)
+    assert brake.angle_max == pytest.approx(
+        base_brake.angle_max,
     )

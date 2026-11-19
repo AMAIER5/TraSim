@@ -874,6 +874,8 @@ _BASE_COLUMN_ORDER = (
     "angle_optimize",
     "angle_optimized",
     "angle_adopt",
+    "brake_angle",
+    "brake_angle_optimize",
     "pivot_x",
     "pivot_y",
     "pivot_z",
@@ -910,7 +912,18 @@ def _mechanism_column_order(
     return expanded
 
 
+def _brake_lever_ids(definition) -> set:
+    # levers referenced via pivot_on = the adjusting
+    # (brake) levers of a mixed mechanism
+    return {
+        lever.pivot_reference.lever_id
+        for lever in definition.levers
+        if lever.pivot_on is not None
+    }
+
+
 def _lever_rows(definition) -> list[dict]:
+    brake_levers = _brake_lever_ids(definition)
     return [
         {
             "id": lever.id,
@@ -932,6 +945,19 @@ def _lever_rows(definition) -> list[dict]:
             "angle_optimize": True,
             "angle_optimized": None,
             "angle_adopt": False,
+            # Issue #127: the fully braked position of a brake
+            # lever as its OWN attribute, separately editable
+            # from the unbraked start value (angle) and from the
+            # angle_max optimization bound.  Only adjusting
+            # (brake) levers carry a value.
+            "brake_angle": (
+                math.degrees(
+                    lever.resolved_brake_position,
+                )
+                if lever.id in brake_levers
+                else None
+            ),
+            "brake_angle_optimize": True,
             "pivot_x_min": (
                 lever.pivot.x
                 - DEFAULT_PIVOT_OFFSET
@@ -1217,6 +1243,26 @@ edited_mechanism = st.data_editor(
                 help="Optimierten Winkel als Startwert übernehmen",
             )
         ),
+        "brake_angle": (
+            st.column_config.NumberColumn(
+                "Bremswinkel (100 %)",
+                format="%.1f",
+                help=(
+                    "Issue #127: eigene Anfangsposition des "
+                    "Bremshebels im voll gebremsten Zustand, "
+                    "unabhängig vom ungebremsten Startwinkel "
+                    "(angle) und vom Optimierungs-Grenzwert "
+                    "(angle_max)."
+                ),
+            )
+        ),
+        "brake_angle_optimize": (
+            st.column_config.CheckboxColumn(
+                "Optimierung",
+                default=True,
+                help="Voll gebremste Position für die Optimierung freigeben",
+            )
+        ),
         "pivot_x_min": st.column_config.NumberColumn(
             "pivot_x_min",
             format="%.1f",
@@ -1401,6 +1447,9 @@ if optimized_map and st.button(
         angle_key = (
             f"lever.{lever_id}.angle"
         )
+        brake_angle_key = (
+            f"lever.{lever_id}.brake_angle"
+        )
         if length_key in optimized_map:
             row["length"] = (
                 optimized_map[length_key]
@@ -1409,6 +1458,16 @@ if optimized_map and st.button(
             row["angle"] = (
                 math.degrees(
                     optimized_map[angle_key],
+                )
+            )
+        if (
+            brake_angle_key in optimized_map
+        ):
+            row["brake_angle"] = (
+                math.degrees(
+                    optimized_map[
+                        brake_angle_key
+                    ],
                 )
             )
         pivot_x_key = (
@@ -1515,6 +1574,43 @@ for row in edited_mechanism:
         angle_max,
         angle_value,
     )
+    # Issue #127: separate initial braked position of the
+    # brake lever, bounded by the lever's angle segment
+    # (or fixed to the start value when not released).
+    brake_angle_raw = row.get("brake_angle")
+    if brake_angle_raw is not None and (
+        not isinstance(brake_angle_raw, str)
+        or brake_angle_raw.strip()
+    ):
+        brake_angle_value = float(
+            brake_angle_raw,
+        )
+        if angle_max < brake_angle_value:
+            st.error(
+                f"Hebel {lever_id}: "
+                f"brake_angle > angle_max."
+            )
+            st.stop()
+        if brake_angle_value < angle_min:
+            st.error(
+                f"Hebel {lever_id}: "
+                f"brake_angle < angle_min."
+            )
+            st.stop()
+        if row.get("brake_angle_optimize", True):
+            brake_angle_min = angle_min
+            brake_angle_max = angle_max
+        else:
+            brake_angle_min = (
+                brake_angle_max
+            ) = brake_angle_value
+        overrides[
+            f"lever.{lever_id}.brake_angle"
+        ] = (
+            brake_angle_min,
+            brake_angle_max,
+            brake_angle_value,
+        )
     pivot_x_value = float(
         row["pivot_x"],
     )

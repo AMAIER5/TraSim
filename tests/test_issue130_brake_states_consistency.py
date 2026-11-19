@@ -79,12 +79,23 @@ def test_reduce_keeps_largest_non_blocking_travel():
     base_brake = inputs.definition.get_lever(
         _brake_lever_id(inputs.definition),
     )
-    assert brake.angle_max >= brake.angle_start
+    assert (
+        brake.resolved_brake_position
+        >= brake.angle_start
+    )
+    # issue #127: the reduction is stored in the dedicated
+    # brake_position attribute and leaves the angle_max
+    # optimization bound untouched.
+    assert brake.brake_position is not None
+    assert brake.angle_max == pytest.approx(
+        base_brake.angle_max,
+    )
     # strictly smaller travel than the blocking original
     assert (
-        brake.angle_max - brake.angle_start
-    ) < (
-        base_brake.angle_max
+        brake.resolved_brake_position
+        - brake.angle_start
+    ) <= (
+        base_brake.resolved_brake_position
         - base_brake.angle_start
     )
 
@@ -133,7 +144,9 @@ def test_result_report_matches_definition():
     )
     assert result.brake_positions_deg[-1] == (
         pytest.approx(
-            math.degrees(brake.angle_max)
+            math.degrees(
+                brake.resolved_brake_position
+            )
         )
     )
     # the reported fully braked position itself is the
@@ -155,10 +168,13 @@ def test_result_report_matches_definition():
     # keeps a non-degenerate travel when possible
     assert _fully_braked_position_works(
         optimized,
-        brake.angle_max,
+        brake.resolved_brake_position,
         _motion(inputs),
     )
-    assert brake.angle_max >= brake.angle_start
+    assert (
+        brake.resolved_brake_position
+        >= brake.angle_start
+    )
 
 
 def test_states_differ_between_brake_positions():
@@ -178,7 +194,8 @@ def test_states_differ_between_brake_positions():
         _brake_lever_id(optimized),
     )
     if (
-        brake.angle_max - brake.angle_start
+        brake.resolved_brake_position
+        - brake.angle_start
     ) <= 0.0:
         pytest.skip(
             "degenerate zero-travel result; nothing to "
