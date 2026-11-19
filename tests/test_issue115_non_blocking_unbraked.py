@@ -45,8 +45,9 @@ from gui.mixed_brake_workflow import (
     _braked_blocks_but_unbraked_works,
     _brake_lever_id,
     _endpoint_constraint,
+    _fully_braked_position_works,
     _motion,
-    _reduce_brake_travel_to_zero,
+    _reduce_brake_travel_to_largest_non_blocking,
     _reference_output_angle,
     build_mixed_brake_grid,
     load_mixed_brake_inputs,
@@ -251,12 +252,19 @@ def test_blocking_solution_scores_worse_than_non_blocking():
     assert non_blocking < blocking_fitness
 
 
-def test_brake_travel_reduced_to_zero_when_braked_blocks():
+def test_brake_travel_reduced_to_largest_non_blocking_when_braked_blocks():
     """The start mechanism is non-blocking at the unbraked
-    position while the braked position blocks; the generated
-    solution must reduce the brake lever travel to 0 deg
-    (angle_max clamped onto angle_start), so reloading it can
-    never generate a blocking braked solution (issue #115)."""
+    position while the fully braked position blocks.
+
+    Issue #115: the generated solution may never block at
+    the fully braked position.  Issue #130: collapsing the
+    brake travel all the way to 0 deg silently degenerated
+    the mixed mechanism (braked and unbraked states became
+    identical while the result claimed a full grid), so the
+    reduction keeps the LARGEST fully braked position that
+    still builds and simulates without blocking, and only
+    falls back onto the unbraked position if nothing beyond
+    it works."""
     inputs = _blocking_inputs()
     grid = build_mixed_brake_grid(
         inputs,
@@ -264,22 +272,31 @@ def test_brake_travel_reduced_to_zero_when_braked_blocks():
         position_count=5,
     )
     assert _braked_blocks_but_unbraked_works(grid)
-    reduced = _reduce_brake_travel_to_zero(inputs.definition)
-    brake = reduced.get_lever(_brake_lever_id(reduced))
-    assert brake.angle_max == pytest.approx(
-        brake.angle_start
+    reduced = _reduce_brake_travel_to_largest_non_blocking(
+        inputs.definition,
+        motion=_motion(inputs),
     )
-    assert brake.angle_max == pytest.approx(0.0)
-    # Reloading the reduced solution (as the GUI does) yields
-    # a zero-travel brake range in which every brake position
-    # coincides with the non-blocking unbraked one.
+    brake = reduced.get_lever(_brake_lever_id(reduced))
+    assert brake.angle_max >= brake.angle_start
+    # the reduced fully braked position itself works
+    assert _fully_braked_position_works(
+        reduced,
+        brake.angle_max,
+        _motion(inputs),
+    )
+    # Reloading the reduced solution (as the GUI does) must
+    # never generate a blocking braked position (issue #115)
+    # and always shows a grid the definition really has
+    # (issue #130).
     reduced_inputs = mixed_brake_inputs_from_parts(
         reduced,
         inputs.unbraked,
         inputs.braked,
     )
     assert reduced_inputs.brake_max_deg == (
-        pytest.approx(reduced_inputs.brake_min_deg)
+        pytest.approx(
+            math.degrees(brake.angle_max)
+        )
     )
     reduced_grid = build_mixed_brake_grid(
         reduced_inputs,
@@ -292,10 +309,10 @@ def test_brake_travel_reduced_to_zero_when_braked_blocks():
 
 
 def test_optimization_never_generates_blocking_braked_solution():
-    """End-to-end invariant (issue #115): whenever the
-    generated solution is non-blocking at the unbraked
-    position but blocks at the fully braked position, its
-    brake lever travel is 0 deg."""
+    """End-to-end invariants (issues #115 and #130): the
+    generated solution never blocks at the fully braked
+    position, and the reported brake positions always match
+    the returned optimized definition."""
     inputs = _blocking_inputs()
     result = run_mixed_brake_optimization(
         inputs,
@@ -305,16 +322,26 @@ def test_optimization_never_generates_blocking_braked_solution():
     assert result.best_score < PENALTY_MAX_BLOCKING
     optimized = result.optimized_definition
     assert optimized is not None
+    brake = optimized.get_lever(_brake_lever_id(optimized))
     grid = build_mixed_brake_grid(
         inputs,
         optimized,
         position_count=5,
     )
-    brake = optimized.get_lever(_brake_lever_id(optimized))
-    if _braked_blocks_but_unbraked_works(grid):
-        assert brake.angle_max == pytest.approx(
-            brake.angle_start
+    assert not _braked_blocks_but_unbraked_works(
+        grid,
+    )
+    brake_definition = optimized.get_lever(
+        _brake_lever_id(optimized),
+    )
+    assert result.brake_positions_deg[-1] == (
+        pytest.approx(
+            math.degrees(
+                brake_definition.angle_max,
+            )
         )
+    )
+    assert brake.angle_max >= brake.angle_start
 
 
 def test_generated_solution_keeps_travel_when_braked_buildable():
