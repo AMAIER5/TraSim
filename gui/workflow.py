@@ -1419,6 +1419,13 @@ def run_optimization(
     )
 
     engine.evaluate_population()
+    # Record the initial population's best before it is
+    # read: without this update the fitness history starts
+    # with the engine's initial ``inf`` and reports a
+    # blocked (infinite) generation-0 result even when the
+    # optimization starts from a non-blocking mechanism
+    # (issue #124).
+    engine.update_best()
     valid = sum(
         score < float("inf")
         for score in engine.scores.values()
