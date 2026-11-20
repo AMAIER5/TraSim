@@ -74,7 +74,9 @@ from gui.workflow import (
     WorkflowError,
     adopt_single_optimized_values,
     apply_parameter_overrides,
+    drive_shaft_offset,
     load_inputs,
+    mean_input_angle,
     mechanism_csv_text,
     merge_editor_edits,
     optimized_display_values,
@@ -589,6 +591,15 @@ st.success(
             else ""
         )
     )
+)
+st.caption(
+    f"Eingangswinkel = virtuelle Antriebswelle. "
+    f"Antriebswellen-Versatz des Starthebels: "
+    f"{math.degrees(drive_shaft_offset(inputs)):.2f}° "
+    f"— der Starthebel steht bei Wellenwinkel "
+    f"{math.degrees(mean_input_angle(inputs)):.2f}° "
+    f"(Mittel aller Vorgabewerte) auf seinem "
+    f"Einbauwinkel."
 )
 INPUT_ANGLE_COL = "Eing. (\u00b0)"
 UNBRAKED_TARGET_COL = "Ziel ungeb. (\u00b0)"

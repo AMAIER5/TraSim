@@ -265,7 +265,24 @@ def test_issue136_optimization_starts(tmp_path):
     start.click()
     tester.run()
     assert not tester.exception
-    assert any(
-        "Stopgrund" in (element.value or "")
-        for element in tester.markdown
+    result_text = next(
+        (
+            element.value
+            for element in tester.markdown
+            if "Stopgrund" in (
+                element.value or ""
+            )
+        ),
+        None,
     )
+    assert result_text is not None
+    # With the initial angular offset between the virtual
+    # drive shaft and the start lever (drive angle 133.65
+    # deg, mean of the prescribed input values 0 deg), the
+    # drive lever sweeps inside its admissible lever-angle
+    # segment [95, 300] deg: the run must score a real
+    # fitness instead of the blocking hard penalty.
+    marker = "Beste Fitness:** "
+    tail = result_text.split(marker, 1)[1]
+    value = float(tail.split()[0].strip())
+    assert value < 90000.0

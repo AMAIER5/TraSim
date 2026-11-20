@@ -67,12 +67,16 @@ class LeverDefinition:
     with the pivot they describe the lever's installation pose and
     its admissible lever-angle segment (circular build space).
 
-    Start angle semantics: ``angle_start`` (the initial start
-    angle, before optimization) describes the position the lever
-    occupies at the middle support position of the prescribed
-    target curve.  The middle position is the n-th position with
-    n = (number of positions) / 2, mathematically rounded (round
-    half up); for seven support positions it is the fourth.
+    Start angle semantics (virtual drive shaft): the target
+    curve's input angle describes the rotation of a VIRTUAL
+    DRIVE SHAFT of the first (drive) lever.  ``angle_start``
+    (the initial start angle, before optimization) describes
+    the position the lever occupies when the shaft is at the
+    MEAN of all prescribed input values; the initial angular
+    offset between the shaft and the start lever formed by
+    the optimizer is ``angle_start - mean(input values)``,
+    so the displayed initial angle of the start lever is
+    that mean (e.g. 0 deg).
 
     When ``reference_direction`` is ``None`` the lever selects one
     automatically from the dominant axis component (see
