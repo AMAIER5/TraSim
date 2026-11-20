@@ -151,6 +151,38 @@ users need no Python knowledge.
      mechanism, written in the convention of the
      input files.
 
+## Virtuelle Antriebswelle (Eingangswinkel-Semantik)
+
+Der Eingangswinkel der Zielkurve beschreibt die Drehung einer
+**virtuellen Antriebswelle** des Starthebels (erster Hebel) —
+nicht direkt den Hebelwinkel. Der Optimierungsalgorithmus bildet
+automatisch einen **initialen Winkelversatz** zwischen dieser
+Welle und dem Starthebel:
+
+```
+
+Versatz = Einbauwinkel des Starthebels (angle_start) − Mittel aller Vorgabe-Eingangswinkel
+
+```
+
+Der Starthebel steht damit bei Wellenwinkel = Mittel der
+Vorgabewerte (im Beispiel 0°) auf seinem Einbauwinkel; sein
+**angezeigter Initialwinkel entspricht diesem Mittel**, während
+die Mechanik ihren physikalischen Einbauwinkel behält. Die
+Zielkurve wird also in Wellen-Koordinaten durchfahren (z. B.
+−35…+35°), während der Hebel sein zulässiges Winkelsegment
+nutzt (z. B. 98,65…168,65°).
+
+- Die GUI zeigt den gebildeten Versatz unter dem
+  Mechanismus-Hinweis an („Antriebswellen-Versatz des
+  Starthebels: 133,65°“).
+- Wird der Starthebel-Winkel als Optimierungsparameter
+  freigegeben, folgt der Versatz dem Kandidaten: das gesamte
+  Bewegungsfenster verschiebt sich mit dem Einbauwinkel.
+- Die Semantik gilt für den Normalmodus und den
+  Pivot-Shift-Modus (der Mischer-Modus klemmt den Versatz
+  zusätzlich in das zulässige Winkelsegment des Starthebels).
+
 ## Pivot-Shift-Modus (Verschiebung des Hebelpaar-Drehpunkts)
 
 Ersetzt der Mechanismus den modellierten Bremshebel durch ein

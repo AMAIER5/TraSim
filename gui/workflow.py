@@ -260,6 +260,44 @@ def middle_input_angle(
     return inputs.input_angles[index]
 
 
+def mean_input_angle(
+    inputs: LoadedInputs,
+) -> float:
+    """Mean of ALL support input angles of the target
+    curve (radians) - the arithmetic average over every
+    prescribed input value.
+
+    The input angle describes the rotation of a VIRTUAL
+    DRIVE SHAFT; the optimizer forms the initial angular
+    offset between this shaft and the first (drive)
+    lever such that the lever sits at its start angle
+    when the shaft is at this mean.
+    """
+    angles = inputs.input_angles
+    return sum(angles) / len(angles)
+
+
+def drive_shaft_offset(
+    inputs: LoadedInputs,
+) -> float:
+    """Initial angular offset (radians) between the
+    virtual drive shaft and the drive lever:
+    ``angle_start(drive lever) - mean(input angles)``.
+
+    With this offset the shaft angle the lever's start
+    angle corresponds to is the mean of all prescribed
+    input values (e.g. 0 deg), while the lever keeps
+    its physical installation angle (``angle_start``).
+    """
+    drive = inputs.definition.get_lever(
+        _drive_lever_id(inputs.definition),
+    )
+    return (
+        drive.angle_start
+        - mean_input_angle(inputs)
+    )
+
+
 def middle_output_angle(
     inputs: LoadedInputs,
 ) -> float:
@@ -281,14 +319,19 @@ def anchored_input_angles(
     """
     Support-point input angles (radians) shifted so that
     the drive lever sits at ``drive_angle`` (its start
-    angle) at the middle support position.
+    angle) when the virtual drive shaft is at the MEAN
+    of all prescribed input values.
 
     Every support point keeps its angular distance to
-    the middle position; only the origin of the drive
-    lever's angle definition moves.
+    the mean position; only the origin of the drive
+    lever's angle definition moves.  The shift is the
+    initial angular offset between the drive shaft and
+    the start lever (``drive_angle - mean``), so the
+    displayed initial angle of the start lever is the
+    mean of the prescribed values (e.g. 0 deg).
     """
 
-    middle = middle_input_angle(inputs)
+    middle = mean_input_angle(inputs)
     return tuple(
         angle - middle + drive_angle
         for angle in inputs.input_angles
@@ -1319,12 +1362,13 @@ def _build_optimizer(
     used directly.  It must live at module level
     so Windows spawn can pickle it.
 
-    Start angle semantics: the drive lever's angle
-    parameter is the position it occupies at the
-    middle support position of the target curve.
-    The support-point input angles are therefore
-    shifted by ``(drive angle - middle input
-    angle)`` for every candidate, and the target
+    Start angle semantics (virtual drive shaft): the
+    drive lever's angle parameter is the position
+    it occupies when the virtual drive shaft is at
+    the MEAN of all prescribed input values.  The
+    support-point input angles are therefore
+    shifted by ``(drive angle - mean input angle)``
+    for every candidate, and the target
     curve's support input angles are shifted by
     the same constant so the fitness still
     compares output angles support point by

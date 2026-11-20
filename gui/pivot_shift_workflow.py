@@ -634,6 +634,23 @@ def run_pivot_shift_optimization(
         optimizer,
         best,
     )
+    # Result curves in SHAFT coordinates: simulate the final
+    # geometry with the best candidate's drive shaft offset
+    # applied (the drive lever runs in its own lever-angle
+    # frame while the reported input axis stays the virtual
+    # shaft of the target curves).
+    shaft_offset = optimizer.drive_shaft_offset(
+        best,
+    )
+    result_motion = PointMotion(
+        angles=tuple(
+            angle + shaft_offset
+            for angle in support
+        ),
+    )
+    result_simulator = MechanismSimulator(
+        motion=result_motion,
+    )
 
     result_builder = PivotShiftBuilder(
         optimized_definition,
@@ -647,7 +664,7 @@ def run_pivot_shift_optimization(
         mechanism = result_builder.build((0.0, 0.0))
         mechanisms.append(mechanism)
         _angles, outputs = _combined_curve(
-            simulator.simulate(mechanism),
+            result_simulator.simulate(mechanism),
         )
         if outputs:
             unbraked_actual = tuple(
@@ -659,7 +676,7 @@ def run_pivot_shift_optimization(
     try:
         mechanism = result_builder.build(shift)
         _, outputs = _combined_curve(
-            simulator.simulate(mechanism),
+            result_simulator.simulate(mechanism),
         )
         if outputs:
             braked_actual = tuple(

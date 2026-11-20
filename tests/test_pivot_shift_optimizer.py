@@ -28,6 +28,9 @@ from mechanics.pivot_shift_builder import (
     PivotShiftBuilder,
 )
 from mechanism_io.csv_reader import CsvReader
+from model.mechanism_definition import (
+    MechanismDefinition,
+)
 from optimization.csv_parameter_factory import (
     CsvParameterFactory,
 )
@@ -569,3 +572,129 @@ def test_pivot_outside_definition_limits_rejected(tmp_path):
     )
     with pytest.raises(ValueError):
         CsvReader.read_mechanism(path)
+
+
+def _wide_definition(definition):
+    """Definition copy whose drive lever may rotate far
+    beyond the shaft support, so a lever angle parameter of
+    +-90 deg stays inside the parameter range."""
+    from dataclasses import replace as _replace
+
+    return MechanismDefinition(
+        tuple(
+            (
+                _replace(
+                    lever,
+                    angle_min=math.radians(-360.0),
+                    angle_max=math.radians(360.0),
+                )
+                if lever.id == 1
+                else lever
+            )
+            for lever in definition.levers
+        ),
+    )
+
+
+def test_drive_shaft_offset_follows_candidate_angle(
+    setup,
+):
+    """The target input angle describes the rotation of a
+    VIRTUAL DRIVE SHAFT; the optimizer forms the initial
+    angular offset ``drive angle - mean(input values)``."""
+    definition, targets, _ = setup
+    optimizer = make_optimizer(
+        _wide_definition(definition),
+        targets,
+    )
+    from optimization.csv_parameter_factory import (
+        CsvParameterFactory,
+    )
+
+    template = CsvParameterFactory.create_pivot_shift(
+        _wide_definition(definition),
+        shift_lever_id=1,
+    )
+    assert optimizer.drive_shaft_offset(
+        template,
+    ) == pytest.approx(0.0)
+    moved = with_values(
+        template,
+        **{
+            "lever.1.angle": math.radians(90.0),
+        },
+    )
+    offset = optimizer.drive_shaft_offset(
+        moved,
+    )
+    mean_shaft = optimizer._support_mean
+    assert offset == pytest.approx(
+        math.radians(90.0) - mean_shaft,
+    )
+    anchored = optimizer.anchored_support(moved)
+    assert sum(anchored) / len(
+        anchored,
+    ) == pytest.approx(
+        math.radians(90.0),
+        rel=1e-6,
+    )
+
+
+def test_simulated_input_angles_stay_in_shaft_frame(
+    setup,
+):
+    """Results are reported in SHAFT coordinates even
+    though the drive lever sweeps its own lever-angle
+    frame (the initial angular offset between the virtual
+    drive shaft and the start lever)."""
+    definition, targets, _ = setup
+    optimizer = make_optimizer(
+        _wide_definition(definition),
+        targets,
+    )
+    from optimization.csv_parameter_factory import (
+        CsvParameterFactory,
+    )
+
+    template = CsvParameterFactory.create_pivot_shift(
+        _wide_definition(definition),
+        shift_lever_id=1,
+    )
+    moved = with_values(
+        template,
+        **{
+            "lever.1.angle": math.radians(10.0),
+        },
+    )
+    result = optimizer._cached_simulation(
+        moved,
+        (0.0, 0.0),
+    )
+    assert result is not None
+    expected = [
+        math.radians(value)
+        for value in (
+            -10,
+            -8,
+            -6,
+            -4,
+            -2,
+            0,
+            2,
+            4,
+            6,
+            8,
+            10,
+        )
+    ]
+    assert len(result.input_angles) == len(
+        expected,
+    )
+    for got, want in zip(
+        result.input_angles,
+        expected,
+    ):
+        assert got == pytest.approx(
+            want,
+            abs=1e-9,
+        )

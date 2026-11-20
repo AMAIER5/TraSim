@@ -472,9 +472,10 @@ def _motion(
     The support angles are anchored at the drive
     lever's start angle, mirroring the normal
     workflow (``anchored_input_angles``): the drive
-    lever sits at its start angle at the middle
-    support position and every support point keeps
-    its angular distance to that middle.
+    lever sits at its start angle when the virtual
+    drive shaft is at the MEAN of all prescribed
+    input values and every support point keeps its
+    angular distance to that mean.
 
     Otherwise the evenly spaced ``MotionRange`` from
     the ``motion_*_deg`` fields is used as before.
@@ -490,10 +491,15 @@ def _anchored_support_angles(
     inputs: MixedBrakeInputs,
 ) -> tuple[float, ...]:
     """Support-point input angles (radians) shifted so
-    that the drive lever sits at its start angle at
-    the middle support position of the target curve
-    (same middle-position convention as the normal
-    workflow).
+    that the drive lever sits at its start angle
+    when the virtual drive shaft is at the MEAN of
+    all prescribed input values (same convention as
+    the normal workflow's ``anchored_input_angles``).
+
+    The shift is the initial angular offset between
+    the drive shaft and the start lever; the
+    displayed initial angle of the start lever is
+    the mean of the prescribed values (e.g. 0 deg).
 
     If that shift would move any support point outside
     the admissible lever-angle segment of the drive
@@ -501,9 +507,7 @@ def _anchored_support_angles(
     the shift is clamped so the whole support range
     stays inside [angle_min, angle_max]."""
     angles = inputs.input_angles
-    middle = angles[
-        int(math.floor(len(angles) / 2 + 0.5)) - 1
-    ]
+    middle = sum(angles) / len(angles)
     drive = inputs.definition.get_lever(
         _drive_lever_id(inputs.definition),
     )

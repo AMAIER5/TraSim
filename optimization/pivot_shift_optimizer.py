@@ -56,6 +56,7 @@ from optimization.parameter_set import (
 from simulation.mechanism_simulator import (
     MechanismSimulator,
 )
+from simulation.point_motion import PointMotion
 from simulation.simulation_result import (
     SimulationResult,
 )
@@ -86,6 +87,18 @@ def shift_parameter_names(
     )
 
 
+def drive_lever_id(
+    definition: MechanismDefinition,
+) -> int:
+    """Lever id of the drive lever (input lever of the
+    first stage; first lever of the definition when no
+    stage exists)."""
+    for lever in definition.levers:
+        if lever.driver is not None:
+            return lever.driver
+    return definition.levers[0].id
+
+
 def _mean_squared_difference(
     target: TargetCurve,
     reference: TargetCurve,
@@ -104,6 +117,17 @@ def _mean_squared_difference(
 class PivotShiftOptimizer:
     """Evaluates candidates at the two endpoints of the pivot
     displacement (unbraked and braked).
+
+    The target curve's INPUT angle describes the rotation of
+    a VIRTUAL DRIVE SHAFT.  The optimizer forms the initial
+    angular offset between this shaft and the drive lever:
+    every candidate's motion (and target support) is shifted
+    by ``(drive lever angle - mean of the input values)``, so
+    the drive lever sits at its start angle when the shaft is
+    at the mean of the prescribed input values - the
+    displayed initial angle of the start lever is that mean
+    (e.g. 0 deg), while the lever keeps its physical
+    installation angle (``angle_start``).
 
     Parameters
     ----------
@@ -217,6 +241,124 @@ class PivotShiftOptimizer:
         self._cache_misses = 0
         self._evaluations = 0
         self._build_errors = 0
+        self._support = tuple(self._simulator.motion)
+        self._support_mean = (
+            sum(self._support) / len(self._support)
+        )
+        self._drive_id = drive_lever_id(definition)
+        self._drive_fallback = (
+            definition.get_lever(
+                self._drive_id,
+            ).angle_start
+        )
+        self._anchored_cache: dict[
+            ParameterSet,
+            tuple[
+                MechanismSimulator,
+                tuple[TargetCurve, ...],
+                tuple[float, ...],
+            ],
+        ] = {}
+
+    # ------------------------------------------------------------------
+    # Drive shaft anchoring (virtual drive shaft offset)
+    # ------------------------------------------------------------------
+
+    def drive_shaft_offset(
+        self,
+        parameters: ParameterSet,
+    ) -> float:
+        """The candidate's initial angular offset (radians)
+        between the virtual drive shaft and the drive
+        lever: ``drive lever angle - mean of the prescribed
+        input values``.
+
+        The simulation runs the drive lever in its own
+        lever-angle frame (shaft angle + offset); the
+        results are shifted back so the reported input
+        angles stay in SHAFT coordinates."""
+        offset = (
+            self._drive_fallback - self._support_mean
+        )
+        drive_angle = parameters.values().get(
+            f"lever.{self._drive_id}.angle",
+        )
+        if drive_angle is not None:
+            offset = (
+                drive_angle
+                - self._support_mean
+            )
+        return offset
+
+    def anchored(
+        self,
+        parameters: ParameterSet,
+    ) -> tuple[
+        MechanismSimulator,
+        float,
+        tuple[float, ...],
+    ]:
+        """Anchored simulator, offset and lever-frame support
+        of the candidate (see the class docstring)."""
+        cached = self._anchored_cache.get(parameters)
+        if cached is not None:
+            return cached
+        offset = self.drive_shaft_offset(
+            parameters,
+        )
+        support = (
+            self._support
+            if offset == 0.0
+            else tuple(
+                angle + offset
+                for angle in self._support
+            )
+        )
+        simulator = MechanismSimulator(
+            motion=PointMotion(angles=support),
+        )
+        artifacts = (
+            simulator,
+            offset,
+            support,
+        )
+        self._anchored_cache[parameters] = artifacts
+        return artifacts
+
+    def anchored_support(
+        self,
+        parameters: ParameterSet,
+    ) -> tuple[float, ...]:
+        """Drive-lever (lever-frame) support angles used to
+        simulate the candidate."""
+        return self.anchored(parameters)[2]
+
+    @staticmethod
+    def _shaft_result(
+        result: SimulationResult,
+        offset: float,
+    ) -> SimulationResult:
+        """Simulation result converted back into SHAFT
+        coordinates (the input axis of the target
+        curves)."""
+        if offset == 0.0:
+            return result
+        return SimulationResult(
+            input_angles=tuple(
+                angle - offset
+                for angle in result.input_angles
+            ),
+            output_angles=result.output_angles,
+            success=result.success,
+            blocked_at=(
+                None
+                if result.blocked_at is None
+                else (
+                    result.blocked_at
+                    - offset
+                )
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Pipeline (1)-(5)
@@ -235,6 +377,7 @@ class PivotShiftOptimizer:
             else 0.0
         )
         shift = self.shift_for(parameters)
+        _anchored = self.anchored(parameters)
         pairs = []
         mechanisms = []
         unbraked = self._cached_simulation(
@@ -426,10 +569,16 @@ class PivotShiftOptimizer:
         if mechanism is None:
             self._build_errors += 1
             return None
-        results = self._simulator.simulate(mechanism)
+        simulator, offset, _ = (
+            self.anchored(parameters)
+        )
+        results = simulator.simulate(mechanism)
         if len(results) == 0:
             return None
-        result = self._combined_result(results)
+        result = self._shaft_result(
+            self._combined_result(results),
+            offset,
+        )
         self._cache[key] = result
         return result
 

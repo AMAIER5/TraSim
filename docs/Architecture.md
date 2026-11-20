@@ -493,6 +493,20 @@ torsion-coupled partner lever 3 share the pivot `(-60, 0)`;
 lever 1 drives lever 2; the target curves are the unbraked
 and braked curves of the mixed-brake example).
 
+Virtual drive shaft: the target curve's input angle describes
+the rotation of a virtual drive shaft of the first lever.  The
+optimizer forms the initial angular offset
+``angle_start(drive lever) - MEAN of all prescribed input
+values`` (`gui/workflow.py: mean_input_angle,
+anchored_input_angles, drive_shaft_offset`) so the drive lever
+sweeps its own lever-angle frame while every reported input
+angle stays in shaft coordinates (the displayed initial angle
+of the start lever is the mean, e.g. 0 deg).  The pivot shift
+optimizer mirrors this (`PivotShiftOptimizer.drive_shaft_offset`):
+each candidate is simulated on the shaft support shifted by the
+candidate's offset and the results are shifted back before
+scoring, so the discrete target curves keep matching.
+
 GUI: `gui/pivot_shift_workflow.py` is the UI-independent
 workflow of the pivot shift mode; `gui/app.py` detects the
 lever pair automatically (a mechanism with `pivot_on` stays
