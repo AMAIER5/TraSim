@@ -20,6 +20,11 @@ from optimization.parameter_set import (
 #: each lever's CSV pivot value (millimetres).
 DEFAULT_PIVOT_OFFSET = 20.0
 
+#: Default symmetric room around the unbraked pair pivot
+#: within which the pivot may be displaced for the braked
+#: state (millimetres).
+DEFAULT_SHIFT_OFFSET = 20.0
+
 
 class CsvParameterFactory:
     """
@@ -127,6 +132,88 @@ class CsvParameterFactory:
                     minimum=lever.pivot.z + offset_min,
                     maximum=lever.pivot.z + offset_max,
                     value=lever.pivot.z,
+                )
+            )
+        return ParameterSet(
+            parameters=tuple(parameters),
+        )
+
+    @staticmethod
+    def create_pivot_shift(
+        definition: MechanismDefinition,
+        *,
+        shift_lever_id: int,
+        pivot_bounds: (
+            tuple[float, float] | None
+        ) = None,
+        shift_bounds: (
+            tuple[float, float] | None
+        ) = None,
+    ) -> ParameterSet:
+        """Create a parameter template for the pivot-shift
+        approach: the standard lever parameters plus the two
+        displacement parameters of the shifted pair pivot.
+
+        The lever pair shares ONE common pivot: the partner
+        levers get no pivot parameters of their own; their
+        pivot always follows the shift lever's pivot, so the
+        pair cannot drift apart during optimization.
+
+        The shift parameters bound the ROOM within which the
+        common pivot of the lever pair may be displaced for
+        the braked state.  Their default value is 0 (the
+        unbraked position); ``shift_bounds`` configures the
+        room as a symmetric ``(minimum_offset,
+        maximum_offset)`` box around 0, defaulting to
+        ``DEFAULT_SHIFT_OFFSET``.
+        """
+        leader = definition.get_lever(shift_lever_id)
+        pair_ids = {
+            lever.id
+            for lever in definition.levers
+            if (
+                lever.pivot.x == leader.pivot.x
+                and lever.pivot.y == leader.pivot.y
+                and lever.pivot.z == leader.pivot.z
+            )
+        }
+        pair_ids.discard(shift_lever_id)
+        if shift_bounds is None:
+            shift_min = -DEFAULT_SHIFT_OFFSET
+            shift_max = DEFAULT_SHIFT_OFFSET
+        else:
+            shift_min, shift_max = shift_bounds
+            if shift_min > shift_max:
+                raise ValueError(
+                    "shift_bounds minimum must not be "
+                    "greater than maximum"
+                )
+        template = CsvParameterFactory.create(
+            definition,
+            pivot_bounds=pivot_bounds,
+        )
+        parameters = [
+            parameter
+            for parameter in template.parameters
+            if not any(
+                parameter.name
+                == (
+                    f"lever.{lever_id}.pivot.{axis}"
+                )
+                for lever_id in pair_ids
+                for axis in ("x", "y", "z")
+            )
+        ]
+        for name in (
+            f"lever.{shift_lever_id}.shift.x",
+            f"lever.{shift_lever_id}.shift.y",
+        ):
+            parameters.append(
+                Parameter(
+                    name=name,
+                    minimum=shift_min,
+                    maximum=shift_max,
+                    value=0.0,
                 )
             )
         return ParameterSet(

@@ -33,7 +33,6 @@ penalty.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -42,25 +41,18 @@ from mechanics.mechanism import (
     Mechanism,
     MechanismLever,
 )
+from mechanics.reference_restore import (
+    MechanismBuildError,  # re-exported for callers
+    restore_output_angle,
+)
 from mechanics.stage import Stage
 from model.mechanism_definition import MechanismDefinition
-from solver.constraints import rod_length_error
 from validation.stage_motion_validator import (
     StageMotionValidator,
 )
 from validation.stage_validation_result import (
     StageValidationResult,
 )
-
-
-class MechanismBuildError(Exception):
-    """Raised when a mechanism cannot be built for the
-    requested brake position.
-
-    Typical causes are unreachable geometry (rod too short or
-    too long for the moved pivot) or reference angles outside
-    the admissible lever-angle segments.
-    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,11 +86,6 @@ class MixedBrakeBuilder:
     (manual optimization: changing a pivot or lever length does
     not recalculate a locked coupler rod).
     """
-
-    search_step = math.radians(0.05)
-    newton_tolerance = 1.0e-13
-    restore_tolerance = 1.0e-9
-    newton_max_iterations = 60
 
     def __init__(
         self,
@@ -362,7 +349,7 @@ class MixedBrakeBuilder:
             # hand-edited mechanisms whose angle_start falls
             # outside [angle_min, angle_max], while the normal
             # single-curve optimization still worked (issue #108).
-            output_angle = self._restore_output_angle(
+            output_angle = restore_output_angle(
                 input_lever=input_lever,
                 output_lever=output_lever,
                 input_angle=input_angle,
@@ -491,126 +478,6 @@ class MixedBrakeBuilder:
                     "pivot_on references cannot be resolved"
                 )
         return levers
-
-    # ------------------------------------------------------------------
-    # Branch-faithful reference restore
-    # ------------------------------------------------------------------
-
-    def _restore_output_angle(
-        self,
-        *,
-        input_lever: Lever,
-        output_lever: Lever,
-        input_angle: float,
-        rod_length: float,
-        reference_angle: float,
-        output_angle_min: float,
-        output_angle_max: float,
-    ) -> float:
-        if not math.isfinite(output_angle_min) or not (
-            math.isfinite(output_angle_max)
-        ):
-            output_angle_min = -math.pi
-            output_angle_max = math.pi
-        if output_angle_max <= output_angle_min:
-            raise MechanismBuildError(
-                "empty output angle range"
-            )
-
-        input_point = input_lever.end_position(input_angle)
-
-        def residual(
-            angle: float,
-        ) -> float:
-            return rod_length_error(
-                input_point,
-                output_lever.end_position(angle),
-                rod_length,
-            )
-
-        if abs(residual(reference_angle)) <= (
-            self.newton_tolerance
-        ):
-            return reference_angle
-
-        candidates = self._collect_branches(
-            residual,
-            output_angle_min,
-            output_angle_max,
-        )
-        if not candidates:
-            raise MechanismBuildError(
-                "no kinematic solution for the moved "
-                "pivot: rod cannot be connected within "
-                "the output angle bounds"
-            )
-        candidates.sort(
-            key=lambda angle: abs(angle - reference_angle)
-        )
-        angle = self._newton_refine(
-            residual,
-            candidates[0],
-            output_angle_min,
-            output_angle_max,
-        )
-        if angle is None:
-            raise MechanismBuildError(
-                "reference output angle could not be "
-                "restored within tolerance"
-            )
-        return angle
-
-    def _collect_branches(
-        self,
-        residual,
-        minimum: float,
-        maximum: float,
-    ) -> list[float]:
-        step = self.search_step
-        count = int(math.ceil((maximum - minimum) / step))
-        candidates: list[float] = []
-        previous_angle = minimum
-        previous_value = residual(minimum)
-        if previous_value == 0.0:
-            candidates.append(minimum)
-        for index in range(1, count + 1):
-            angle = min(
-                minimum + index * step,
-                maximum,
-            )
-            value = residual(angle)
-            if value == 0.0:
-                candidates.append(angle)
-            elif previous_value * value < 0.0:
-                candidates.append(
-                    (previous_angle + angle) / 2.0
-                )
-            previous_angle = angle
-            previous_value = value
-        return candidates
-
-    def _newton_refine(
-        self,
-        residual,
-        start: float,
-        minimum: float,
-        maximum: float,
-    ) -> float | None:
-        angle = start
-        for _ in range(self.newton_max_iterations):
-            value = residual(angle)
-            if abs(value) <= self.newton_tolerance:
-                return angle
-            h = 1.0e-7
-            slope = (residual(angle + h) - value) / h
-            if slope == 0.0:
-                return None
-            angle = angle - value / slope
-            if angle < minimum or angle > maximum:
-                return None
-        if abs(residual(angle)) <= self.restore_tolerance:
-            return angle
-        return None
 
     def get_validation_results(
         self,

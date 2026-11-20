@@ -421,6 +421,53 @@ adjusting lever whose endpoint carries the pivot of lever 1;
 `BrakeGridSettings` derives five brake positions from
 `angle_start` (unbraked) to `angle_max` (fully braked).
 
+### Pivot Shift (replacement of the modelled brake lever)
+
+The mixed brake approach models the brake as a rotating
+brake lever carrying the moved pivot.  The **pivot shift**
+approach replaces it: the brake state is the DISPLACEMENT of
+the common pivot of a lever pair within a defined room —
+no brake lever is modelled, and the path/curve along which
+the pivot travels in the real application stays open
+until later.
+
+Every candidate is evaluated exactly at the two endpoints
+of the displacement (intermediate brake positions proved
+pointless for non-proportional brake behaviour):
+
+1. All parameters mutate inside their allowed ranges: the
+   standard lever parameters plus the two shift parameters
+   `lever.<shift_id>.shift.x/y` bounding the room of the
+   common pair pivot.
+2. The `PivotShiftBuilder`
+   (`mechanics/pivot_shift_builder.py`) freezes the coupling
+   rod lengths in the UNSHIFTED (unbraked) position.
+3. The unbraked transfer function is simulated with those
+   rods.
+4. The braked transfer function is built and simulated with
+   IDENTICAL coupling rods: braked and unbraked differ ONLY
+   in the displaced pair pivot.
+5. `PivotShiftOptimizer`
+   (`optimization/pivot_shift_optimizer.py`) scores both
+   transfer functions with `BrakeCurveFitness`; an
+   unbuildable unbraked position yields the hard blocking
+   penalty, an unbuildable braked position adds a penalty
+   proportional to the target-curve difference, and a
+   collapsed shift pays the shift-effect deviation.
+
+The lever pair shares ONE common pivot: the partner lever
+owns no pivot parameters and always follows the shift
+lever's pivot, so the pair cannot drift apart during
+optimization.  The pair is resolved from the levers sharing
+pivot coordinates (`resolve_pair_ids`); the parameter
+room is created by `CsvParameterFactory.create_pivot_shift`.
+
+End-to-end example: `examples/optimize_pivot_shift.py`
+with `examples/pivot_shift_mechanism.csv` (lever 1 and its
+torsion-coupled partner lever 3 share the pivot `(-60, 0)`;
+lever 1 drives lever 2; the target curves are the unbraked
+and braked curves of the mixed-brake example).
+
 ---
 
 # 9. Mechanical Components (mechanics/)
