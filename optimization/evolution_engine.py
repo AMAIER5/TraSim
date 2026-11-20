@@ -490,10 +490,20 @@ class EvolutionEngine:
 
         self.evaluate_population()
 
+        # The selectable candidates are bounded by the current
+        # population: with a small population (or fewer children
+        # than the selection wants), selecting the full count is
+        # impossible; clamp instead of raising (a GUI user can
+        # freely combine a small population with a large child
+        # count).
+        count = min(
+            self.selection_count,
+            len(self.population),
+        )
         survivors = self.selection.select(
             self.population,
             self.scores,
-            count=self.selection_count,
+            count=count,
         )
 
         next_population = (

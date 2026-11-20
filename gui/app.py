@@ -782,13 +782,29 @@ if two_curve_mode:
         st.error(str(error))
         st.stop()
     try:
+        (
+            braked_angles,
+            braked_outputs,
+            braked_weights,
+        ) = _split_curve(
+            edited_curves,
+            BRAKED_TARGET_COL,
+            BRAKED_WEIGHT_COL,
+        )
         braked_curve = (
             TargetCurve.from_points_strict(
-                *_split_curve(
-                    edited_curves,
-                    BRAKED_TARGET_COL,
-                    BRAKED_WEIGHT_COL,
+                # _split_curve returns angles/outputs in
+                # USER units (degrees); the strict curve
+                # expects RADIANS (issues #135, #136).
+                tuple(
+                    math.radians(angle)
+                    for angle in braked_angles
                 ),
+                tuple(
+                    math.radians(angle)
+                    for angle in braked_outputs
+                ),
+                braked_weights,
             )
         )
     except ValueError as error:
@@ -3179,55 +3195,61 @@ elif pivot_result is not None:
                 y_label="Fitness",
             )
         chart_left, chart_right = st.columns(2)
+
+        def _result_chart_rows(
+            target_deg,
+            actual_deg,
+        ):
+            actual = list(actual_deg)
+            return [
+                {
+                    "Eing. (°)": angle,
+                    "Ziel (°)": target,
+                    "Ist (°)": (
+                        actual[index]
+                        if index < len(actual)
+                        else None
+                    ),
+                }
+                for index, (
+                    angle,
+                    target,
+                ) in enumerate(
+                    zip(
+                        pivot_result
+                        .input_angles_deg,
+                        target_deg,
+                    )
+                )
+            ]
+
+        target_actual_columns = [
+            "Ziel (°)",
+            "Ist (°)",
+        ]
         with chart_left:
-            st.subheader(
-                "Ungebremst"
-            )
-            unbraked_chart = {
-                "Eing. (°)": list(
-                    pivot_result
-                    .input_angles_deg,
-                ),
-                "Ziel (°)": list(
+            st.subheader("Ungebremst")
+            st.line_chart(
+                _result_chart_rows(
                     pivot_result
                     .unbraked_target_deg,
-                ),
-                "Ist (°)": list(
                     pivot_result
                     .unbraked_actual_deg,
                 ),
-            }
-            target_actual_columns = [
-                "Ziel (°)",
-                "Ist (°)",
-            ]
-            st.line_chart(
-                unbraked_chart,
                 x="Eing. (°)",
                 y=target_actual_columns,
                 x_label="Eing. (°)",
                 y_label="Ausgang (°)",
             )
         with chart_right:
-            st.subheader(
-                "Voll gebremst"
-            )
-            braked_chart = {
-                "Eing. (°)": list(
-                    pivot_result
-                    .input_angles_deg,
-                ),
-                "Ziel (°)": list(
+            st.subheader("Voll gebremst")
+            st.line_chart(
+                _result_chart_rows(
                     pivot_result
                     .braked_target_deg,
-                ),
-                "Ist (°)": list(
                     pivot_result
                     .braked_actual_deg,
                 ),
-            }
-            st.line_chart(
-                braked_chart,
                 x="Eing. (°)",
                 y=target_actual_columns,
                 x_label="Eing. (°)",
