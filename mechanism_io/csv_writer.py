@@ -157,6 +157,11 @@ class CsvWriter:
         All angle values (angle_min, angle_max,
         angle_start) are written in DEGREES.
         """
+        include_pivot_limits = any(
+            lever.has_pivot_limits
+            for lever in mechanism.levers
+        )
+
         with Path(path).open(
             "w",
             newline="",
@@ -188,6 +193,22 @@ class CsvWriter:
                     "driver",
                     "coupled",
                     "pivot_on",
+                )
+                + (
+                    # Optional per-axis pivot limits, persisted
+                    # only when at least one lever defines one,
+                    # so mechanisms without them keep the exact
+                    # previous CSV layout.
+                    (
+                        "pivot_x_min",
+                        "pivot_x_max",
+                        "pivot_y_min",
+                        "pivot_y_max",
+                        "pivot_z_min",
+                        "pivot_z_max",
+                    )
+                    if include_pivot_limits
+                    else ()
                 )
                 + (
                     # Issue #127: the fully braked position of a
@@ -272,6 +293,22 @@ class CsvWriter:
                         else lever.coupled,
                         "" if lever.pivot_on is None
                         else lever.pivot_on,
+                    )
+                    + tuple(
+                        ""
+                        if bound is None
+                        else convention.format_float(
+                            bound
+                        )
+                        for bound in (
+                            lever.pivot_x_min,
+                            lever.pivot_x_max,
+                            lever.pivot_y_min,
+                            lever.pivot_y_max,
+                            lever.pivot_z_min,
+                            lever.pivot_z_max,
+                        )
+                        if include_pivot_limits
                     )
                     + tuple(
                         (

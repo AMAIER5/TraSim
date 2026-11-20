@@ -137,11 +137,17 @@ def test_template_contains_shift_parameters(setup):
         for parameter in template.parameters
     }
     assert set(shift_parameter_names(1)) <= names
-    for name in shift_parameter_names(1):
-        parameter = template.get(name)
-        assert parameter.value == 0.0
-        assert parameter.minimum == -20.0
-        assert parameter.maximum == 20.0
+    # The shift room follows the shift lever's pivot limits
+    # in the example CSV (lever 1: pivot (-60, 0),
+    # x in [-75, -45], y in [-15, 10]):
+    # shift.x in [-15, 15], shift.y in [-15, 10]
+    # (an asymmetric room, identical per-axis limits).
+    x = template.get(shift_parameter_names(1)[0])
+    y = template.get(shift_parameter_names(1)[1])
+    assert x.value == 0.0
+    assert y.value == 0.0
+    assert (x.minimum, x.maximum) == (-15.0, 15.0)
+    assert (y.minimum, y.maximum) == (-15.0, 10.0)
 
 
 def test_template_has_no_partner_pivot_parameters(
@@ -173,6 +179,57 @@ def test_shift_room_configurable(setup):
     )
     x = template.get("lever.1.shift.x")
     assert (x.minimum, x.maximum) == (-5.0, 15.0)
+
+
+def test_pivot_parameters_follow_definition_limits(setup):
+    """The pivot search-space parameters use the optional
+    per-axis pivot limits of the mechanism definition
+    instead of the symmetric default offset."""
+    _, _, template = setup
+    x = template.get("lever.2.pivot.x")
+    y = template.get("lever.2.pivot.y")
+    assert (x.minimum, x.maximum) == (85.0, 115.0)
+    assert (y.minimum, y.maximum) == (45.0, 75.0)
+    # Lever 3 defines no limits and is the pair partner
+    # (no pivot parameters at all).
+    names = {
+        parameter.name
+        for parameter in template.parameters
+    }
+    assert "lever.3.pivot.x" not in names
+
+
+def test_shift_clamped_to_definition_limits(setup):
+    """The braked pair pivot stays inside the shift lever's
+    pivot limits even when the candidate's raw shift exceeds
+    the room left around its optimized base pivot."""
+    definition, targets, template = setup
+    optimizer = make_optimizer(
+        definition,
+        targets,
+    )
+    # Base pivot moved to x = -50: the room left to the
+    # x_max limit (-45) is a shift of +5.
+    candidate = with_values(
+        template,
+        **{
+            "lever.1.pivot.x": -50.0,
+            "lever.1.shift.x": 15.0,
+        },
+    )
+    assert optimizer.shift_for(
+        candidate,
+    ) == (5.0, 0.0)
+    mechanism = optimizer._cached_mechanism(
+        candidate,
+        optimizer.shift_for(candidate),
+    )
+    assert mechanism is not None
+    braked_pivot = mechanism.levers[0].lever.pivot
+    assert braked_pivot.x == pytest.approx(
+        -45.0,
+    )
+
 
 
 def test_base_candidate_scores_finite(setup):
@@ -454,3 +511,61 @@ def test_example_optimization_reaches_finite_score(
     ):
         pass
     assert engine.best_score < float("inf")
+
+
+def test_definition_pivot_limits_roundtrip(setup, tmp_path):
+    """The optional pivot limits are part of the mechanism
+    definition: read from and written to the CSV."""
+    from mechanism_io.csv_writer import CsvWriter
+
+    definition, _, _ = setup
+    lever1 = definition.get_lever(1)
+    assert lever1.pivot_x_min == -75.0
+    assert lever1.pivot_x_max == -45.0
+    assert lever1.pivot_y_min == -15.0
+    assert lever1.pivot_y_max == 10.0
+    assert lever1.pivot_z_min is None
+    partner = definition.get_lever(3)
+    assert not partner.has_pivot_limits
+
+    path = tmp_path / "roundtrip.csv"
+    CsvWriter.write_mechanism(definition, path)
+    reloaded = CsvReader.read_mechanism(path)
+    for original in definition.levers:
+        loaded = reloaded.get_lever(original.id)
+        assert (loaded.pivot_x_min, loaded.pivot_x_max) == (
+            original.pivot_x_min,
+            original.pivot_x_max,
+        )
+        assert (loaded.pivot_y_min, loaded.pivot_y_max) == (
+            original.pivot_y_min,
+            original.pivot_y_max,
+        )
+        assert (loaded.pivot_z_min, loaded.pivot_z_max) == (
+            original.pivot_z_min,
+            original.pivot_z_max,
+        )
+
+
+def test_inconsistent_definition_limits_rejected(tmp_path):
+    path = tmp_path / "invalid.csv"
+    path.write_text(
+        """id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,pivot_x_min,pivot_x_max
+1,40,100,60,-12,12,0,-60,0,0,0,0,1,-40,-75
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        CsvReader.read_mechanism(path)
+
+
+def test_pivot_outside_definition_limits_rejected(tmp_path):
+    path = tmp_path / "outside.csv"
+    path.write_text(
+        """id,length_min,length_max,length_start,angle_min,angle_max,angle_start,pivot_x,pivot_y,pivot_z,axis_x,axis_y,axis_z,pivot_x_min
+1,40,100,60,-12,12,0,-60,0,0,0,0,1,-50
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        CsvReader.read_mechanism(path)

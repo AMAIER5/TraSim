@@ -104,13 +104,33 @@ class CsvParameterFactory:
             )
             if lever.pivot_on is not None:
                 continue
+            # Per-axis optional pivot limits from the
+            # mechanism definition take precedence over the
+            # symmetric offset: an axis with explicit limits
+            # keeps them, unrestricted axes fall back to the
+            # offset around the CSV value.
+            (
+                (x_min, x_max),
+                (y_min, y_max),
+                (z_min, z_max),
+            ) = lever.pivot_limits
             parameters.append(
                 Parameter(
                     name=(
                         f"lever.{lever.id}.pivot.x"
                     ),
-                    minimum=lever.pivot.x + offset_min,
-                    maximum=lever.pivot.x + offset_max,
+                    minimum=(
+                        x_min
+                        if x_min is not None
+                        else lever.pivot.x
+                        + offset_min
+                    ),
+                    maximum=(
+                        x_max
+                        if x_max is not None
+                        else lever.pivot.x
+                        + offset_max
+                    ),
                     value=lever.pivot.x,
                 )
             )
@@ -119,8 +139,18 @@ class CsvParameterFactory:
                     name=(
                         f"lever.{lever.id}.pivot.y"
                     ),
-                    minimum=lever.pivot.y + offset_min,
-                    maximum=lever.pivot.y + offset_max,
+                    minimum=(
+                        y_min
+                        if y_min is not None
+                        else lever.pivot.y
+                        + offset_min
+                    ),
+                    maximum=(
+                        y_max
+                        if y_max is not None
+                        else lever.pivot.y
+                        + offset_max
+                    ),
                     value=lever.pivot.y,
                 )
             )
@@ -129,8 +159,18 @@ class CsvParameterFactory:
                     name=(
                         f"lever.{lever.id}.pivot.z"
                     ),
-                    minimum=lever.pivot.z + offset_min,
-                    maximum=lever.pivot.z + offset_max,
+                    minimum=(
+                        z_min
+                        if z_min is not None
+                        else lever.pivot.z
+                        + offset_min
+                    ),
+                    maximum=(
+                        z_max
+                        if z_max is not None
+                        else lever.pivot.z
+                        + offset_max
+                    ),
                     value=lever.pivot.z,
                 )
             )
@@ -162,10 +202,18 @@ class CsvParameterFactory:
         The shift parameters bound the ROOM within which the
         common pivot of the lever pair may be displaced for
         the braked state.  Their default value is 0 (the
-        unbraked position); ``shift_bounds`` configures the
-        room as a symmetric ``(minimum_offset,
+        unbraked position).  The room follows the shift
+        lever's optional per-axis pivot limits from the
+        mechanism definition (``pivot_x_min`` .. ``pivot_z_max``
+        columns): a displaced pivot stays inside the same
+        admissible room in which the (unbraked) pivot itself
+        may be optimized, e.g. ``shift.x`` ranges over
+        ``[pivot_x_min - pivot_x, pivot_x_max - pivot_x]``.
+        Without defined limits, ``shift_bounds`` configures
+        the room as a symmetric ``(minimum_offset,
         maximum_offset)`` box around 0, defaulting to
-        ``DEFAULT_SHIFT_OFFSET``.
+        ``DEFAULT_SHIFT_OFFSET``; an explicit ``shift_bounds``
+        also overrides the definition limits.
         """
         leader = definition.get_lever(shift_lever_id)
         pair_ids = {
@@ -178,9 +226,34 @@ class CsvParameterFactory:
             )
         }
         pair_ids.discard(shift_lever_id)
+        (
+            (x_min, x_max),
+            (y_min, y_max),
+            _z_limits,
+        ) = leader.pivot_limits
+        default_x_bounds = (
+            (
+                x_min - leader.pivot.x
+                if x_min is not None
+                else -DEFAULT_SHIFT_OFFSET
+            ),
+            x_max - leader.pivot.x
+            if x_max is not None
+            else DEFAULT_SHIFT_OFFSET,
+        )
+        default_y_bounds = (
+            (
+                y_min - leader.pivot.y
+                if y_min is not None
+                else -DEFAULT_SHIFT_OFFSET
+            ),
+            y_max - leader.pivot.y
+            if y_max is not None
+            else DEFAULT_SHIFT_OFFSET,
+        )
         if shift_bounds is None:
-            shift_min = -DEFAULT_SHIFT_OFFSET
-            shift_max = DEFAULT_SHIFT_OFFSET
+            shift_x_bounds = default_x_bounds
+            shift_y_bounds = default_y_bounds
         else:
             shift_min, shift_max = shift_bounds
             if shift_min > shift_max:
@@ -188,6 +261,8 @@ class CsvParameterFactory:
                     "shift_bounds minimum must not be "
                     "greater than maximum"
                 )
+            shift_x_bounds = (shift_min, shift_max)
+            shift_y_bounds = (shift_min, shift_max)
         template = CsvParameterFactory.create(
             definition,
             pivot_bounds=pivot_bounds,
@@ -204,15 +279,21 @@ class CsvParameterFactory:
                 for axis in ("x", "y", "z")
             )
         ]
-        for name in (
-            f"lever.{shift_lever_id}.shift.x",
-            f"lever.{shift_lever_id}.shift.y",
+        for name, bounds in (
+            (
+                f"lever.{shift_lever_id}.shift.x",
+                shift_x_bounds,
+            ),
+            (
+                f"lever.{shift_lever_id}.shift.y",
+                shift_y_bounds,
+            ),
         ):
             parameters.append(
                 Parameter(
                     name=name,
-                    minimum=shift_min,
-                    maximum=shift_max,
+                    minimum=bounds[0],
+                    maximum=bounds[1],
                     value=0.0,
                 )
             )

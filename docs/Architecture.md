@@ -462,6 +462,31 @@ optimization.  The pair is resolved from the levers sharing
 pivot coordinates (`resolve_pair_ids`); the parameter
 room is created by `CsvParameterFactory.create_pivot_shift`.
 
+The room of the displacement is bounded by the OPTIONAL
+per-axis pivot limits in the mechanism definition (CSV
+columns `pivot_x_min`, `pivot_x_max`, `pivot_y_min`,
+`pivot_y_max`, `pivot_z_min`, `pivot_z_max`; each bound
+optional on its own, `None` means unrestricted in that
+direction; the CSV pivot value must lie inside them).
+They play the same role for the pivot as
+`length_min`/`length_max` play for a lever length:
+
+- the pivot search-space parameters use them instead of
+  the default symmetric offset (`CsvParameterFactory.create`),
+- the shift parameters are derived from the shift lever's
+  limits (`shift.x` ranges over
+  `[pivot_x_min - pivot_x, pivot_x_max - pivot_x]`,
+  likewise for y), so an asymmetric room is possible per
+  axis,
+- and `PivotShiftOptimizer.shift_for` clamps every
+candidate's raw shift so the displaced (braked) pivot
+always stays inside these limits — like the mixed brake
+optimizer clamps the brake angle to the brake lever's
+admissible segment.
+
+Mechanisms without the columns keep the previous behaviour
+(default offset rooms).
+
 End-to-end example: `examples/optimize_pivot_shift.py`
 with `examples/pivot_shift_mechanism.csv` (lever 1 and its
 torsion-coupled partner lever 3 share the pivot `(-60, 0)`;
