@@ -698,3 +698,39 @@ def test_simulated_input_angles_stay_in_shaft_frame(
             want,
             abs=1e-9,
         )
+
+
+def test_shift_effect_survives_single_point_curves(setup):
+    definition, targets, _ = setup
+    optimizer = make_optimizer(
+        definition,
+        targets,
+    )
+    from simulation.simulation_result import (
+        SimulationResult,
+    )
+
+    angle = 0.5
+    one_point = SimulationResult(
+        input_angles=(angle,),
+        output_angles=(0.5,),
+        success=False,
+        blocked_at=angle,
+    )
+    deviation = optimizer._pair_shift_effect_deviation(
+        (
+            (one_point, targets[0]),
+            (one_point, targets[1]),
+        ),
+    )
+    expected = (
+        (
+            one_point.output_angles[0]
+            - one_point.output_angles[0]
+        )
+        - (
+            targets[1].evaluate(angle)
+            - targets[0].evaluate(angle)
+        )
+    ) ** 2
+    assert deviation == pytest.approx(expected)
