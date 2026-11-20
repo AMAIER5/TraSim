@@ -493,6 +493,16 @@ torsion-coupled partner lever 3 share the pivot `(-60, 0)`;
 lever 1 drives lever 2; the target curves are the unbraked
 and braked curves of the mixed-brake example).
 
+GUI: `gui/pivot_shift_workflow.py` is the UI-independent
+workflow of the pivot shift mode; `gui/app.py` detects the
+lever pair automatically (a mechanism with `pivot_on` stays
+in the mixed brake mode, a lever pair on a common pivot
+switches to the pivot shift mode) and offers both target
+curves in ONE shared table (per support angle one target
+value and weight column pair for each curve); all tables
+use compact (`width="small"`) columns with shortened
+labels.
+
 ---
 
 # 9. Mechanical Components (mechanics/)

@@ -25,6 +25,7 @@ from __future__ import annotations
 import copy
 import math
 import sys
+import tempfile
 from pathlib import Path
 
 import streamlit as st
@@ -57,6 +58,14 @@ from gui.mixed_brake_workflow import (
     run_mixed_brake_optimization,
     single_brake_position_report,
 )
+from gui.pivot_shift_workflow import (
+    PivotShiftSettings,
+    pivot_pair_candidates,
+    pivot_shift_inputs_from_parts,
+    pivot_shift_parameter_template,
+    run_pivot_shift_optimization,
+)
+from mechanism_io.csv_reader import CsvReader
 from gui.workflow import (
     LoadedInputs,
     OptimizationResult,
@@ -100,6 +109,35 @@ st.caption(
     "Parameter anpassen, optimieren und das "
     "Ergebnis als HTML-Dokument speichern."
 )
+
+def _csv_sniff_pivot_pair(
+    data: bytes,
+) -> bool:
+    """Check whether the uploaded mechanism CSV contains a
+    lever pair sharing a common pivot (pivot shift mode,
+    the replacement of the modelled brake lever).
+
+    Strings (``None`` while no file is uploaded) disable the
+    check like the mixed mode sniff does."""
+    try:
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "mechanism.csv"
+            path.write_bytes(data)
+            definition = CsvReader.read_mechanism(
+                path,
+            )
+        return len(
+            pivot_pair_candidates(definition)
+        ) > 0
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+    ):
+        return False
+
 
 def _csv_sniff_mixed_mode(
     data: bytes,
@@ -165,13 +203,18 @@ with st.sidebar:
         key="target_braked",
         disabled=(
             not _csv_sniff_mixed_mode(
-                mechanism_bytes
+                mechanism_bytes,
+            )
+            and not _csv_sniff_pivot_pair(
+                mechanism_bytes,
             )
         ),
         help=(
             "Wird erst aktiviert, wenn ein "
-            "Mischer-Modus-Mechanismus (Hebel mit "
-            "pivot_on) geladen wurde."
+            "Zwei-Kurven-Mechanismus geladen wurde "
+            "(Mischer-Modus: Hebel mit pivot_on; "
+            "Pivot-Shift-Modus: Hebelpaar mit "
+            "gemeinsamem Drehpunkt)."
         ),
     )
     st.divider()
@@ -343,6 +386,32 @@ def _mixed_brake_example_files() -> (
     )
 
 
+def _two_curve_example_files(
+    pivot: bool,
+) -> tuple[str, str, str]:
+    """Example files of the currently active mode: the
+    brake-lever mixer example or the pivot-shift
+    (brake-lever-less) example; both share the
+    unbraked/braked target curve examples."""
+    if not pivot:
+        return _mixed_brake_example_files()
+    example_dir = _mixed_brake_example_dir()
+    return (
+        (
+            example_dir
+            / "pivot_shift_mechanism.csv"
+        ).read_text(encoding="utf-8"),
+        (
+            example_dir
+            / "target_curve_unbraked.csv"
+        ).read_text(encoding="utf-8"),
+        (
+            example_dir
+            / "target_curve_braked.csv"
+        ).read_text(encoding="utf-8"),
+    )
+
+
 def _target_curve_from_csv_text(
     text: str,
 ):
@@ -380,11 +449,23 @@ except WorkflowError as error:
 
 
 mixed_mode = _has_pivot_on(inputs.definition)
+pivot_pairs = (
+    pivot_pair_candidates(inputs.definition)
+    if not mixed_mode
+    else []
+)
+pivot_mode = bool(pivot_pairs)
 
 mixed_inputs = None
-if mixed_mode:
+pivot_inputs = None
+if mixed_mode or pivot_mode:
+    mode_label = (
+        "Mischer-Modus"
+        if mixed_mode
+        else "Pivot-Shift-Modus"
+    )
     with st.expander(
-        "Mischer-Modus: Beispiel-Dateien laden"
+        f"{mode_label}: Beispiel-Dateien laden"
     ):
         st.caption(
             "Der geladene Mechanismus enthält einen "
@@ -395,17 +476,32 @@ if mixed_mode:
             "voll gebremst); die "
             "Zielkurven der übrigen Bremsstellungen "
             "werden interpoliert."
+            if mixed_mode
+            else "Der geladene Mechanismus enthält ein "
+            "Hebelpaar mit gemeinsamem Drehpunkt. "
+            "Der gebremste Zustand entsteht durch "
+            "Verschieben dieses Drehpunkts im "
+            "definierten Raum; zusätzlich zur "
+            "Zielkurve ungebremst wird eine zweite "
+            "Zielkurve für die voll gebremste "
+            "Stellung benötigt."
         )
         load_examples = st.button(
             "Beispiel-Dateien laden",
-            key="mixed_brake_examples_button",
+            key=(
+                "mixed_brake_examples_button"
+                if mixed_mode
+                else "pivot_shift_examples_button"
+            ),
         )
         if load_examples:
             (
                 mechanism_example,
                 unbraked_example,
                 braked_example,
-            ) = _mixed_brake_example_files()
+            ) = _two_curve_example_files(
+                pivot=pivot_mode,
+            )
             st.session_state[
                 "mixed_brake_mechanism"
             ] = mechanism_example
@@ -434,23 +530,51 @@ if mixed_mode:
             st.info(
                 "Bitte die gebremste Zielkurve "
                 "hochladen oder die Beispiel-Dateien "
-                "laden, um den Mischer-Modus zu "
+                f"laden, um den {mode_label} zu "
                 "starten."
             )
             st.stop()
-    try:
-        mixed_inputs = (
-            mixed_brake_inputs_from_parts(
-                inputs.definition,
-                inputs.target_curve,
-                _target_curve_from_csv_text(
-                    braked_text
-                ),
+    if mixed_mode:
+        try:
+            mixed_inputs = (
+                mixed_brake_inputs_from_parts(
+                    inputs.definition,
+                    inputs.target_curve,
+                    _target_curve_from_csv_text(
+                        braked_text
+                    ),
+                )
             )
-        )
-    except WorkflowError as error:
-        st.error(str(error))
-        st.stop()
+        except WorkflowError as error:
+            st.error(str(error))
+            st.stop()
+    else:
+        shift_lever_options = [
+            min(pair) for pair in pivot_pairs
+        ]
+        if len(shift_lever_options) > 1:
+            shift_lever_id = st.selectbox(
+                "Shift-Hebel des verschobenen "
+                "Drehpunkts",
+                options=shift_lever_options,
+                key="pivot_shift_lever",
+            )
+        else:
+            shift_lever_id = shift_lever_options[0]
+        try:
+            pivot_inputs = (
+                pivot_shift_inputs_from_parts(
+                    inputs.definition,
+                    inputs.target_curve,
+                    _target_curve_from_csv_text(
+                        braked_text
+                    ),
+                    shift_lever_id=shift_lever_id,
+                )
+            )
+        except WorkflowError as error:
+            st.error(str(error))
+            st.stop()
 
 st.success(
     f"Mechanismus geladen: "
@@ -459,218 +583,340 @@ st.success(
     + (
         " · Mischer-Modus (pivot_on)"
         if mixed_mode
-        else ""
+        else (
+            " · Pivot-Shift-Modus (Hebelpaar-Drehpunkt)"
+            if pivot_mode
+            else ""
+        )
     )
 )
-st.header(
-    "Zielkurve ungebremst"
-    if mixed_mode
-    else "Zielkurve"
-)
-st.caption(
-    "Die eingelesenen Stützpunkte der Zielkurve "
-    "können hier direkt bearbeitet, ergänzt und "
-    "gelöscht werden. Eingabewinkel müssen "
-    "aufsteigend und eindeutig sein; Gewichte "
-    "werden auf "
-    f"{MAX_WEIGHT:.0f} begrenzt. Die Diagramme "
-    "zeigen immer die aktuellen Werte."
+INPUT_ANGLE_COL = "Eing. (\u00b0)"
+UNBRAKED_TARGET_COL = "Ziel ungeb. (\u00b0)"
+UNBRAKED_WEIGHT_COL = "Gew. u"
+BRAKED_TARGET_COL = "Ziel geb. (\u00b0)"
+BRAKED_WEIGHT_COL = "Gew. b"
+SINGLE_TARGET_COL = "Ziel (\u00b0)"
+SINGLE_WEIGHT_COL = "Gew."
+
+two_curve_mode = (
+    mixed_inputs is not None
+    or pivot_inputs is not None
 )
 
-target_rows = [
-    {
-        "Eingabewinkel (°)": math.degrees(
-            angle,
-        ),
-        "Ausgangswinkel (°)": math.degrees(
-            output,
-        ),
-        "Gewicht": weight,
-    }
-    for angle, output, weight in zip(
+braked_curve = None
+if two_curve_mode:
+    st.header(
+        "Zielkurven ungebremst / voll gebremst"
+    )
+    st.caption(
+        "Ungebremste und gebremste Zielkurve in "
+        "einer Tabelle: je St\u00fctzwinkel ein "
+        "Zielwert und Gewicht pro Kurve. Eingabe-"
+        "winkel m\u00fcssen aufsteigend und "
+        "eindeutig sein; Gewichte werden auf "
+        f"{MAX_WEIGHT:.0f} begrenzt. Leere "
+        "Zielwert-Zellen lassen den St\u00fctzwinkel "
+        "f\u00fcr die jeweilige Kurve weg."
+    )
+
+    def _curve_rows(
+        angles, outputs, weights,
+    ):
+        return {
+            round(math.degrees(angle), 6): {
+                "output": math.degrees(output),
+                "weight": weight,
+            }
+            for angle, output, weight in zip(
+                angles,
+                outputs,
+                weights,
+            )
+        }
+
+    unbraked_points = _curve_rows(
         inputs.input_angles,
         inputs.output_angles,
         inputs.target_curve.weights,
     )
-]
-
-edited_target = st.data_editor(
-    target_rows,
-    num_rows="dynamic",
-    width="stretch",
-    key="target_curve_editor",
-    column_config={
-        "Eingabewinkel (°)": (
-            st.column_config.NumberColumn(
-                "Eingabewinkel (°)",
-                format="%.1f",
-            )
-        ),
-        "Ausgangswinkel (°)": (
-            st.column_config.NumberColumn(
-                "Ausgangswinkel (°)",
-                format="%.1f",
-            )
-        ),
-        "Gewicht": (
-            st.column_config.NumberColumn(
-                "Gewicht",
-                format="%.1f",
-            )
-        ),
-    },
-)
-
-edited_target = sorted(
-    edited_target,
-    key=lambda row: row[
-        "Eingabewinkel (°)"
-    ],
-)
-
-try:
-    inputs = with_target_points(
-        inputs,
-        [
-            row["Eingabewinkel (°)"]
-            for row in edited_target
-        ],
-        [
-            row["Ausgangswinkel (°)"]
-            for row in edited_target
-        ],
-        [
-            row["Gewicht"]
-            for row in edited_target
-        ],
+    braked_points = _curve_rows(
+        (
+            mixed_inputs.braked
+            if mixed_inputs is not None
+            else pivot_inputs.braked
+        ).input_angles,
+        (
+            mixed_inputs.braked
+            if mixed_inputs is not None
+            else pivot_inputs.braked
+        ).output_angles,
+        (
+            mixed_inputs.braked
+            if mixed_inputs is not None
+            else pivot_inputs.braked
+        ).weights,
     )
-except WorkflowError as error:
-    st.error(str(error))
-    st.stop()
-
-if mixed_inputs is not None:
-    try:
-        mixed_inputs = (
-            mixed_brake_inputs_from_parts(
-                inputs.definition,
-                inputs.target_curve,
-                mixed_inputs.braked,
-            )
+    merged_rows = []
+    for angle in sorted(
+        set(unbraked_points)
+        | set(braked_points),
+    ):
+        point = unbraked_points.get(angle)
+        braked_point = braked_points.get(angle)
+        merged_rows.append(
+            {
+                INPUT_ANGLE_COL: angle,
+                UNBRAKED_TARGET_COL: (
+                    point["output"]
+                    if point is not None
+                    else None
+                ),
+                UNBRAKED_WEIGHT_COL: (
+                    point["weight"]
+                    if point is not None
+                    else None
+                ),
+                BRAKED_TARGET_COL: (
+                    braked_point["output"]
+                    if braked_point is not None
+                    else None
+                ),
+                BRAKED_WEIGHT_COL: (
+                    braked_point["weight"]
+                    if braked_point is not None
+                    else None
+                ),
+            }
         )
-    except WorkflowError as error:
-        st.error(str(error))
-        st.stop()
 
-braked_curve = None
-if mixed_inputs is not None:
-    st.subheader(
-        "Zielkurve voll gebremst"
-    )
-    st.caption(
-        "Die zweite Zielkurve (100 % Bremsweg) "
-        "kann hier direkt bearbeitet, "
-        "ergänzt und gelöscht werden. "
-        "Eingabewinkel müssen aufsteigend "
-        "und eindeutig sein; Gewichte werden "
-        "auf "
-        f"{MAX_WEIGHT:.0f} begrenzt. Beide "
-        "Zielkurven werden im Diagramm "
-        "gemeinsam dargestellt."
-    )
-    braked_rows = [
-        {
-            "Eingabewinkel (°)": (
-                math.degrees(angle)
-            ),
-            "Ausgangswinkel (°)": (
-                math.degrees(
-                    output,
-                )
-            ),
-            "Gewicht": weight,
-        }
-        for angle, output, weight in zip(
-            mixed_inputs.braked.input_angles,
-            mixed_inputs.braked.output_angles,
-            mixed_inputs.braked.weights,
-        )
-    ]
-    edited_braked = st.data_editor(
-        braked_rows,
+    edited_curves = st.data_editor(
+        merged_rows,
         num_rows="dynamic",
         width="stretch",
-        key="braked_curve_editor",
+        key="two_curve_editor",
         column_config={
-            "Eingabewinkel (°)": (
+            INPUT_ANGLE_COL: (
                 st.column_config.NumberColumn(
-                    "Eingabewinkel (°)",
+                    INPUT_ANGLE_COL,
+                    width="small",
                     format="%.1f",
                 )
             ),
-            "Ausgangswinkel (°)": (
+            UNBRAKED_TARGET_COL: (
                 st.column_config.NumberColumn(
-                    "Ausgangswinkel (°)",
+                    UNBRAKED_TARGET_COL,
+                    width="small",
+                    format="%.2f",
+                )
+            ),
+            UNBRAKED_WEIGHT_COL: (
+                st.column_config.NumberColumn(
+                    UNBRAKED_WEIGHT_COL,
+                    width="small",
                     format="%.1f",
                 )
             ),
-            "Gewicht": (
+            BRAKED_TARGET_COL: (
                 st.column_config.NumberColumn(
-                    "Gewicht",
+                    BRAKED_TARGET_COL,
+                    width="small",
+                    format="%.2f",
+                )
+            ),
+            BRAKED_WEIGHT_COL: (
+                st.column_config.NumberColumn(
+                    BRAKED_WEIGHT_COL,
+                    width="small",
                     format="%.1f",
                 )
             ),
         },
     )
-    edited_braked = sorted(
-        edited_braked,
-        key=lambda row: row[
-            "Eingabewinkel (°)"
-        ],
-    )
+
+    def _split_curve(
+        rows,
+        target_column,
+        weight_column,
+    ):
+        points = sorted(
+            (
+                row
+                for row in rows
+                if row.get(target_column)
+                is not None
+            ),
+            key=lambda row: row[
+                INPUT_ANGLE_COL
+            ],
+        )
+        return (
+            tuple(
+                row[INPUT_ANGLE_COL]
+                for row in points
+            ),
+            tuple(
+                row[target_column]
+                for row in points
+            ),
+            tuple(
+                (
+                    row[weight_column]
+                    if row.get(weight_column)
+                    is not None
+                    else 1.0
+                )
+                for row in points
+            ),
+        )
+
+    try:
+        inputs = with_target_points(
+            inputs,
+            *_split_curve(
+                edited_curves,
+                UNBRAKED_TARGET_COL,
+                UNBRAKED_WEIGHT_COL,
+            ),
+        )
+    except WorkflowError as error:
+        st.error(str(error))
+        st.stop()
     try:
         braked_curve = (
             TargetCurve.from_points_strict(
-                tuple(
-                    math.radians(
-                        row[
-                            "Eingabewinkel (°)"
-                        ],
-                    )
-                    for row in edited_braked
-                ),
-                tuple(
-                    math.radians(
-                        row[
-                            "Ausgangswinkel (°)"
-                        ],
-                    )
-                    for row in edited_braked
-                ),
-                tuple(
-                    float(
-                        row["Gewicht"],
-                    )
-                    for row in edited_braked
+                *_split_curve(
+                    edited_curves,
+                    BRAKED_TARGET_COL,
+                    BRAKED_WEIGHT_COL,
                 ),
             )
         )
     except ValueError as error:
         st.error(
-            f"Ungültige gebremste "
+            f"Ung\u00fcltige gebremste "
             f"Zielkurve: {error}",
         )
         st.stop()
-    try:
-        mixed_inputs = (
-            mixed_brake_inputs_from_parts(
-                inputs.definition,
-                inputs.target_curve,
-                braked_curve,
+    if mixed_inputs is not None:
+        try:
+            mixed_inputs = (
+                mixed_brake_inputs_from_parts(
+                    inputs.definition,
+                    inputs.target_curve,
+                    braked_curve,
+                )
             )
+        except WorkflowError as error:
+            st.error(str(error))
+            st.stop()
+    else:
+        try:
+            pivot_inputs = (
+                pivot_shift_inputs_from_parts(
+                    inputs.definition,
+                    inputs.target_curve,
+                    braked_curve,
+                    shift_lever_id=(
+                        pivot_inputs
+                        .shift_lever_id
+                    ),
+                    input_angles=tuple(
+                        inputs.input_angles,
+                    ),
+                )
+            )
+        except WorkflowError as error:
+            st.error(str(error))
+            st.stop()
+else:
+    st.header("Zielkurve")
+    st.caption(
+        "Die eingelesenen St\u00fctzpunkte der Zielkurve "
+        "k\u00f6nnen hier direkt bearbeitet, erg\u00e4nzt und "
+        "gel\u00f6scht werden. Eingabewinkel m\u00fcssen "
+        "aufsteigend und eindeutig sein; Gewichte "
+        "werden auf "
+        f"{MAX_WEIGHT:.0f} begrenzt. Die Diagramme "
+        "zeigen immer die aktuellen Werte."
+    )
+    target_rows = [
+        {
+            INPUT_ANGLE_COL: math.degrees(
+                angle,
+            ),
+            SINGLE_TARGET_COL: math.degrees(
+                output,
+            ),
+            SINGLE_WEIGHT_COL: weight,
+        }
+        for angle, output, weight in zip(
+            inputs.input_angles,
+            inputs.output_angles,
+            inputs.target_curve.weights,
+        )
+    ]
+    edited_target = st.data_editor(
+        target_rows,
+        num_rows="dynamic",
+        width="stretch",
+        key="target_curve_editor",
+        column_config={
+            INPUT_ANGLE_COL: (
+                st.column_config.NumberColumn(
+                    INPUT_ANGLE_COL,
+                    width="small",
+                    format="%.1f",
+                )
+            ),
+            SINGLE_TARGET_COL: (
+                st.column_config.NumberColumn(
+                    SINGLE_TARGET_COL,
+                    width="small",
+                    format="%.2f",
+                )
+            ),
+            SINGLE_WEIGHT_COL: (
+                st.column_config.NumberColumn(
+                    SINGLE_WEIGHT_COL,
+                    width="small",
+                    format="%.1f",
+                )
+            ),
+        },
+    )
+    edited_target = sorted(
+        edited_target,
+        key=lambda row: row[
+            INPUT_ANGLE_COL
+        ],
+    )
+    try:
+        inputs = with_target_points(
+            inputs,
+            [
+                row[INPUT_ANGLE_COL]
+                for row in edited_target
+            ],
+            [
+                row[SINGLE_TARGET_COL]
+                for row in edited_target
+            ],
+            [
+                row[SINGLE_WEIGHT_COL]
+                for row in edited_target
+            ],
         )
     except WorkflowError as error:
         st.error(str(error))
         st.stop()
+
+def _braked_chart_curve():
+    if mixed_inputs is not None:
+        return mixed_inputs.braked
+    if pivot_inputs is not None:
+        return pivot_inputs.braked
+    return None
+
 
 curve_column, weight_column = st.columns(2)
 with curve_column:
@@ -690,9 +936,9 @@ with curve_column:
         ],
     }
     if (
-        mixed_inputs is not None
+        _braked_chart_curve() is not None
         and len(
-            mixed_inputs.braked.input_angles
+            _braked_chart_curve().input_angles
         )
         == len(inputs.input_angles)
     ):
@@ -704,7 +950,7 @@ with curve_column:
                 1,
             )
             for angle in (
-                mixed_inputs.braked.output_angles
+                _braked_chart_curve().output_angles
             )
         ]
     y_columns = ["Ungebremst (°)"]
@@ -731,16 +977,16 @@ with weight_column:
         ),
     }
     if (
-        mixed_inputs is not None
+        _braked_chart_curve() is not None
         and len(
-            mixed_inputs.braked.weights
+            _braked_chart_curve().weights
         )
         == len(inputs.input_angles)
     ):
         weight_data[
             "Voll gebremst"
         ] = list(
-            mixed_inputs.braked.weights,
+            _braked_chart_curve().weights,
         )
     weight_y_columns = ["Ungebremst"]
     if "Voll gebremst" in weight_data:
@@ -959,36 +1205,66 @@ def _lever_rows(definition) -> list[dict]:
             ),
             "brake_angle_optimize": True,
             "pivot_x_min": (
-                lever.pivot.x
-                - DEFAULT_PIVOT_OFFSET
+                lever.pivot_x_min
+                if lever.pivot_x_min
+                is not None
+                else (
+                    lever.pivot.x
+                    - DEFAULT_PIVOT_OFFSET
+                )
             ),
             "pivot_x_max": (
-                lever.pivot.x
-                + DEFAULT_PIVOT_OFFSET
+                lever.pivot_x_max
+                if lever.pivot_x_max
+                is not None
+                else (
+                    lever.pivot.x
+                    + DEFAULT_PIVOT_OFFSET
+                )
             ),
             "pivot_x": lever.pivot.x,
             "pivot_x_optimize": False,
             "pivot_x_optimized": None,
             "pivot_x_adopt": False,
             "pivot_y_min": (
-                lever.pivot.y
-                - DEFAULT_PIVOT_OFFSET
+                lever.pivot_y_min
+                if lever.pivot_y_min
+                is not None
+                else (
+                    lever.pivot.y
+                    - DEFAULT_PIVOT_OFFSET
+                )
             ),
             "pivot_y_max": (
-                lever.pivot.y
-                + DEFAULT_PIVOT_OFFSET
+                lever.pivot_y_max
+                if lever.pivot_y_max
+                is not None
+                else (
+                    lever.pivot.y
+                    + DEFAULT_PIVOT_OFFSET
+                )
             ),
             "pivot_y": lever.pivot.y,
             "pivot_y_optimize": False,
             "pivot_y_optimized": None,
             "pivot_y_adopt": False,
             "pivot_z_min": (
-                lever.pivot.z
-                - DEFAULT_PIVOT_OFFSET
+                lever.pivot_z_min
+                if lever.pivot_z_min
+                is not None
+                else (
+                    lever.pivot.z
+                    - DEFAULT_PIVOT_OFFSET
+                )
             ),
             "pivot_z_max": (
-                lever.pivot.z
-                + DEFAULT_PIVOT_OFFSET
+                lever.pivot_z_max
+                if lever.pivot_z_max
+                is not None
+                else (
+                    lever.pivot.z
+                    + DEFAULT_PIVOT_OFFSET
+                )
             ),
             "pivot_z": lever.pivot.z,
             "pivot_z_optimize": False,
@@ -1055,6 +1331,10 @@ if (
     )
     st.session_state.pop(
         "optimized_snapshot",
+        None,
+    )
+    st.session_state.pop(
+        "pivot_shift_result",
         None,
     )
     st.session_state.pop(
@@ -1169,52 +1449,52 @@ edited_mechanism = st.data_editor(
     column_config={
         "id": st.column_config.NumberColumn(
             "id",
-            help="Eindeutige Hebel-ID (erster Hebel = Antrieb)",
+            width="small",help="Eindeutige Hebel-ID (erster Hebel = Antrieb)",
         ),
         "length_min": st.column_config.NumberColumn(
             "length_min",
-            format="%.1f",
+            width="small",format="%.1f",
         ),
         "length_max": st.column_config.NumberColumn(
             "length_max",
-            format="%.1f",
+            width="small",format="%.1f",
         ),
         "length": st.column_config.NumberColumn(
             "length",
-            format="%.1f",
+            width="small",format="%.1f",
         ),
         "length_optimize": (
             st.column_config.CheckboxColumn(
                 "Optimierung",
-                default=True,
+                width="small",default=True,
                 help="Hebellänge für die Optimierung freigeben",
             )
         ),
         "length_optimized": (
             st.column_config.NumberColumn(
                 "Optimiert",
-                format="%.1f",
+                width="small",format="%.1f",
                 help="Ergebnis des letzten Optimierungslaufs; wird geleert, sobald der Startwert geändert oder übernommen wird",
             )
         ),
         "length_adopt": (
             st.column_config.CheckboxColumn(
                 "Übernehmen",
-                default=False,
+                width="small",default=False,
                 help="Optimierten Wert als Startwert übernehmen",
             )
         ),
         "angle_min": st.column_config.NumberColumn(
             "angle_min (°)",
-            format="%.1f",
+            width="small",format="%.1f",
         ),
         "angle_max": st.column_config.NumberColumn(
             "angle_max (°)",
-            format="%.1f",
+            width="small",format="%.1f",
         ),
         "angle": st.column_config.NumberColumn(
             "angle (°)",
-            format="%.1f",
+            width="small",format="%.1f",
             help=(
                 "Startwinkel: Position des Hebels bei der "
                 "mittleren Stützstelle der Zielkurve "
@@ -1225,28 +1505,28 @@ edited_mechanism = st.data_editor(
         "angle_optimize": (
             st.column_config.CheckboxColumn(
                 "Optimierung",
-                default=True,
+                width="small",default=True,
                 help="Hebelwinkel für die Optimierung freigeben",
             )
         ),
         "angle_optimized": (
             st.column_config.NumberColumn(
                 "Optimiert",
-                format="%.1f",
+                width="small",format="%.1f",
                 help="Ergebnis des letzten Optimierungslaufs; wird geleert, sobald der Startwert geändert oder übernommen wird",
             )
         ),
         "angle_adopt": (
             st.column_config.CheckboxColumn(
                 "Übernehmen",
-                default=False,
+                width="small",default=False,
                 help="Optimierten Winkel als Startwert übernehmen",
             )
         ),
         "brake_angle": (
             st.column_config.NumberColumn(
-                "Bremswinkel (100 %)",
-                format="%.1f",
+                "Bremsw. (100 %)",
+                width="small",format="%.1f",
                 help=(
                     "Issue #127: eigene Anfangsposition des "
                     "Bremshebels im voll gebremsten Zustand, "
@@ -1259,118 +1539,118 @@ edited_mechanism = st.data_editor(
         "brake_angle_optimize": (
             st.column_config.CheckboxColumn(
                 "Optimierung",
-                default=True,
+                width="small",default=True,
                 help="Voll gebremste Position für die Optimierung freigeben",
             )
         ),
         "pivot_x_min": st.column_config.NumberColumn(
             "pivot_x_min",
-            format="%.1f",
+            width="small",format="%.1f",
         ),
         "pivot_x_max": st.column_config.NumberColumn(
             "pivot_x_max",
-            format="%.1f",
+            width="small",format="%.1f",
         ),
         "pivot_x": (
             st.column_config.NumberColumn(
                 "pivot_x",
-                format="%.1f",
+                width="small",format="%.1f",
             )
         ),
         "pivot_x_optimize": (
             st.column_config.CheckboxColumn(
                 "Optimierung",
-                default=False,
+                width="small",default=False,
                 help="Drehpunkt-x für die Optimierung freigeben",
             )
         ),
         "pivot_x_optimized": (
             st.column_config.NumberColumn(
                 "Optimiert",
-                format="%.1f",
+                width="small",format="%.1f",
                 help="Ergebnis des letzten Optimierungslaufs; wird geleert, sobald der Startwert geändert oder übernommen wird",
             )
         ),
         "pivot_x_adopt": (
             st.column_config.CheckboxColumn(
                 "Übernehmen",
-                default=False,
+                width="small",default=False,
                 help="Optimierte Drehpunkt-x-Position als Startwert übernehmen",
             )
         ),
         "pivot_y_min": st.column_config.NumberColumn(
             "pivot_y_min",
-            format="%.1f",
+            width="small",format="%.1f",
         ),
         "pivot_y_max": st.column_config.NumberColumn(
             "pivot_y_max",
-            format="%.1f",
+            width="small",format="%.1f",
         ),
         "pivot_y": (
             st.column_config.NumberColumn(
                 "pivot_y",
-                format="%.1f",
+                width="small",format="%.1f",
             )
         ),
         "pivot_y_optimize": (
             st.column_config.CheckboxColumn(
                 "Optimierung",
-                default=False,
+                width="small",default=False,
                 help="Drehpunkt-y für die Optimierung freigeben",
             )
         ),
         "pivot_y_optimized": (
             st.column_config.NumberColumn(
                 "Optimiert",
-                format="%.1f",
+                width="small",format="%.1f",
                 help="Ergebnis des letzten Optimierungslaufs; wird geleert, sobald der Startwert geändert oder übernommen wird",
             )
         ),
         "pivot_y_adopt": (
             st.column_config.CheckboxColumn(
                 "Übernehmen",
-                default=False,
+                width="small",default=False,
                 help="Optimierte Drehpunkt-y-Position als Startwert übernehmen",
             )
         ),
         "pivot_z_min": st.column_config.NumberColumn(
             "pivot_z_min",
-            format="%.1f",
+            width="small",format="%.1f",
         ),
         "pivot_z_max": st.column_config.NumberColumn(
             "pivot_z_max",
-            format="%.1f",
+            width="small",format="%.1f",
         ),
         "pivot_z": (
             st.column_config.NumberColumn(
                 "pivot_z",
-                format="%.1f",
+                width="small",format="%.1f",
             )
         ),
         "pivot_z_optimize": (
             st.column_config.CheckboxColumn(
                 "Optimierung",
-                default=False,
+                width="small",default=False,
                 help="Drehpunkt-z für die Optimierung freigeben",
             )
         ),
         "pivot_z_optimized": (
             st.column_config.NumberColumn(
                 "Optimiert",
-                format="%.1f",
+                width="small",format="%.1f",
                 help="Ergebnis des letzten Optimierungslaufs; wird geleert, sobald der Startwert geändert oder übernommen wird",
             )
         ),
         "pivot_z_adopt": (
             st.column_config.CheckboxColumn(
                 "Übernehmen",
-                default=False,
+                width="small",default=False,
                 help="Optimierte Drehpunkt-z-Position als Startwert übernehmen",
             )
         ),
         "pivot_on": st.column_config.TextColumn(
             "pivot_on",
-            help="lever_id (z. B. lever3), leer = fester Drehpunkt",
+            width="small",help="lever_id (z. B. lever3), leer = fester Drehpunkt",
         ),
     },
 )
@@ -1428,6 +1708,10 @@ except WorkflowError as error:
 if mixed_inputs is not None:
     template = mixed_brake_parameter_template(
         mixed_inputs
+    )
+elif pivot_inputs is not None:
+    template = pivot_shift_parameter_template(
+        pivot_inputs
     )
 else:
     template = parameter_template(inputs)
@@ -1714,6 +1998,32 @@ if mixed_inputs is not None:
     except WorkflowError as error:
         st.error(str(error))
         st.stop()
+elif pivot_inputs is not None:
+    try:
+        pivot_inputs = (
+            pivot_shift_inputs_from_parts(
+                inputs.definition,
+                inputs.target_curve,
+                pivot_inputs.braked,
+                shift_lever_id=(
+                    pivot_inputs.shift_lever_id
+                ),
+                input_angles=tuple(
+                    inputs.input_angles,
+                ),
+            )
+        )
+        active_template = (
+            apply_parameter_overrides(
+                pivot_shift_parameter_template(
+                    pivot_inputs
+                ),
+                overrides,
+            )
+        )
+    except WorkflowError as error:
+        st.error(str(error))
+        st.stop()
 
 if mixed_inputs is not None:
     preview_tab, manual_tab, result_tab = st.tabs(
@@ -1968,19 +2278,19 @@ if manual_tab is not None:
             column_config={
                 "Stufe": st.column_config.NumberColumn(
                     "Stufe",
-                    format="%d",
+                    width="small",format="%d",
                 ),
                 "Antrieb": st.column_config.NumberColumn(
                     "Antrieb (Hebel)",
-                    format="%d",
+                    width="small",format="%d",
                 ),
                 "Abtrieb": st.column_config.NumberColumn(
                     "Abtrieb (Hebel)",
-                    format="%d",
+                    width="small",format="%d",
                 ),
                 "Länge (mm)": st.column_config.NumberColumn(
                     "Länge (mm)",
-                    format="%.2f",
+                    width="small",format="%.2f",
                     help=(
                         "Gesperrt: Länge bleibt bei diesem "
                         "Wert, auch wenn Lagerpunkte oder "
@@ -1991,7 +2301,7 @@ if manual_tab is not None:
                 ),
                 "Sperren": st.column_config.CheckboxColumn(
                     "Sperren",
-                    default=False,
+                    width="small",default=False,
                     help=(
                         "Koppelstange von der Neuberechnung "
                         "ausnehmen (Länge bleibt fix)."
@@ -2257,6 +2567,157 @@ with result_tab:
                 st.rerun()
             except StopException:
                 pass
+        elif pivot_inputs is not None:
+            pivot_settings = PivotShiftSettings(
+                population_size=int(
+                    population_size
+                ),
+                children_count=int(
+                    children_count
+                ),
+                mutation_strength=(
+                    float(mutation_strength)
+                ),
+                max_generations=int(
+                    max_generations
+                ),
+                stagnation_limit=(
+                    int(stagnation_limit)
+                ),
+                gradient_weight=(
+                    float(
+                        gradient_weight_input
+                    )
+                ),
+                workers=int(
+                    workers_input
+                ),
+                seed=int(seed),
+            )
+            progress_pivot = st.progress(
+                0.0,
+                text=(
+                    "Pivot-Shift-Optimierung "
+                    "läuft …"
+                ),
+            )
+            st.button(
+                "Optimierung stoppen",
+                key="stop_pivot_button",
+            )
+
+            run_snapshot = {
+                int(row["id"]): {
+                    "length": float(
+                        row["length"],
+                    ),
+                    "angle": float(
+                        row["angle"],
+                    ),
+                    "pivot_x": float(
+                        row["pivot_x"],
+                    ),
+                    "pivot_y": float(
+                        row["pivot_y"],
+                    ),
+                    "pivot_z": float(
+                        row["pivot_z"],
+                    ),
+                }
+                for row in edited_mechanism
+                if row.get("id") is not None
+            }
+            store_session_state_stop_tolerant(
+                "optimized_snapshot",
+                run_snapshot,
+            )
+
+            def report_pivot(
+                generation: int,
+                best_score: float,
+            ) -> None:
+                try:
+                    progress_pivot.progress(
+                        min(
+                            generation
+                            / max(
+                                1,
+                                (
+                                    pivot_settings
+                                    .max_generations
+                                ),
+                            ),
+                            1.0,
+                        ),
+                        text=(
+                            f"Generation "
+                            f"{generation} · "
+                            f"Fitness "
+                            f"{best_score:.6f}"
+                        ),
+                    )
+                except (
+                    RerunException,
+                    StopException,
+                ) as error:
+                    raise OptimizationStopped(
+                        "Pivot-Shift-Optimierung "
+                        "vom Benutzer gestoppt.",
+                    ) from error
+
+            def persist_best_pivot(
+                generation: int,
+                values: dict[str, float],
+            ) -> None:
+                store_session_state_stop_tolerant(
+                    "intermediate_best",
+                    {
+                        "mode": "pivot",
+                        "generation": (
+                            generation
+                        ),
+                        "values": dict(
+                            values,
+                        ),
+                    },
+                )
+
+            try:
+                pivot_result = (
+                    run_pivot_shift_optimization(
+                        pivot_inputs,
+                        active_template,
+                        pivot_settings,
+                        progress=report_pivot,
+                        on_best=(
+                            persist_best_pivot
+                        ),
+                    )
+                )
+            except WorkflowError as error:
+                st.error(str(error))
+                st.stop()
+            store_session_state_stop_tolerant(
+                "pivot_shift_result",
+                pivot_result,
+            )
+            store_session_state_stop_tolerant(
+                "result",
+                None,
+            )
+            store_session_state_stop_tolerant(
+                "mixed_brake_result",
+                None,
+            )
+            store_session_state_stop_tolerant(
+                "intermediate_best",
+                None,
+            )
+            try:
+                progress_pivot.empty()
+                st.rerun()
+            except StopException:
+                pass
         settings = OptimizationSettings(
             population_size=int(population_size),
             children_count=int(children_count),
@@ -2416,6 +2877,9 @@ result = st.session_state.get("result")
 mixed_result = st.session_state.get(
     "mixed_brake_result"
 )
+pivot_result = st.session_state.get(
+    "pivot_shift_result"
+)
 
 
 def _debug_download_data() -> str:
@@ -2490,6 +2954,39 @@ def _debug_download_data() -> str:
         optimized_csv = (
             mixed_result.mechanism_csv
             if mixed_result is not None
+            else ""
+        )
+    elif pivot_inputs is not None:
+        mode = "pivot_shift"
+        result_obj = pivot_result
+        target_curves = [
+            target_curve_dict(
+                "unbraked",
+                pivot_inputs.unbraked,
+                inputs.input_angles,
+            ),
+            target_curve_dict(
+                "braked",
+                pivot_inputs.braked,
+                inputs.input_angles,
+            ),
+        ]
+        extra["shift_lever_id"] = (
+            pivot_inputs.shift_lever_id
+        )
+        extra["shift_mm"] = (
+            pivot_result.shift_mm
+            if pivot_result is not None
+            else None
+        )
+        optimized_definition = (
+            pivot_result.optimized_definition
+            if pivot_result is not None
+            else None
+        )
+        optimized_csv = (
+            pivot_result.mechanism_csv
+            if pivot_result is not None
             else ""
         )
     else:
@@ -2652,6 +3149,113 @@ if mixed_result is not None:
             st.iframe(
                 mixed_result.html,
                 height=900,
+            )
+elif pivot_result is not None:
+    with result_tab:
+        st.write(
+            f"**Stopgrund:** "
+            f"{pivot_result.stop_reason} · "
+            f"**Beste Fitness:** "
+            f"{pivot_result.best_score:.8f} · "
+            f"**Generationen:** "
+            f"{pivot_result.generations} · "
+            f"**Min. Übertragungswinkel:** "
+            f"{pivot_result.min_transmission_angle_deg:.1f}° "
+            f"· **Verschiebung:** "
+            f"({pivot_result.shift_mm[0]:.2f}, "
+            f"{pivot_result.shift_mm[1]:.2f}) mm"
+        )
+        if pivot_result.fitness_history:
+            st.line_chart(
+                {
+                    "Beste Fitness": (
+                        list(
+                            pivot_result
+                            .fitness_history,
+                        )
+                    ),
+                },
+                x_label="Generation",
+                y_label="Fitness",
+            )
+        chart_left, chart_right = st.columns(2)
+        with chart_left:
+            st.subheader(
+                "Ungebremst"
+            )
+            unbraked_chart = {
+                "Eing. (°)": list(
+                    pivot_result
+                    .input_angles_deg,
+                ),
+                "Ziel (°)": list(
+                    pivot_result
+                    .unbraked_target_deg,
+                ),
+                "Ist (°)": list(
+                    pivot_result
+                    .unbraked_actual_deg,
+                ),
+            }
+            target_actual_columns = [
+                "Ziel (°)",
+                "Ist (°)",
+            ]
+            st.line_chart(
+                unbraked_chart,
+                x="Eing. (°)",
+                y=target_actual_columns,
+                x_label="Eing. (°)",
+                y_label="Ausgang (°)",
+            )
+        with chart_right:
+            st.subheader(
+                "Voll gebremst"
+            )
+            braked_chart = {
+                "Eing. (°)": list(
+                    pivot_result
+                    .input_angles_deg,
+                ),
+                "Ziel (°)": list(
+                    pivot_result
+                    .braked_target_deg,
+                ),
+                "Ist (°)": list(
+                    pivot_result
+                    .braked_actual_deg,
+                ),
+            }
+            st.line_chart(
+                braked_chart,
+                x="Eing. (°)",
+                y=target_actual_columns,
+                x_label="Eing. (°)",
+                y_label="Ausgang (°)",
+            )
+        if not pivot_result.braked_buildable:
+            st.warning(
+                "Die gebremste Stellung des besten "
+                "Kandidaten konnte nicht aufgebaut "
+                "werden; die Verschiebung wurde "
+                "reduziert und es gilt der "
+                "reduzierte Zustand."
+            )
+        st.download_button(
+            "Debug-Datei herunterladen (JSON)",
+            data=_debug_download_data(),
+            file_name="debug_export.json",
+            mime="application/json",
+        )
+        if pivot_result.mechanism_csv:
+            st.download_button(
+                "Optimierte Mechanik "
+                "herunterladen (CSV)",
+                data=(pivot_result.mechanism_csv),
+                file_name=(
+                    "mechanism_optimized.csv"
+                ),
+                mime="text/csv",
             )
 elif result is not None:
     with result_tab:
