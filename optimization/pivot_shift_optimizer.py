@@ -730,15 +730,13 @@ class PivotShiftOptimizer:
             return 0.0
         angles = angles[:count]
         target_diff = tuple(
-            braked - unbraked
-            for unbraked, braked in zip(
-                first_target.sample(
-                    angles,
-                ).output_angles,
-                last_target.sample(
-                    angles,
-                ).output_angles,
+            last_target.evaluate(
+                angle,
             )
+            - first_target.evaluate(
+                angle,
+            )
+            for angle in angles
         )
         actual_diff = tuple(
             braked - unbraked
