@@ -16,7 +16,9 @@ Setup
   * Lever 3: partner of the pair on the common pivot
 - The candidate pipeline:
   (1) mutation of all parameters (length, angle, pivot and
-      the pair pivot's shift dx/dy within the room),
+      the pair pivot's shift dx/dy within the room; the room
+      follows the shift lever's optional pivot_x_min..
+      pivot_y_max columns of the mechanism CSV),
   (2) coupling rod lengths frozen in the UNSHIFTED (unbraked)
       position,
   (3) transfer function of the unbraked position,
@@ -87,10 +89,11 @@ TARGET_BRAKED_FILE = (
 #: Id of one lever of the displaced lever pair.
 SHIFT_LEVER_ID = 1
 
-#: Symmetric room around the unbraked pair pivot within
-#: which the pivot may be displaced for the braked state
-#: (millimetres).
-SHIFT_ROOM = (-20.0, 20.0)
+#: The room of the displacement follows the shift lever's
+#: OPTIONAL per-axis pivot limits in the mechanism CSV
+#: (columns pivot_x_min .. pivot_y_max): the braked pair
+#: pivot stays inside the same admissible room in which the
+#: unbraked pivot itself may be optimized.
 
 MIN_TRANSMISSION_ANGLE_DEG = math.degrees(
     MIN_TRANSMISSION_ANGLE
@@ -192,7 +195,6 @@ def main() -> None:
     template = CsvParameterFactory.create_pivot_shift(
         definition,
         shift_lever_id=SHIFT_LEVER_ID,
-        shift_bounds=SHIFT_ROOM,
     )
     print(f"\nParameters: {len(template.parameters)}")
     for param in template.parameters:

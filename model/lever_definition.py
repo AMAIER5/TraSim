@@ -107,6 +107,20 @@ class LeverDefinition:
     coupled: int | None = None
     pivot_on: str | None = None
 
+    # Optional per-axis limits of the lever's pivot position
+    # (the admissible room of the mounting point).  Each bound
+    # is optional on its own; ``None`` means unrestricted in
+    # that direction.  The pivot-shift approach uses them as
+    # the limits of the displaced pair pivot (braked state),
+    # and the pivot search-space parameters use them instead
+    # of the default symmetric offset.
+    pivot_x_min: float | None = None
+    pivot_x_max: float | None = None
+    pivot_y_min: float | None = None
+    pivot_y_max: float | None = None
+    pivot_z_min: float | None = None
+    pivot_z_max: float | None = None
+
     # Issue #127: the fully braked position of a brake lever as
     # its OWN attribute.  Historically the braked position was
     # pinned onto the ``angle_max`` bound, so the optimizer
@@ -127,6 +141,46 @@ class LeverDefinition:
         if self.brake_position is None:
             return self.angle_max
         return self.brake_position
+
+    @property
+    def pivot_limits(
+        self,
+    ) -> tuple[
+        tuple[float | None, float | None],
+        tuple[float | None, float | None],
+        tuple[float | None, float | None],
+    ]:
+        """Per-axis admissible limits of the pivot position
+        as ``((x_min, x_max), (y_min, y_max), (z_min, z_max))``.
+
+        ``None`` components are unrestricted.  Raises
+        ``ValueError`` when a minimum exceeds its maximum."""
+        limits = (
+            (self.pivot_x_min, self.pivot_x_max),
+            (self.pivot_y_min, self.pivot_y_max),
+            (self.pivot_z_min, self.pivot_z_max),
+        )
+        for minimum, maximum in limits:
+            if (
+                minimum is not None
+                and maximum is not None
+                and minimum > maximum
+            ):
+                raise ValueError(
+                    "pivot limits of lever "
+                    f"{self.id}: minimum must not be "
+                    "greater than maximum"
+                )
+        return limits
+
+    @property
+    def has_pivot_limits(self) -> bool:
+        """Whether any per-axis pivot limit is defined."""
+        return any(
+            bound is not None
+            for pair in self.pivot_limits
+            for bound in pair
+        )
 
     @property
     def pivot_reference(self) -> PivotReference | None:

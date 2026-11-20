@@ -151,6 +151,37 @@ users need no Python knowledge.
      mechanism, written in the convention of the
      input files.
 
+## Pivot-Shift-Modus (Verschiebung des Hebelpaar-Drehpunkts)
+
+Ersetzt der Mechanismus den modellierten Bremshebel durch ein
+**Hebelpaar mit gemeinsamem Drehpunkt** (zwei Hebel mit
+identischen `pivot_x`/`pivot_y`/`pivot_z`), erkennt die GUI
+das automatisch und schaltet in den Pivot-Shift-Modus anstelle
+des Mischer-Modus: der gebremste Zustand entsteht durch
+**Verschieben des gemeinsamen Drehpunkts** innerhalb des in
+der Mechanismus-Definition optional festgelegten Raums (
+Spalten `pivot_x_min` bis `pivot_y_max`). Kandidaten werden nur
+an den beiden Endpunkten bewertet (ungebremst = Shift 0,
+gebremst = verschobener Drehpunkt, identische Koppelstangen).
+
+- Die gebremste Zielkurve wird wie im Mischer-Modus als
+  zweite Datei ausgewählt; das Auswahlfeld wird aktiviert,
+  sobald ein Hebelpaar erkannt wird („Beispiel-Dateien
+  laden“ lädt `pivot_shift_mechanism.csv` mit beiden
+  Zielkurven).
+- Bei mehreren Hebelpaaren wählt der Schalter
+  **Shift-Hebel des verschobenen Drehpunkts** das Paar.
+- Die Zielkurven werden in der gemeinsamen Tabelle
+  bearbeitet (siehe oben); Verschiebung und Optimierung nutzen
+  die üblichen Sidebar-Einstellungen (Population,
+  Generationen, Worker, Seed …).
+- Das Ergebnis zeigt neben Stopgrund, Fitness-Verlauf und
+  Mindest-Übertragungswinkel die ermittelte
+  Verschiebung des Drehpunkts (mm) sowie zwei
+  Ist/Soll-Diagramme (ungebremst und voll gebremst); die
+  optimierte Mechanik lässt sich als CSV, der Lauf als
+  Debug-JSON herunterladen.
+
 ## Mischer-Modus (Bremsklappenbetätigung)
 
 Enthält die geladene `mechanism.csv` einen Hebel mit
@@ -227,10 +258,12 @@ id,...,pivot_on
   den beiden Sollkurven interpoliert; die
   Optimierung bewertet den Kandidaten über
   alle so gewählten Bremsstellungen.
-- Die gebremste Zielkurve erscheint nach dem
-  Hochladen als zweite editierbare Tabelle
-  („Zielkurve voll gebremst“) mit eigener
-  Gewichtsspalte; das Diagramm „Zielkurve“
+- Ungebremste und gebremste Zielkurve stehen in
+  EINER gemeinsamen editierbaren Tabelle
+  („Zielkurven ungebremst / voll gebremst“):
+  je Stützwinkel gibt es zwei zusätzliche
+  Spaltenpaare aus Zielwert und Gewicht der
+  gebremsten Kurve; das Diagramm „Zielkurve“
   zeigt beide Sollkurven gemeinsam, das
   Diagramm „Gewichte“ beide Gewichtsläufe.
   Die Gewichte der Zwischenstellungen werden

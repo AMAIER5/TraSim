@@ -192,7 +192,7 @@ class CsvReader:
             CsvReader._parse_optional_vector(row, convention)
         )
 
-        return LeverDefinition(
+        lever = LeverDefinition(
             id=int(row["id"]),
 
             length_min=convention.parse_float(
@@ -235,8 +235,48 @@ class CsvReader:
             driver=driver,
             coupled=coupled,
             pivot_on=pivot_on,
+            pivot_x_min=CsvReader._parse_optional_float(
+                row.get("pivot_x_min")
+            ),
+            pivot_x_max=CsvReader._parse_optional_float(
+                row.get("pivot_x_max")
+            ),
+            pivot_y_min=CsvReader._parse_optional_float(
+                row.get("pivot_y_min")
+            ),
+            pivot_y_max=CsvReader._parse_optional_float(
+                row.get("pivot_y_max")
+            ),
+            pivot_z_min=CsvReader._parse_optional_float(
+                row.get("pivot_z_min")
+            ),
+            pivot_z_max=CsvReader._parse_optional_float(
+                row.get("pivot_z_max")
+            ),
             brake_position=brake_position,
         )
+        # Eagerly validate the optional pivot limits so an
+        # inconsistent CSV fails at read time with the lever
+        # id in the message.
+        for axis, pair in zip(
+            ("x", "y", "z"),
+            lever.pivot_limits,
+        ):
+            minimum, maximum = pair
+            value = getattr(lever.pivot, axis)
+            if (
+                minimum is not None
+                and value < minimum
+            ) or (
+                maximum is not None
+                and value > maximum
+            ):
+                raise ValueError(
+                    f"lever {lever.id}: pivot {axis} value "
+                    f"{value} violates its limits "
+                    f"({minimum}, {maximum})"
+                )
+        return lever
 
     @staticmethod
     def _parse_optional_pivot_on(

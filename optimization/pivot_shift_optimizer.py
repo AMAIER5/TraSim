@@ -177,6 +177,13 @@ class PivotShiftOptimizer:
             definition,
             shift_lever_id,
         )
+        # Optional per-axis pivot limits of the shift lever
+        # from the mechanism definition: the displaced
+        # (braked) pair pivot stays inside the same room in
+        # which the unbraked pivot itself may be optimized.
+        self._pivot_limits = definition.get_lever(
+            shift_lever_id,
+        ).pivot_limits
         self._transmission_constraint = (
             transmission_angle_constraint
         )
@@ -319,12 +326,66 @@ class PivotShiftOptimizer:
     ) -> tuple[float, float]:
         """The candidate's braked displacement of the pair
         pivot (``(0, 0)`` when the candidate carries no shift
-        parameters)."""
+        parameters).
+
+        The raw parameter shift is clamped so that the
+        displaced (braked) pivot stays inside the shift
+        lever's optional pivot limits from the mechanism
+        definition — for every candidate, regardless of
+        where the optimizer moved the unbraked pivot
+        (analogous to the brake angle clamping of the mixed
+        brake optimizer)."""
         values = parameters.values()
-        return (
+        shift = (
             values.get(self._shift_names[0], 0.0),
             values.get(self._shift_names[1], 0.0),
         )
+        (x_min, x_max), (y_min, y_max), _ = (
+            self._pivot_limits
+        )
+        if not any(
+            bound is not None
+            for bound in (x_min, x_max, y_min, y_max)
+        ):
+            return shift
+        pivot = self.apply_parameters(
+            parameters,
+        ).get_lever(
+            self._shift_lever_id,
+        ).pivot
+        return (
+            self._axis_shift(
+                shift[0],
+                pivot.x,
+                x_min,
+                x_max,
+            ),
+            self._axis_shift(
+                shift[1],
+                pivot.y,
+                y_min,
+                y_max,
+            ),
+        )
+
+    @staticmethod
+    def _axis_shift(
+        shift: float,
+        position: float,
+        minimum: float | None,
+        maximum: float | None,
+    ) -> float:
+        if minimum is not None:
+            shift = max(
+                minimum - position,
+                shift,
+            )
+        if maximum is not None:
+            shift = min(
+                maximum - position,
+                shift,
+            )
+        return shift
 
     # ------------------------------------------------------------------
     # Simulation plumbing (analogous to MixedBrakeOptimizer)
