@@ -24,6 +24,7 @@ class MechanismDefinition:
 
     def __post_init__(self) -> None:
         self._validate_unique_ids()
+        self._validate_references()
 
     @property
     def lever_count(self) -> int:
@@ -92,3 +93,39 @@ class MechanismDefinition:
             raise ValueError(
                 "Lever IDs must be unique."
             )
+
+    def _validate_references(self) -> None:
+        """
+        Every lever reference must point to a defined
+        lever. Dangling ``driver``/``coupled``/``pivot_on``
+        references appear when a lever is removed without
+        cleaning up the levers that referenced it (issue
+        #141: stale references silently persisted into
+        the debug export), so they are rejected here.
+        """
+
+        ids = {lever.id for lever in self.levers}
+
+        for lever in self.levers:
+            for kind, reference in (
+                ("driver", lever.driver),
+                ("coupled", lever.coupled),
+            ):
+                if reference is not None and (
+                    reference not in ids
+                ):
+                    raise ValueError(
+                        f"Lever {lever.id}: {kind} "
+                        f"references unknown lever "
+                        f"{reference}."
+                    )
+            if lever.pivot_on is not None:
+                target = lever.pivot_reference
+                if target is not None and (
+                    target.lever_id not in ids
+                ):
+                    raise ValueError(
+                        f"Lever {lever.id}: pivot_on "
+                        f"references unknown lever "
+                        f"{target.lever_id}."
+                    )

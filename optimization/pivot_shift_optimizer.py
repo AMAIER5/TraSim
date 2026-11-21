@@ -754,6 +754,21 @@ class PivotShiftOptimizer:
         )
         return total / count
 
+    def output_offset(
+        self,
+        parameters: ParameterSet,
+    ) -> float:
+        """Anchor offset (radians) of the output shaft for
+        the given candidate (issue #141):  the
+        candidate's (clamped) start angle of the output
+        lever minus the raw reference output of the
+        unbraked target curve at the middle support
+        position.  Only meaningful with
+        ``anchor_output=True``; used by the workflow to
+        shift the reported result curves into the raw
+        target frame."""
+        return self._output_offset(parameters)
+
     def _output_offset(
         self,
         parameters: ParameterSet,

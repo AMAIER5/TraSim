@@ -36,12 +36,18 @@ from pathlib import Path
 from analysis.brake_curve_fitness import (
     BrakeCurveFitness,
 )
+from analysis.curve_plotter import (
+    BoxPlot,
+    CurvePlotter,
+    mechanism_states_from_results,
+)
 from analysis.target_curve import TargetCurve
 from analysis.transmission_angle import (
     MIN_TRANSMISSION_ANGLE,
     TransmissionAngleConstraint,
     min_transmission_angle,
 )
+from core.point3d import Point3D
 from gui.workflow import (
     OptimizationStopped,
     WorkflowError,
@@ -58,6 +64,7 @@ from model.mechanism_definition import (
 )
 from optimization.csv_parameter_factory import (
     CsvParameterFactory,
+    DEFAULT_SHIFT_OFFSET,
 )
 from optimization.evolution_engine import (
     EvolutionEngine,
@@ -90,7 +97,9 @@ __all__ = [
     "pivot_pair_candidates",
     "pivot_shift_inputs_from_parts",
     "pivot_shift_parameter_template",
+    "pivot_shift_result_report",
     "run_pivot_shift_optimization",
+    "shift_room_box",
 ]
 
 
@@ -161,6 +170,7 @@ class PivotShiftResult:
         MechanismDefinition | None
     ) = None
     mechanism_csv: str = ""
+    html: str = ""
 
 
 def pivot_pair_candidates(
@@ -360,6 +370,35 @@ def pivot_shift_parameter_template(
     )
 
 
+def _middle_support_index(
+    angles: tuple[float, ...],
+) -> int:
+    """Zero-based index of the middle support position
+    (same round-half-up convention as the mixed brake
+    workflow)."""
+    return int(math.floor(len(angles) / 2 + 0.5)) - 1
+
+
+def _reference_output_angle(
+    inputs: PivotShiftInputs,
+) -> float:
+    """Raw target output of the unbraked curve at the
+    middle support position (radians).  This is the
+    anchor the output lever's start angle is mapped
+    onto (same convention as the mixed brake mode);
+    the braked curve stays in the same raw frame, so
+    the data-side difference between the curves is
+    preserved."""
+    support = inputs.input_angles
+    if support is None:
+        support = tuple(
+            angle for angle in _motion_range(inputs)
+        )
+    return inputs.unbraked.evaluate(
+        support[_middle_support_index(support)]
+    )
+
+
 def _motion_range(
     inputs: PivotShiftInputs,
 ) -> MotionRange:
@@ -416,6 +455,10 @@ def _evaluator(
         transmission_angle_constraint=constraint,
         shift_effect_weight=(
             settings.shift_effect_weight
+        ),
+        anchor_output=True,
+        reference_output_angle=(
+            _reference_output_angle(inputs)
         ),
     )
     return optimizer.evaluate
@@ -474,6 +517,140 @@ def _combined_curve(
     )
 
 
+def shift_room_box(
+    definition: MechanismDefinition,
+    shift_lever_id: int,
+) -> BoxPlot:
+    """The room within which the pair pivot may be
+    displaced for the braked state (issue #140), as a
+    wireframe box around the shift lever's pivot.
+
+    The per-axis bounds come from the shift lever's
+    optional pivot limits; unrestricted axes fall back
+    to the symmetric default shift offset (same room
+    the optimizer uses).  The z axis carries no shift
+    freedom, so its extent is a small display
+    thickness only."""
+    lever = definition.get_lever(shift_lever_id)
+    (
+        (x_min, x_max),
+        (y_min, y_max),
+        (z_min, z_max),
+    ) = lever.pivot_limits
+    x0 = (
+        x_min
+        if x_min is not None
+        else lever.pivot.x - DEFAULT_SHIFT_OFFSET
+    )
+    x1 = (
+        x_max
+        if x_max is not None
+        else lever.pivot.x + DEFAULT_SHIFT_OFFSET
+    )
+    y0 = (
+        y_min
+        if y_min is not None
+        else lever.pivot.y - DEFAULT_SHIFT_OFFSET
+    )
+    y1 = (
+        y_max
+        if y_max is not None
+        else lever.pivot.y + DEFAULT_SHIFT_OFFSET
+    )
+    thickness = max(
+        5.0,
+        0.1 * max(x1 - x0, y1 - y0),
+    )
+    z0 = (
+        z_min
+        if z_min is not None
+        else lever.pivot.z - thickness
+    )
+    z1 = (
+        z_max
+        if z_max is not None
+        else lever.pivot.z + thickness
+    )
+    return BoxPlot(
+        name="Verschieberaum Drehpunkt",
+        minimum=Point3D(x=x0, y=y0, z=z0),
+        maximum=Point3D(x=x1, y=y1, z=z1),
+    )
+
+
+def pivot_shift_result_report(
+    *,
+    input_angles_deg: tuple[float, ...],
+    unbraked_target_deg: tuple[float, ...],
+    unbraked_actual_deg: tuple[float, ...],
+    braked_target_deg: tuple[float, ...],
+    braked_actual_deg: tuple[float, ...],
+    unbraked_states: tuple = (),
+    braked_states: tuple = (),
+    box: BoxPlot | None = None,
+    title: str = (
+        "TraSim \u2014 Ergebnis "
+        "(Pivot-Shift-Optimierung, "
+        "optimierte Geometrie)"
+    ),
+) -> str:
+    """HTML result report of a pivot shift run (issue
+    #140): the mechanism of the optimized geometry in
+    the unbraked AND the braked position under the
+    achieved target curves, plus the shift room of the
+    pair pivot drawn as a box.
+
+    The braked snapshots are drawn with their own
+    legend groups (suffixed names) so both states stay
+    separately toggleable in the 3D diagram."""
+    plotter = CurvePlotter(title=title)
+    input_rad = tuple(
+        math.radians(angle)
+        for angle in input_angles_deg
+    )
+    plotter.add_target_curve(
+        input_rad,
+        tuple(
+            math.radians(angle)
+            for angle in unbraked_target_deg
+        ),
+        label="Soll ungebremst",
+    )
+    plotter.add_target_curve(
+        input_rad,
+        tuple(
+            math.radians(angle)
+            for angle in braked_target_deg
+        ),
+        label="Soll voll gebremst",
+    )
+    if unbraked_actual_deg:
+        plotter.add_actual_curve(
+            input_rad,
+            tuple(
+                math.radians(angle)
+                for angle in unbraked_actual_deg
+            ),
+            label="Ist ungebremst",
+        )
+    if braked_actual_deg:
+        plotter.add_actual_curve(
+            input_rad,
+            tuple(
+                math.radians(angle)
+                for angle in braked_actual_deg
+            ),
+            label="Ist voll gebremst",
+        )
+    for state in unbraked_states:
+        plotter.add_mechanism_state(state)
+    for state in braked_states:
+        plotter.add_mechanism_state(state)
+    if box is not None:
+        plotter.add_box(box)
+    return plotter.build_html()
+
+
 def run_pivot_shift_optimization(
     inputs: PivotShiftInputs,
     template: ParameterSet,
@@ -528,6 +705,10 @@ def run_pivot_shift_optimization(
         transmission_angle_constraint=constraint,
         shift_effect_weight=(
             settings.shift_effect_weight
+        ),
+        anchor_output=True,
+        reference_output_angle=(
+            _reference_output_angle(inputs)
         ),
     )
 
@@ -656,31 +837,54 @@ def run_pivot_shift_optimization(
         optimized_definition,
         shift_lever_id=inputs.shift_lever_id,
     )
+    # Issue #141: the reported actual curves follow the
+    # optimizer's output anchoring (same convention as the
+    # mixed brake mode):  the candidate's output-lever start
+    # angle is mapped onto the raw target output of the
+    # unbraked curve at the middle support position, so the
+    # Ist curves are directly comparable with the Soll
+    # curves instead of carrying the constant installation
+    # offset of the output lever.
+    output_offset = optimizer.output_offset(
+        best,
+    )
     unbraked_actual: tuple[float, ...] = ()
     braked_actual: tuple[float, ...] = ()
     braked_buildable = False
     mechanisms = []
+    unbraked_results = None
+    braked_results = None
     try:
         mechanism = result_builder.build((0.0, 0.0))
         mechanisms.append(mechanism)
+        unbraked_results = (
+            result_simulator.simulate(mechanism)
+        )
         _angles, outputs = _combined_curve(
-            result_simulator.simulate(mechanism),
+            unbraked_results,
         )
         if outputs:
             unbraked_actual = tuple(
-                math.degrees(value)
+                math.degrees(
+                    value - output_offset
+                )
                 for value in outputs
             )
     except MechanismBuildError:
         pass
     try:
         mechanism = result_builder.build(shift)
+        braked_results = (
+            result_simulator.simulate(mechanism)
+        )
         _, outputs = _combined_curve(
-            result_simulator.simulate(mechanism),
+            braked_results,
         )
         if outputs:
             braked_actual = tuple(
-                math.degrees(value)
+                math.degrees(
+                    value - output_offset
+                )
                 for value in outputs
             )
             mechanisms.append(mechanism)
@@ -698,6 +902,82 @@ def run_pivot_shift_optimization(
         )
         minimum_deg = math.degrees(minimum)
 
+    # Issue #140: mechanism snapshots of the optimized
+    # geometry in the unbraked AND the braked position,
+    # drawn under the achieved curves together with the
+    # shift room of the pair pivot.
+    unbraked_states = ()
+    if (
+        mechanisms
+        and unbraked_results is not None
+    ):
+        unbraked_states = (
+            mechanism_states_from_results(
+                mechanisms[0],
+                unbraked_results,
+            )
+        )
+    braked_states = ()
+    if (
+        braked_buildable
+        and braked_results is not None
+    ):
+        braked_lever_names = {
+            lever.id: (
+                f"Lever {lever.id} gebremst"
+            )
+            for lever in optimized_definition.levers
+        }
+        braked_lever_colors = {
+            lever.id: "#64748b"
+            for lever in optimized_definition.levers
+        }
+        braked_states = (
+            mechanism_states_from_results(
+                mechanisms[-1],
+                braked_results,
+                lever_names=(
+                    braked_lever_names
+                ),
+                lever_colors=(
+                    braked_lever_colors
+                ),
+            )
+        )
+    input_angles_deg = tuple(
+        math.degrees(angle)
+        for angle in support
+    )
+    unbraked_target_deg = tuple(
+        math.degrees(value)
+        for value in inputs.unbraked.sample(
+            support,
+        ).output_angles
+    )
+    braked_target_deg = tuple(
+        math.degrees(value)
+        for value in inputs.braked.sample(
+            support,
+        ).output_angles
+    )
+    result_html = pivot_shift_result_report(
+        input_angles_deg=input_angles_deg,
+        unbraked_target_deg=(
+            unbraked_target_deg
+        ),
+        unbraked_actual_deg=(
+            unbraked_actual
+        ),
+        braked_target_deg=braked_target_deg,
+        braked_actual_deg=braked_actual,
+        unbraked_states=unbraked_states,
+        braked_states=braked_states,
+        box=shift_room_box(
+            optimized_definition,
+            inputs.shift_lever_id,
+        ),
+    )
+
     with tempfile.TemporaryDirectory() as temp:
         mechanism_path = Path(temp) / "mechanism.csv"
         CsvWriter.write_mechanism(
@@ -714,27 +994,17 @@ def run_pivot_shift_optimization(
         generations=generations,
         fitness_history=tuple(history),
         best_values=best.values(),
-        input_angles_deg=tuple(
-            math.degrees(angle)
-            for angle in support
-        ),
-        unbraked_target_deg=tuple(
-            math.degrees(value)
-            for value in inputs.unbraked.sample(
-                support,
-            ).output_angles
+        input_angles_deg=input_angles_deg,
+        unbraked_target_deg=(
+            unbraked_target_deg
         ),
         unbraked_actual_deg=unbraked_actual,
-        braked_target_deg=tuple(
-            math.degrees(value)
-            for value in inputs.braked.sample(
-                support,
-            ).output_angles
-        ),
+        braked_target_deg=braked_target_deg,
         braked_actual_deg=braked_actual,
         braked_buildable=braked_buildable,
         shift_mm=shift,
         min_transmission_angle_deg=minimum_deg,
         optimized_definition=optimized_definition,
         mechanism_csv=optimized_csv,
+        html=result_html,
     )

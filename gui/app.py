@@ -616,6 +616,58 @@ two_curve_mode = (
 
 braked_curve = None
 if two_curve_mode:
+    # Issue #141: the shared target-curve editor keeps
+    # its edit state between reruns.  Its key therefore
+    # follows the source bytes (same pattern as the
+    # mechanism editor), so a changed upload always
+    # starts from the file's rows and weights instead of
+    # any previous cell edits.
+    target_bytes = (
+        target_upload.getvalue()
+        if target_upload is not None
+        else None
+    )
+    braked_bytes = (
+        braked_upload.getvalue()
+        if braked_upload is not None
+        else None
+    )
+    two_curve_source = (
+        mechanism_bytes,
+        target_bytes,
+        braked_bytes,
+    )
+    if (
+        st.session_state.get(
+            "two_curve_source"
+        )
+        != two_curve_source
+    ):
+        st.session_state[
+            "two_curve_source"
+        ] = two_curve_source
+        st.session_state[
+            "two_curve_version"
+        ] = (
+            st.session_state.get(
+                "two_curve_version",
+                0,
+            )
+            + 1
+        )
+    two_curve_editor_key = (
+        "two_curve_editor_v"
+        + str(
+            st.session_state.get(
+                "two_curve_version",
+                1,
+            )
+        )
+    )
+else:
+    two_curve_editor_key = None
+
+if two_curve_mode:
     st.header(
         "Zielkurven ungebremst / voll gebremst"
     )
@@ -704,7 +756,7 @@ if two_curve_mode:
         merged_rows,
         num_rows="dynamic",
         width="stretch",
-        key="two_curve_editor",
+        key=two_curve_editor_key,
         column_config={
             INPUT_ANGLE_COL: (
                 st.column_config.NumberColumn(
@@ -3265,6 +3317,24 @@ elif pivot_result is not None:
                 y=target_actual_columns,
                 x_label="Eing. (°)",
                 y_label="Ausgang (°)",
+            )
+        # Issue #140: the optimized mechanism must be
+        # displayed again under the achieved target
+        # curves - in the unbraked AND the braked
+        # position, together with the shift room of the
+        # pair pivot drawn as a box.
+        if pivot_result.html:
+            st.download_button(
+                "Ergebnis-HTML herunterladen",
+                data=pivot_result.html,
+                file_name=(
+                    "pivot_shift_result.html"
+                ),
+                mime="text/html",
+            )
+            st.iframe(
+                pivot_result.html,
+                height=900,
             )
         if not pivot_result.braked_buildable:
             st.warning(

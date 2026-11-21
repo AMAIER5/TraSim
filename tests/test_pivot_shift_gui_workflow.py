@@ -10,6 +10,7 @@ workflow layer.
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -86,17 +87,28 @@ def test_inputs_from_parts_rejects_pivot_on():
 
 
 def test_inputs_from_parts_rejects_no_pair():
+    levers = [
+        lever
+        for lever in CsvReader
+        .read_mechanism(
+            EXAMPLES_DIR
+            / "pivot_shift_mechanism.csv",
+        )
+        .levers
+        if lever.id != 3
+    ]
+    # Removing lever 3 must also clean up its references
+    # (issue #141: dangling references are rejected).
+    levers = [
+        (
+            replace(lever, coupled=None)
+            if lever.coupled == 3
+            else lever
+        )
+        for lever in levers
+    ]
     definition = MechanismDefinition(
-        tuple(
-            lever
-            for lever in CsvReader
-            .read_mechanism(
-                EXAMPLES_DIR
-                / "pivot_shift_mechanism.csv",
-            )
-            .levers
-            if lever.id != 3
-        ),
+        tuple(levers),
     )
     unbraked = TargetCurve.from_csv_strict(
         EXAMPLES_DIR
