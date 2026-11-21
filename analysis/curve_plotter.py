@@ -96,6 +96,20 @@ class RodPlotLine:
 
 
 @dataclass(frozen=True, slots=True)
+class BoxPlot:
+    """
+    One rectangular room drawn as a wireframe box in
+    the 3D diagram (issue #140: the shift room of the
+    displaced pair pivot of a pivot-shift mechanism).
+    """
+
+    name: str
+    minimum: Point3D
+    maximum: Point3D
+    color: str = "#f59e0b"
+
+
+@dataclass(frozen=True, slots=True)
 class MechanismPlotState:
     """
     Snapshots of all levers of a mechanism at one
@@ -362,6 +376,7 @@ class CurvePlotter:
         self._actual_curves: list[
             CurvePlotSeries
         ] = []
+        self._boxes: list[BoxPlot] = []
 
     def add_mechanism_state(
         self,
@@ -371,6 +386,16 @@ class CurvePlotter:
         Add one mechanism snapshot to the 3D diagram.
         """
         self._mechanism_states.append(state)
+
+    def add_box(
+        self,
+        box: BoxPlot,
+    ) -> None:
+        """
+        Add one wireframe box (a spatial room) to the
+        3D diagram.
+        """
+        self._boxes.append(box)
 
     def set_target_curve(
         self,
@@ -531,9 +556,19 @@ class CurvePlotter:
                     "rods": rods,
                 }
             )
+        boxes = [
+            {
+                "name": box.name,
+                "min": _point(box.minimum),
+                "max": _point(box.maximum),
+                "color": box.color,
+            }
+            for box in self._boxes
+        ]
         return {
             "title": self._title,
             "mechanism_states": mechanism_states,
+            "boxes": boxes,
             "curves": [
                 _series_payload(series)
                 for series in (
@@ -627,6 +662,12 @@ def mechanism_states_from_results(
     position_labels: (
         tuple[str, str, str]
     ) = ("min", "mid", "max"),
+    lever_names: (
+        dict[int, str] | None
+    ) = None,
+    lever_colors: (
+        dict[int, str] | None
+    ) = None,
 ) -> tuple[
     MechanismPlotState,
     MechanismPlotState,
@@ -715,6 +756,8 @@ def mechanism_states_from_results(
             MechanismPlotState.from_mechanism(
                 mechanism,
                 lever_angles=lever_angles,
+                lever_names=lever_names,
+                lever_colors=lever_colors,
                 position_label=label,
                 position_angle=(
                     lever_angles[drive_id]
@@ -948,6 +991,45 @@ function leverTraces() {{
     return traces;
 }}
 
+function boxTraces() {{
+    const traces = [];
+    for (const box of data.boxes || []) {{
+        const x0 = box.min.x, x1 = box.max.x;
+        const y0 = box.min.y, y1 = box.max.y;
+        const z0 = box.min.z, z1 = box.max.z;
+        const corners = [
+            [x0, y0, z0], [x1, y0, z0], [x1, y1, z0],
+            [x0, y1, z0], [x0, y0, z1], [x1, y0, z1],
+            [x1, y1, z1], [x0, y1, z1]
+        ];
+        const edges = [
+            [0, 1], [1, 2], [2, 3], [3, 0],
+            [4, 5], [5, 6], [6, 7], [7, 4],
+            [0, 4], [1, 5], [2, 6], [3, 7]
+        ];
+        const xs = [], ys = [], zs = [];
+        for (const [a, b] of edges) {{
+            xs.push(corners[a][0], corners[b][0], null);
+            ys.push(corners[a][1], corners[b][1], null);
+            zs.push(corners[a][2], corners[b][2], null);
+        }}
+        traces.push({{
+            type: "scatter3d",
+            mode: "lines",
+            x: xs, y: ys, z: zs,
+            name: box.name,
+            legendgroup: box.name,
+            showlegend: true,
+            line: {{
+                color: box.color,
+                width: 4
+            }},
+            hovertemplate: box.name + "<extra></extra>"
+        }});
+    }}
+    return traces;
+}}
+
 function leverLayout() {{
     return {{
         margin: {{ t: 16, r: 16, b: 16, l: 16 }},
@@ -1026,7 +1108,9 @@ function curveLayout() {{
     }};
 }}
 
-const leverTracesData = leverTraces();
+const leverTracesData = leverTraces().concat(
+    boxTraces()
+);
 
 Plotly.newPlot(
     "lever-plot",

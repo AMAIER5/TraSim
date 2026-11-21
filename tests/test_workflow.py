@@ -354,9 +354,12 @@ def test_with_mechanism_levers_preserves_coupled_priority(inputs):
         "driver": 2,
         "coupled": 3,
     }
+    partner = dict(row, id=3)
+    partner.pop("driver")
+    partner.pop("coupled")
     edited = with_mechanism_levers(
         inputs,
-        [row],
+        [row, partner],
     )
     lever = edited.definition.levers[0]
     assert lever.coupled == 3

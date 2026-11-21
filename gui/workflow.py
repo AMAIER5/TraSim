@@ -665,7 +665,12 @@ def with_mechanism_levers(
     (user units) and are converted to radians.
     ``driver``/``coupled`` accept integers or ``None``;
     ``ref_x``/``ref_y``/``ref_z`` accept floats or
-    ``None`` (automatic reference direction).  Empty
+    ``None`` (automatic reference direction).  The
+    optional per-axis pivot limit columns
+    ``pivot_x_min``/``pivot_x_max``/``pivot_y_min``/
+    ``pivot_y_max``/``pivot_z_min``/``pivot_z_max``
+    accept floats or ``None`` and are carried over so
+    the pivot-shift room survives a table edit.  Empty
     cells from an editable UI table arrive as ``None``
     and are treated as absent.
 
@@ -745,6 +750,25 @@ def with_mechanism_levers(
                 f"Zahl ({value!r})."
             ) from error
         return brake_angle
+
+    def _optional_float(
+        row: Mapping[str, object],
+        key: str,
+    ) -> float | None:
+        value = row.get(key)
+        if value is None or (
+            isinstance(value, str)
+            and not value.strip()
+        ):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError) as error:
+            raise WorkflowError(
+                f"Hebel {row.get('id', '?')}: "
+                f"Feld {key!r} ist keine "
+                f"Zahl ({value!r})."
+            ) from error
 
     def _pivot_on(
         row: Mapping[str, object],
@@ -844,6 +868,30 @@ def with_mechanism_levers(
                     pivot_on=_pivot_on(row),
                     brake_position=_optional_brake_angle(
                         row,
+                    ),
+                    pivot_x_min=_optional_float(
+                        row,
+                        "pivot_x_min",
+                    ),
+                    pivot_x_max=_optional_float(
+                        row,
+                        "pivot_x_max",
+                    ),
+                    pivot_y_min=_optional_float(
+                        row,
+                        "pivot_y_min",
+                    ),
+                    pivot_y_max=_optional_float(
+                        row,
+                        "pivot_y_max",
+                    ),
+                    pivot_z_min=_optional_float(
+                        row,
+                        "pivot_z_min",
+                    ),
+                    pivot_z_max=_optional_float(
+                        row,
+                        "pivot_z_max",
                     ),
                 )
             )
