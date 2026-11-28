@@ -43,6 +43,7 @@ from mechanics.reference_restore import (
 from mechanics.stage import Stage
 from model.mechanism_definition import (
     MechanismDefinition,
+    propagate_coupled_angles,
 )
 from validation.stage_motion_validator import (
     StageMotionValidator,
@@ -349,41 +350,34 @@ class PivotShiftBuilder:
             for lever in definition.levers
         }
 
+        # Issue #149: the stages are re-solved until the
+        # torsion-coupled (shaft) levers are consistent with
+        # their partners, so the relative angle between
+        # coupled levers is the SAME in the unbraked and the
+        # braked build (the braked position differs from the
+        # unbraked one only in the displaced pair pivot).
+        drive_id = (
+            self._specs[0].driver_id
+            if self._specs
+            else None
+        )
         stages: list[Stage] = []
-        for spec in self._specs:
-            input_lever = levers[spec.driver_id]
-            output_lever = levers[spec.driven_id]
-            input_angle = current_angles[
-                spec.driver_id
-            ]
-            output_angle = restore_output_angle(
-                input_lever=input_lever,
-                output_lever=output_lever,
-                input_angle=input_angle,
-                rod_length=spec.rod_length,
-                reference_angle=(
-                    spec.unbraked_output_angle
-                ),
-                output_angle_min=(
-                    spec.output_angle_min
-                ),
-                output_angle_max=(
-                    spec.output_angle_max
-                ),
-            )
-            current_angles[spec.driven_id] = (
-                output_angle
-            )
-            stages.append(
-                Stage(
+        for _ in range(len(definition.levers) + 1):
+            previous = dict(current_angles)
+            stages = []
+            for spec in self._specs:
+                input_lever = levers[spec.driver_id]
+                output_lever = levers[spec.driven_id]
+                input_angle = current_angles[
+                    spec.driver_id
+                ]
+                output_angle = restore_output_angle(
                     input_lever=input_lever,
                     output_lever=output_lever,
+                    input_angle=input_angle,
                     rod_length=spec.rod_length,
-                    input_angle_min=(
-                        spec.input_angle_min
-                    ),
-                    input_angle_max=(
-                        spec.input_angle_max
+                    reference_angle=(
+                        spec.unbraked_output_angle
                     ),
                     output_angle_min=(
                         spec.output_angle_min
@@ -391,20 +385,52 @@ class PivotShiftBuilder:
                     output_angle_max=(
                         spec.output_angle_max
                     ),
-                    input_angle=input_angle,
-                    output_angle=output_angle,
-                    input_endpoint=(
-                        input_lever.end_position(
-                            input_angle
-                        )
-                    ),
-                    output_endpoint=(
-                        output_lever.end_position(
-                            output_angle
-                        )
-                    ),
                 )
+                current_angles[spec.driven_id] = (
+                    output_angle
+                )
+                stages.append(
+                    Stage(
+                        input_lever=input_lever,
+                        output_lever=output_lever,
+                        rod_length=spec.rod_length,
+                        input_angle_min=(
+                            spec.input_angle_min
+                        ),
+                        input_angle_max=(
+                            spec.input_angle_max
+                        ),
+                        output_angle_min=(
+                            spec.output_angle_min
+                        ),
+                        output_angle_max=(
+                            spec.output_angle_max
+                        ),
+                        input_angle=input_angle,
+                        output_angle=output_angle,
+                        input_endpoint=(
+                            input_lever.end_position(
+                                input_angle
+                            )
+                        ),
+                        output_endpoint=(
+                            output_lever.end_position(
+                                output_angle
+                            )
+                        ),
+                    )
+                )
+            propagate_coupled_angles(
+                definition,
+                current_angles,
+                skip_ids=(
+                    (drive_id,)
+                    if drive_id is not None
+                    else ()
+                ),
             )
+            if current_angles == previous:
+                break
 
         self._validation_results = []
         for index, stage in enumerate(stages):

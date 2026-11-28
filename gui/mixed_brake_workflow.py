@@ -840,10 +840,15 @@ def _reduce_brake_travel_to_largest_non_blocking(
     levers = []
     for lever in definition.levers:
         if lever.id == brake_id:
+            # The degrees-based grid round trip can move the
+            # reduced position a few ulps below the unbraked
+            # reference; clamp it so the brake travel never
+            # becomes negative.
             lever = replace(
                 lever,
-                brake_position=math.radians(
-                    reduced_deg
+                brake_position=max(
+                    math.radians(reduced_deg),
+                    lever.angle_start,
                 ),
             )
         levers.append(lever)
@@ -960,11 +965,21 @@ def build_mixed_brake_grid(
     brake = definition.get_lever(
         _brake_lever_id(definition)
     )
+    brake_min_deg = math.degrees(brake.angle_start)
+    brake_max_deg = math.degrees(
+        brake.resolved_brake_position,
+    )
+    if (
+        brake_max_deg < brake_min_deg
+        and brake_min_deg - brake_max_deg <= 1.0e-9
+    ):
+        # Float noise: an optimized start angle can sit a few
+        # ulps beyond the brake position; that means no brake
+        # travel, not an inverted grid.
+        brake_max_deg = brake_min_deg
     grid = BrakeGridSettings(
-        brake_min_deg=math.degrees(brake.angle_start),
-        brake_max_deg=math.degrees(
-            brake.resolved_brake_position,
-        ),
+        brake_min_deg=brake_min_deg,
+        brake_max_deg=brake_max_deg,
         position_count=position_count,
     )
     if motion is None:

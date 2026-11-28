@@ -129,3 +129,60 @@ class MechanismDefinition:
                         f"references unknown lever "
                         f"{target.lever_id}."
                     )
+
+def coupled_angle(
+    definition: MechanismDefinition,
+    lever: LeverDefinition,
+    partner_angle: float,
+) -> float:
+    """Angle of a torsion-coupled (shaft) lever when its
+    partner lever sits at ``partner_angle``.
+
+    A shaft coupling fixes the RELATIVE angle between the
+    two levers: at the reference pose it is
+    ``lever.angle_start - partner.angle_start``, and it
+    stays the same in every build position (issue #149)."""
+    partner = definition.get_lever(lever.coupled)
+    return (
+        partner_angle
+        + lever.angle_start
+        - partner.angle_start
+    )
+
+
+def propagate_coupled_angles(
+    definition: MechanismDefinition,
+    angles: dict[int, float],
+    *,
+    skip_ids: tuple[int, ...] = (),
+) -> None:
+    """Propagate torsion-coupled (shaft) lever angles in
+    ``angles`` to a fixpoint (issue #149).
+
+    A lever with a ``coupled`` reference that is not itself
+    driven by a rod follows its partner: its angle is the
+    partner's angle plus the constant coupling offset, so
+    the relative angle between coupled levers is identical
+    in the unbraked and the braked build.  Levers driven by
+    a rod (their angle is solved from the rod) and the ids
+    in ``skip_ids`` (the root drive lever) keep their angle.
+    """
+    while True:
+        changed = False
+        for lever in definition.levers:
+            if (
+                lever.coupled is None
+                or lever.driver is not None
+                or lever.id in skip_ids
+            ):
+                continue
+            expected = coupled_angle(
+                definition,
+                lever,
+                angles[lever.coupled],
+            )
+            if angles.get(lever.id) != expected:
+                angles[lever.id] = expected
+                changed = True
+        if not changed:
+            return
