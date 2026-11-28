@@ -27,6 +27,7 @@ local_packages = [
     'model',
     'optimization',
     'simulation',
+    'solver',
     'validation',
 ]
 hiddenimports += local_packages

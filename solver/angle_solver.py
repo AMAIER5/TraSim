@@ -112,6 +112,10 @@ class AngleSolver:
         self._last_root: float | None = None
         self._last_bracket_width: float = self.precision.bracket_step
 
+        # The output lever is immutable, so its scalar frame is
+        # constant for the lifetime of this solver.
+        self._output_constants = stage.output_lever.endpoint_constants()
+
         self.stats = {
             "adaptive_attempts": 0,
             "adaptive_success": 0,
@@ -190,6 +194,7 @@ class AngleSolver:
         residual = create_stage_objective(
             self.stage,
             input_angle,
+            output_constants=self._output_constants,
         )
 
         predicted = state.predict_output(

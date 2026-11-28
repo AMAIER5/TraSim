@@ -439,3 +439,15 @@ The project shall evolve into a reusable framework for
 - engineering design.
 
 Every architectural decision should support long-term maintainability over short-term convenience.
+
+---
+
+# 22. Performance
+
+Calculation speed is improved with two levers: refactoring of the
+allocation-free scalar hot path (always active) and an optional
+Cython transpilation of the solver residual (native build).
+
+See [docs/performance.md](performance.md) for details, the
+benchmark (`examples/benchmark_simulation.py`) and the rules that
+keep both levers bit-identical to the object-based reference path.

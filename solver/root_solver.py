@@ -29,6 +29,8 @@ import math
 
 from collections.abc import Callable
 
+_TWO_ULP_ONE = 2.0 * math.ulp(1.0)
+
 
 class RootSolver:
     """
@@ -370,8 +372,7 @@ class RootSolver:
             # Issue #20: tol1-style convergence threshold
             # combining machine epsilon and user tolerance.
             tolerance_step = (
-                2.0
-                * math.ulp(1.0)
+                _TWO_ULP_ONE
                 * abs(b)
                 +
                 tolerance

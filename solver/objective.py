@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from mechanics.stage import Stage
+from solver._rod_residual import make_stage_residual
 from solver.constraints import rod_length_error
 
 
@@ -54,6 +55,8 @@ def stage_error(
 def create_stage_objective(
     stage: Stage,
     input_angle: float,
+    *,
+    output_constants: tuple[float, ...] | None = None,
 ) -> Callable[[float], float]:
     """
     Create a residual function for one fixed input angle.
@@ -70,6 +73,12 @@ def create_stage_objective(
     input_angle:
         Fixed input lever angle [rad].
 
+    output_constants:
+        Optional precomputed scalar frame of the output lever
+        (``Lever.endpoint_constants``).  Solvers that solve many
+        input angles for the same stage can compute it once and
+        pass it here.
+
     Returns
     -------
     Callable[[float], float]
@@ -81,18 +90,16 @@ def create_stage_objective(
         input_angle
     )
 
-    def residual(
-        output_angle: float,
-    ) -> float:
+    if output_constants is None:
 
-        output_point = stage.output_position(
-            output_angle
+        output_constants = (
+            stage.output_lever.endpoint_constants()
         )
 
-        return rod_length_error(
-            input_point,
-            output_point,
-            stage.rod_length,
-        )
-
-    return residual
+    return make_stage_residual(
+        output_constants,
+        input_point.x,
+        input_point.y,
+        input_point.z,
+        stage.rod_length,
+    )
