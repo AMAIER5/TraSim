@@ -9,7 +9,7 @@ two endpoints of the displacement:
 
 (1) All parameters are mutated by the evolution engine
     inside their allowed ranges (length, angle, pivot and the
-    two shift parameters of the room).
+    three shift parameters (x, y, z) of the room).
 (2) The coupling rod lengths are computed by the builder in
     the UNSHIFTED (unbraked) position and stay frozen.
 (3) The transfer function of the unbraked position is
@@ -45,6 +45,7 @@ from mechanics.mechanism import Mechanism
 from mechanics.pivot_shift_builder import (
     MechanismBuildError,
     PivotShiftBuilder,
+    normalize_shift,
     resolve_pair_ids,
 )
 from model.mechanism_definition import (
@@ -77,13 +78,14 @@ BRAKED_SKIP_FACTOR = 10.0
 
 def shift_parameter_names(
     shift_lever_id: int,
-) -> tuple[str, str]:
-    """Names of the two optimizable parameters holding the
+) -> tuple[str, str, str]:
+    """Names of the three optimizable parameters holding the
     displacement of the shifted pair pivot
-    (``shift = (dx, dy)``, millimetres)."""
+    (``shift = (dx, dy, dz)``, millimetres)."""
     return (
         f"lever.{shift_lever_id}.shift.x",
         f"lever.{shift_lever_id}.shift.y",
+        f"lever.{shift_lever_id}.shift.z",
     )
 
 
@@ -230,11 +232,17 @@ class PivotShiftOptimizer:
             )
         )
         self._cache: dict[
-            tuple[ParameterSet, tuple[float, float]],
+            tuple[
+                ParameterSet,
+                tuple[float, float, float],
+            ],
             SimulationResult,
         ] = {}
         self._mechanism_cache: dict[
-            tuple[ParameterSet, tuple[float, float]],
+            tuple[
+                ParameterSet,
+                tuple[float, float, float],
+            ],
             Mechanism,
         ] = {}
         self._cache_hits = 0
@@ -382,7 +390,7 @@ class PivotShiftOptimizer:
         mechanisms = []
         unbraked = self._cached_simulation(
             parameters,
-            (0.0, 0.0),
+            (0.0, 0.0, 0.0),
         )
         if unbraked is None:
             logger.debug(
@@ -449,7 +457,7 @@ class PivotShiftOptimizer:
                 )
             )
         if self._transmission_constraint is not None:
-            for position in ((0.0, 0.0), shift):
+            for position in ((0.0, 0.0, 0.0), shift):
                 mechanism = self._cached_mechanism(
                     parameters,
                     position,
@@ -466,29 +474,39 @@ class PivotShiftOptimizer:
     def shift_for(
         self,
         parameters: ParameterSet,
-    ) -> tuple[float, float]:
+    ) -> tuple[float, float, float]:
         """The candidate's braked displacement of the pair
-        pivot (``(0, 0)`` when the candidate carries no shift
-        parameters).
+        pivot (``(0, 0, 0)`` when the candidate carries no
+        shift parameters).
 
         The raw parameter shift is clamped so that the
         displaced (braked) pivot stays inside the shift
         lever's optional pivot limits from the mechanism
-        definition — for every candidate, regardless of
-        where the optimizer moved the unbraked pivot
-        (analogous to the brake angle clamping of the mixed
-        brake optimizer)."""
+        definition — on every axis (x, y and z), for every
+        candidate, regardless of where the optimizer moved
+        the unbraked pivot (analogous to the brake angle
+        clamping of the mixed brake optimizer)."""
         values = parameters.values()
         shift = (
             values.get(self._shift_names[0], 0.0),
             values.get(self._shift_names[1], 0.0),
+            values.get(self._shift_names[2], 0.0),
         )
-        (x_min, x_max), (y_min, y_max), _ = (
-            self._pivot_limits
-        )
+        (
+            (x_min, x_max),
+            (y_min, y_max),
+            (z_min, z_max),
+        ) = self._pivot_limits
         if not any(
             bound is not None
-            for bound in (x_min, x_max, y_min, y_max)
+            for bound in (
+                x_min,
+                x_max,
+                y_min,
+                y_max,
+                z_min,
+                z_max,
+            )
         ):
             return shift
         pivot = self.apply_parameters(
@@ -508,6 +526,12 @@ class PivotShiftOptimizer:
                 pivot.y,
                 y_min,
                 y_max,
+            ),
+            self._axis_shift(
+                shift[2],
+                pivot.z,
+                z_min,
+                z_max,
             ),
         )
 
@@ -537,9 +561,9 @@ class PivotShiftOptimizer:
     def _cached_mechanism(
         self,
         parameters: ParameterSet,
-        shift: tuple[float, float],
+        shift: tuple[float, ...],
     ) -> Mechanism | None:
-        key = (parameters, shift)
+        key = (parameters, normalize_shift(shift))
         cached = self._mechanism_cache.get(key)
         if cached is not None:
             return cached
@@ -554,9 +578,9 @@ class PivotShiftOptimizer:
     def _cached_simulation(
         self,
         parameters: ParameterSet,
-        shift: tuple[float, float],
+        shift: tuple[float, ...],
     ) -> SimulationResult | None:
-        key = (parameters, shift)
+        key = (parameters, normalize_shift(shift))
         cached = self._cache.get(key)
         if cached is not None:
             self._cache_hits += 1

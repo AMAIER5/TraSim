@@ -100,6 +100,12 @@ st.set_page_config(
 MECHANISM_FILE = "mechanism.csv"
 TARGET_FILE = "targetcurve.csv"
 
+# Issue #146: height of the embedded HTML report iframes.
+# The report shows the transfer curves AND the 3D mechanism
+# below each other; the iframe must be tall enough for the
+# whole document so neither diagram needs internal scrolling.
+REPORT_IFRAME_HEIGHT = 1700
+
 
 def _download_content() -> str:
     return ""
@@ -1096,6 +1102,9 @@ result = st.session_state.get("result")
 mixed_result_state = st.session_state.get(
     "mixed_brake_result"
 )
+pivot_result_state = st.session_state.get(
+    "pivot_shift_result"
+)
 optimized_map: dict[str, float] = {}
 optimized_snapshot: dict[
     int,
@@ -1121,6 +1130,28 @@ elif (
 ):
     optimized_map = optimized_values(
         mixed_result_state.optimized_definition,
+    )
+    optimized_snapshot = (
+        st.session_state.get(
+            "optimized_snapshot",
+            {},
+        )
+    )
+elif (
+    pivot_result_state is not None
+    and (
+        pivot_result_state
+        .optimized_definition
+        is not None
+    )
+):
+    # Issue #144: after a pivot-shift run only
+    # "pivot_shift_result" is set; without this branch the
+    # "Optimiert" columns of the start-mechanism table stayed
+    # empty (None) and the optimized values could not be
+    # adopted for the next cycle.
+    optimized_map = optimized_values(
+        pivot_result_state.optimized_definition,
     )
     optimized_snapshot = (
         st.session_state.get(
@@ -2238,17 +2269,17 @@ with preview_tab:
                         preview_state,
                         show_actual=True,
                     ),
-                    height=900,
+                    height=REPORT_IFRAME_HEIGHT,
                 )
             else:
                 st.iframe(
                     preview_html,
-                    height=900,
+                    height=REPORT_IFRAME_HEIGHT,
                 )
         else:
             st.iframe(
                 preview_html,
-                height=900,
+                height=REPORT_IFRAME_HEIGHT,
             )
     else:
         st.info(
@@ -3218,7 +3249,7 @@ if mixed_result is not None:
                     result_state,
                     show_actual=True,
                 ),
-                height=900,
+                height=REPORT_IFRAME_HEIGHT,
             )
         else:
             # The selected brake position cannot be built
@@ -3227,7 +3258,7 @@ if mixed_result is not None:
             # brake position, instead of showing no curve.
             st.iframe(
                 mixed_result.html,
-                height=900,
+                height=REPORT_IFRAME_HEIGHT,
             )
 elif pivot_result is not None:
     with result_tab:
@@ -3242,7 +3273,8 @@ elif pivot_result is not None:
             f"{pivot_result.min_transmission_angle_deg:.1f}° "
             f"· **Verschiebung:** "
             f"({pivot_result.shift_mm[0]:.2f}, "
-            f"{pivot_result.shift_mm[1]:.2f}) mm"
+            f"{pivot_result.shift_mm[1]:.2f}, "
+            f"{pivot_result.shift_mm[2]:.2f}) mm"
         )
         if pivot_result.fitness_history:
             st.line_chart(
@@ -3334,7 +3366,7 @@ elif pivot_result is not None:
             )
             st.iframe(
                 pivot_result.html,
-                height=900,
+                height=REPORT_IFRAME_HEIGHT,
             )
         if not pivot_result.braked_buildable:
             st.warning(
@@ -3407,7 +3439,7 @@ elif result is not None:
         )
         st.iframe(
             result.html,
-            height=900,
+            height=REPORT_IFRAME_HEIGHT,
         )
 elif intermediate_generation is not None:
     with result_tab:

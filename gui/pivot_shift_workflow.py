@@ -7,8 +7,8 @@ fully braked) and the evolutionary optimization over the two
 endpoints of the pivot displacement:
 
 (1) mutation of all parameters (incl. the pair pivot's
-    shift dx/dy, bounded by the optional per-axis pivot limits
-    in the mechanism definition),
+    shift dx/dy/dz, bounded by the optional per-axis pivot
+    limits in the mechanism definition),
 (2) frozen coupling rod lengths in the unbraked position,
 (3) unbraked transfer function,
 (4) braked transfer function with IDENTICAL coupling rods,
@@ -162,7 +162,11 @@ class PivotShiftResult:
     braked_target_deg: tuple[float, ...]
     braked_actual_deg: tuple[float, ...]
     braked_buildable: bool
-    shift_mm: tuple[float, float] = (0.0, 0.0)
+    shift_mm: tuple[float, float, float] = (
+        0.0,
+        0.0,
+        0.0,
+    )
     min_transmission_angle_deg: float = field(
         default=0.0,
     )
@@ -467,13 +471,13 @@ def _evaluator(
 def _reduce_shift_to_buildable(
     optimizer: PivotShiftOptimizer,
     parameters: ParameterSet,
-) -> tuple[float, float]:
+) -> tuple[float, float, float]:
     """Shift of the best candidate, reduced along its own
     direction to the largest displacement whose braked
     mechanism still builds and simulates without blocking
-    ((0, 0) when nothing works)."""
+    ((0, 0, 0) when nothing works)."""
     shift = optimizer.shift_for(parameters)
-    if shift == (0.0, 0.0):
+    if shift == (0.0, 0.0, 0.0):
         return shift
     for fraction in (
         1.0,
@@ -482,9 +486,9 @@ def _reduce_shift_to_buildable(
         0.5,
         0.25,
     ):
-        candidate = (
-            shift[0] * fraction,
-            shift[1] * fraction,
+        candidate = tuple(
+            component * fraction
+            for component in shift
         )
         result = optimizer._cached_simulation(
             parameters,
@@ -495,7 +499,7 @@ def _reduce_shift_to_buildable(
             and result.success
         ):
             return candidate
-    return (0.0, 0.0)
+    return (0.0, 0.0, 0.0)
 
 
 def _combined_curve(
@@ -526,11 +530,9 @@ def shift_room_box(
     wireframe box around the shift lever's pivot.
 
     The per-axis bounds come from the shift lever's
-    optional pivot limits; unrestricted axes fall back
-    to the symmetric default shift offset (same room
-    the optimizer uses).  The z axis carries no shift
-    freedom, so its extent is a small display
-    thickness only."""
+    optional pivot limits on every axis (x, y and z);
+    unrestricted axes fall back to the symmetric default
+    shift offset (same room the optimizer uses)."""
     lever = definition.get_lever(shift_lever_id)
     (
         (x_min, x_max),
@@ -557,19 +559,15 @@ def shift_room_box(
         if y_max is not None
         else lever.pivot.y + DEFAULT_SHIFT_OFFSET
     )
-    thickness = max(
-        5.0,
-        0.1 * max(x1 - x0, y1 - y0),
-    )
     z0 = (
         z_min
         if z_min is not None
-        else lever.pivot.z - thickness
+        else lever.pivot.z - DEFAULT_SHIFT_OFFSET
     )
     z1 = (
         z_max
         if z_max is not None
-        else lever.pivot.z + thickness
+        else lever.pivot.z + DEFAULT_SHIFT_OFFSET
     )
     return BoxPlot(
         name="Verschieberaum Drehpunkt",
@@ -855,7 +853,9 @@ def run_pivot_shift_optimization(
     unbraked_results = None
     braked_results = None
     try:
-        mechanism = result_builder.build((0.0, 0.0))
+        mechanism = result_builder.build(
+            (0.0, 0.0, 0.0),
+        )
         mechanisms.append(mechanism)
         unbraked_results = (
             result_simulator.simulate(mechanism)
