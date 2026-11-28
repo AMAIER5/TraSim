@@ -349,6 +349,13 @@ A lever shall not be controlled by both `driver` and `coupled`.
 
 If both are specified: **coupled has priority**, driver is ignored.
 
+The builders enforce the constant relation in every build
+position (issue #149): `propagate_coupled_angles`
+(`model/mechanism_definition.py`) re-solves the stages until
+each shaft-coupled lever sits at its partner's angle plus the
+reference offset, so the relative angle between coupled levers
+is identical in the unbraked and the braked position.
+
 ### pivot_on Relationship (Mixer Lever)
 
 The optional `pivot_on` column moves a lever's pivot onto the

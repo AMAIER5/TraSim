@@ -231,7 +231,7 @@ with st.sidebar:
         "Populationsgröße",
         min_value=10,
         max_value=500,
-        value=100,
+        value=110,
         step=10,
         help=(
             "Anzahl der Mechanismus-Kandidaten "
@@ -270,7 +270,7 @@ with st.sidebar:
         "Mutationsstärke",
         min_value=0.001,
         max_value=0.05,
-        value=0.01,
+        value=0.035,
         step=0.001,
         format="%.3f",
         help=(
@@ -343,17 +343,17 @@ with st.sidebar:
         "Interpolierte Bremsstellungen",
         min_value=0,
         max_value=20,
-        value=3,
+        value=0,
         step=1,
         help=(
             "Anzahl der interpolierten Zwischen-"
             "stellungen zwischen der ungebremsten "
             "und der voll gebremsten Zielkurve, "
             "auf die im Mischer-Modus optimiert "
-            "wird. 0 = nur die beiden Grenzkurven "
-            "(schnellste Berechnung); "
-            "Standard 3 = Zwischenstellung alle "
-            "25 % Bremsweg."
+            "wird. Standard 0 = nur die beiden "
+            "Grenzkurven (schnellste Berechnung); "
+            "größere Werte optimieren zusätzliche "
+            "Zwischenstellungen."
         ),
     )
 

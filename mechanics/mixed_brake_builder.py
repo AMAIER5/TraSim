@@ -46,7 +46,10 @@ from mechanics.reference_restore import (
     restore_output_angle,
 )
 from mechanics.stage import Stage
-from model.mechanism_definition import MechanismDefinition
+from model.mechanism_definition import (
+    MechanismDefinition,
+    propagate_coupled_angles,
+)
 from validation.stage_motion_validator import (
     StageMotionValidator,
 )
@@ -332,62 +335,87 @@ class MixedBrakeBuilder:
             current_angles,
         )
 
+        # Issue #149: the stages are re-solved until the
+        # torsion-coupled (shaft) levers are consistent with
+        # their partners, so the relative angle between
+        # coupled levers is the SAME in the unbraked and the
+        # braked build.
+        drive_id = (
+            self._specs[0].driver_id
+            if self._specs
+            else None
+        )
         stages: list[Stage] = []
-        for spec in self._specs:
-            input_lever = levers[spec.driver_id]
-            output_lever = levers[spec.driven_id]
-            input_angle = current_angles[spec.driver_id]
-            # The reference pose is NOT rejected when a lever's
-            # start angle lies outside its admissible segment:
-            # the standard builder (CsvMechanismBuilder) builds
-            # such reference poses with validate_reference=False,
-            # and the admissible segment is enforced by the
-            # StageMotionValidator over the actual motion range.
-            # Rejecting the reference pose here made the whole
-            # mixed-brake optimization fail (every candidate
-            # received the blocking penalty) for optimized or
-            # hand-edited mechanisms whose angle_start falls
-            # outside [angle_min, angle_max], while the normal
-            # single-curve optimization still worked (issue #108).
-            output_angle = restore_output_angle(
-                input_lever=input_lever,
-                output_lever=output_lever,
-                input_angle=input_angle,
-                rod_length=spec.rod_length,
-                reference_angle=(
-                    spec.unbraked_output_angle
-                ),
-                output_angle_min=spec.output_angle_min,
-                output_angle_max=spec.output_angle_max,
-            )
-            current_angles[spec.driven_id] = output_angle
-            stages.append(
-                Stage(
+        for _ in range(len(definition.levers) + 1):
+            previous = dict(current_angles)
+            stages = []
+            for spec in self._specs:
+                input_lever = levers[spec.driver_id]
+                output_lever = levers[spec.driven_id]
+                input_angle = current_angles[spec.driver_id]
+                # The reference pose is NOT rejected when a lever's
+                # start angle lies outside its admissible segment:
+                # the standard builder (CsvMechanismBuilder) builds
+                # such reference poses with validate_reference=False,
+                # and the admissible segment is enforced by the
+                # StageMotionValidator over the actual motion range.
+                # Rejecting the reference pose here made the whole
+                # mixed-brake optimization fail (every candidate
+                # received the blocking penalty) for optimized or
+                # hand-edited mechanisms whose angle_start falls
+                # outside [angle_min, angle_max], while the normal
+                # single-curve optimization still worked (issue #108).
+                output_angle = restore_output_angle(
                     input_lever=input_lever,
                     output_lever=output_lever,
-                    rod_length=spec.rod_length,
-                    input_angle_min=spec.input_angle_min,
-                    input_angle_max=spec.input_angle_max,
-                    output_angle_min=(
-                        spec.output_angle_min
-                    ),
-                    output_angle_max=(
-                        spec.output_angle_max
-                    ),
                     input_angle=input_angle,
-                    output_angle=output_angle,
-                    input_endpoint=(
-                        input_lever.end_position(
-                            input_angle
-                        )
+                    rod_length=spec.rod_length,
+                    reference_angle=(
+                        spec.unbraked_output_angle
                     ),
-                    output_endpoint=(
-                        output_lever.end_position(
-                            output_angle
-                        )
-                    ),
+                    output_angle_min=spec.output_angle_min,
+                    output_angle_max=spec.output_angle_max,
                 )
+                current_angles[spec.driven_id] = output_angle
+                stages.append(
+                    Stage(
+                        input_lever=input_lever,
+                        output_lever=output_lever,
+                        rod_length=spec.rod_length,
+                        input_angle_min=spec.input_angle_min,
+                        input_angle_max=spec.input_angle_max,
+                        output_angle_min=(
+                            spec.output_angle_min
+                        ),
+                        output_angle_max=(
+                            spec.output_angle_max
+                        ),
+                        input_angle=input_angle,
+                        output_angle=output_angle,
+                        input_endpoint=(
+                            input_lever.end_position(
+                                input_angle
+                            )
+                        ),
+                        output_endpoint=(
+                            output_lever.end_position(
+                                output_angle
+                            )
+                        ),
+                    )
+                )
+
+            propagate_coupled_angles(
+                definition,
+                current_angles,
+                skip_ids=(
+                    (drive_id,)
+                    if drive_id is not None
+                    else ()
+                ),
             )
+            if current_angles == previous:
+                break
 
         self._validation_results = []
         for index, stage in enumerate(stages):
