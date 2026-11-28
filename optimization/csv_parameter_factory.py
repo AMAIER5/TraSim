@@ -191,7 +191,7 @@ class CsvParameterFactory:
         ) = None,
     ) -> ParameterSet:
         """Create a parameter template for the pivot-shift
-        approach: the standard lever parameters plus the two
+        approach: the standard lever parameters plus the three
         displacement parameters of the shifted pair pivot.
 
         The lever pair shares ONE common pivot: the partner
@@ -201,19 +201,19 @@ class CsvParameterFactory:
 
         The shift parameters bound the ROOM within which the
         common pivot of the lever pair may be displaced for
-        the braked state.  Their default value is 0 (the
-        unbraked position).  The room follows the shift
-        lever's optional per-axis pivot limits from the
+        the braked state, one per axis.  Their default value
+        is 0 (the unbraked position).  The room follows the
+        shift lever's optional per-axis pivot limits from the
         mechanism definition (``pivot_x_min`` .. ``pivot_z_max``
         columns): a displaced pivot stays inside the same
         admissible room in which the (unbraked) pivot itself
         may be optimized, e.g. ``shift.x`` ranges over
-        ``[pivot_x_min - pivot_x, pivot_x_max - pivot_x]``.
-        Without defined limits, ``shift_bounds`` configures
-        the room as a symmetric ``(minimum_offset,
-        maximum_offset)`` box around 0, defaulting to
-        ``DEFAULT_SHIFT_OFFSET``; an explicit ``shift_bounds``
-        also overrides the definition limits.
+        ``[pivot_x_min - pivot_x, pivot_x_max - pivot_x]``,
+        likewise for y and z.  Without defined limits,
+        ``shift_bounds`` configures the room as a symmetric
+        ``(minimum_offset, maximum_offset)`` box around 0,
+        defaulting to ``DEFAULT_SHIFT_OFFSET``; an explicit
+        ``shift_bounds`` also overrides the definition limits.
         """
         leader = definition.get_lever(shift_lever_id)
         pair_ids = {
@@ -229,7 +229,7 @@ class CsvParameterFactory:
         (
             (x_min, x_max),
             (y_min, y_max),
-            _z_limits,
+            (z_min, z_max),
         ) = leader.pivot_limits
         default_x_bounds = (
             (
@@ -251,9 +251,20 @@ class CsvParameterFactory:
             if y_max is not None
             else DEFAULT_SHIFT_OFFSET,
         )
+        default_z_bounds = (
+            (
+                z_min - leader.pivot.z
+                if z_min is not None
+                else -DEFAULT_SHIFT_OFFSET
+            ),
+            z_max - leader.pivot.z
+            if z_max is not None
+            else DEFAULT_SHIFT_OFFSET,
+        )
         if shift_bounds is None:
             shift_x_bounds = default_x_bounds
             shift_y_bounds = default_y_bounds
+            shift_z_bounds = default_z_bounds
         else:
             shift_min, shift_max = shift_bounds
             if shift_min > shift_max:
@@ -263,6 +274,7 @@ class CsvParameterFactory:
                 )
             shift_x_bounds = (shift_min, shift_max)
             shift_y_bounds = (shift_min, shift_max)
+            shift_z_bounds = (shift_min, shift_max)
         template = CsvParameterFactory.create(
             definition,
             pivot_bounds=pivot_bounds,
@@ -287,6 +299,10 @@ class CsvParameterFactory:
             (
                 f"lever.{shift_lever_id}.shift.y",
                 shift_y_bounds,
+            ),
+            (
+                f"lever.{shift_lever_id}.shift.z",
+                shift_z_bounds,
             ),
         ):
             parameters.append(

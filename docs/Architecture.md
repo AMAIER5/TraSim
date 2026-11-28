@@ -436,8 +436,8 @@ of the displacement (intermediate brake positions proved
 pointless for non-proportional brake behaviour):
 
 1. All parameters mutate inside their allowed ranges: the
-   standard lever parameters plus the two shift parameters
-   `lever.<shift_id>.shift.x/y` bounding the room of the
+   standard lever parameters plus the three shift parameters
+   `lever.<shift_id>.shift.x/y/z` bounding the room of the
    common pair pivot.
 2. The `PivotShiftBuilder`
    (`mechanics/pivot_shift_builder.py`) freezes the coupling
@@ -476,8 +476,8 @@ They play the same role for the pivot as
 - the shift parameters are derived from the shift lever's
   limits (`shift.x` ranges over
   `[pivot_x_min - pivot_x, pivot_x_max - pivot_x]`,
-  likewise for y), so an asymmetric room is possible per
-  axis,
+  likewise for y and z), so an asymmetric room is possible
+  per axis,
 - and `PivotShiftOptimizer.shift_for` clamps every
 candidate's raw shift so the displaced (braked) pivot
 always stays inside these limits — like the mixed brake

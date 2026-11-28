@@ -569,6 +569,9 @@ class CurvePlotter:
             "title": self._title,
             "mechanism_states": mechanism_states,
             "boxes": boxes,
+            "initial_camera": (
+                self._initial_camera()
+            ),
             "curves": [
                 _series_payload(series)
                 for series in (
@@ -585,6 +588,89 @@ class CurvePlotter:
             *self._target_curves,
             *self._actual_curves,
         ]
+
+    # ---------------------------------------------------------
+    # Initial 3D camera (issue #147)
+    # ---------------------------------------------------------
+
+    def _scene_points(self) -> list[Point3D]:
+        """All 3D points drawn in the lever diagram (lever
+        pivots, lever ends, zero-position ends, rod
+        endpoints and box corners)."""
+        points: list[Point3D] = []
+        for state in self._mechanism_states:
+            for lever in state.levers:
+                points.append(lever.pivot)
+                points.append(lever.end)
+                if lever.zero_end is not None:
+                    points.append(lever.zero_end)
+            for rod in state.rods:
+                points.append(rod.start)
+                points.append(rod.end)
+        for box in self._boxes:
+            points.append(box.minimum)
+            points.append(box.maximum)
+        return points
+
+    @staticmethod
+    def _axis_spans(
+        points: list[Point3D],
+    ) -> dict[str, float]:
+        """Min-max span per axis over the given points."""
+        spans = {"x": 0.0, "y": 0.0, "z": 0.0}
+        if not points:
+            return spans
+        for axis in spans:
+            values = [
+                getattr(point, axis)
+                for point in points
+            ]
+            spans[axis] = max(values) - min(values)
+        return spans
+
+    @staticmethod
+    def _unit_vector(
+        axis: str,
+        scale: float = 1.0,
+    ) -> dict[str, float]:
+        return {
+            "x": scale if axis == "x" else 0.0,
+            "y": scale if axis == "y" else 0.0,
+            "z": scale if axis == "z" else 0.0,
+        }
+
+    def _initial_camera(self) -> dict:
+        """Initial camera of the 3D mechanism diagram
+        (issue #147): the axis with the largest min-max
+        span is used as the HORIZONTAL axis on screen.  The
+        smallest span becomes the screen-up direction and
+        the remaining axis the view direction, so the
+        largest axis lies exactly horizontal in the initial
+        view (the user can still rotate freely)."""
+        spans = self._axis_spans(
+            self._scene_points(),
+        )
+        # Descending span; stable sort keeps x/y/z order on
+        # ties, which yields the conventional default view.
+        order = sorted(
+            ("x", "y", "z"),
+            key=lambda axis: spans[axis],
+            reverse=True,
+        )
+        depth_axis = order[1]
+        up_axis = order[2]
+        return {
+            "up": self._unit_vector(up_axis),
+            "eye": self._unit_vector(
+                depth_axis,
+                1.8,
+            ),
+            "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+            },
+        }
 
     def build_html(self) -> str:
         """
@@ -852,11 +938,11 @@ p {{
 }}
 #lever-plot {{
     width: 100%;
-    height: 620px;
+    height: 720px;
 }}
 #curve-plot {{
     width: 100%;
-    height: 520px;
+    height: 560px;
 }}
 </style>
 </head>
@@ -1031,11 +1117,21 @@ function boxTraces() {{
 }}
 
 function leverLayout() {{
+    // Issue #147: the initial camera is computed from the
+    // data spans (data.initial_camera): the axis with the
+    // largest min-max span lies horizontally on screen, the
+    // smallest span is the screen-up direction and the
+    // remaining axis is the view direction.
+    const camera = data.initial_camera || {{
+        up: {{ x: 0, y: 0, z: 1 }},
+        eye: {{ x: 1.25, y: 1.25, z: 0.8 }}
+    }};
     return {{
         margin: {{ t: 16, r: 16, b: 16, l: 16 }},
         legend: {{ itemsizing: "constant" }},
         scene: {{
             aspectmode: "data",
+            camera: camera,
             xaxis: {{ title: "X [mm]" }},
             yaxis: {{ title: "Y [mm]" }},
             zaxis: {{ title: "Z [mm]" }}

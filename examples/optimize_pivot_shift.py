@@ -16,9 +16,9 @@ Setup
   * Lever 3: partner of the pair on the common pivot
 - The candidate pipeline:
   (1) mutation of all parameters (length, angle, pivot and
-      the pair pivot's shift dx/dy within the room; the room
-      follows the shift lever's optional pivot_x_min..
-      pivot_y_max columns of the mechanism CSV),
+      the pair pivot's shift dx/dy/dz within the room; the
+      room follows the shift lever's optional pivot_x_min..
+      pivot_z_max columns of the mechanism CSV),
   (2) coupling rod lengths frozen in the UNSHIFTED (unbraked)
       position,
   (3) transfer function of the unbraked position,
@@ -91,7 +91,7 @@ SHIFT_LEVER_ID = 1
 
 #: The room of the displacement follows the shift lever's
 #: OPTIONAL per-axis pivot limits in the mechanism CSV
-#: (columns pivot_x_min .. pivot_y_max): the braked pair
+#: (columns pivot_x_min .. pivot_z_max): the braked pair
 #: pivot stays inside the same admissible room in which the
 #: unbraked pivot itself may be optimized.
 
@@ -316,15 +316,19 @@ def main() -> None:
         )
     dx = best[f"lever.{SHIFT_LEVER_ID}.shift.x"]
     dy = best[f"lever.{SHIFT_LEVER_ID}.shift.y"]
+    dz = best.get(
+        f"lever.{SHIFT_LEVER_ID}.shift.z",
+        0.0,
+    )
     print(
         f"  Braked pair pivot shift: "
-        f"({dx:.2f}, {dy:.2f}) mm"
+        f"({dx:.2f}, {dy:.2f}, {dz:.2f}) mm"
     )
 
     print("\nSIMULATED CURVES OF BEST CANDIDATE")
     for label, shift in (
-        ("unbraked", (0.0, 0.0)),
-        ("braked", (dx, dy)),
+        ("unbraked", (0.0, 0.0, 0.0)),
+        ("braked", (dx, dy, dz)),
     ):
         result = optimizer._cached_simulation(
             engine.best_candidate,

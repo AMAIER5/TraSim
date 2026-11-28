@@ -6,9 +6,9 @@ a defined room (replacement for the modelled brake lever).
 
 Instead of a brake lever carrying the moved pivot, the pivot
 itself is a design degree of freedom: the builder receives a
-planar shift ``(dx, dy)`` applied to the common pivot of the
-designated lever pair.  The mechanism is built statically per
-shift position:
+spatial shift ``(dx, dy, dz)`` applied to the common pivot of
+the designated lever pair.  The mechanism is built statically
+per shift position:
 
 1. Reference stage rod lengths are computed at the UNSHIFTED
    (unbraked) position from the reference lever angles.  They
@@ -54,8 +54,34 @@ from validation.stage_validation_result import (
 __all__ = [
     "MechanismBuildError",
     "PivotShiftBuilder",
+    "normalize_shift",
     "resolve_pair_ids",
 ]
+
+
+def normalize_shift(
+    shift: tuple[float, ...],
+) -> tuple[float, float, float]:
+    """Normalize a shift to three components ``(dx, dy, dz)``.
+
+    Two-component shifts (``(dx, dy)``) are kept for
+    compatibility and get ``dz = 0``; an empty shift is the
+    unbraked position ``(0, 0, 0)``.
+    """
+    if len(shift) == 3:
+        return (
+            float(shift[0]),
+            float(shift[1]),
+            float(shift[2]),
+        )
+    if len(shift) == 2:
+        return (float(shift[0]), float(shift[1]), 0.0)
+    if len(shift) == 0:
+        return (0.0, 0.0, 0.0)
+    raise ValueError(
+        "shift must have two or three components "
+        f"(dx, dy[, dz]), got {len(shift)}"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -314,24 +340,28 @@ class PivotShiftBuilder:
 
     def build(
         self,
-        shift: tuple[float, float] = (0.0, 0.0),
+        shift: tuple[float, ...] = (0.0, 0.0),
     ) -> Mechanism:
         """Build the mechanism with the common pair pivot
-        displaced by ``shift = (dx, dy)`` (millimetres).
+        displaced by ``shift = (dx, dy[, dz])``
+        (millimetres; a two-component shift displaces the
+        pivot in x and y only, see ``normalize_shift``).
 
-        ``shift = (0, 0)`` is the unbraked position; the rod
-        lengths are always those of the unbraked reference, so
-        the braked mechanism differs from the unbraked one
-        ONLY in the displaced pivot.
+        ``shift = (0, 0, 0)`` is the unbraked position; the
+        rod lengths are always those of the unbraked
+        reference, so the braked mechanism differs from the
+        unbraked one ONLY in the displaced pivot.
         """
+        dx, dy, dz = normalize_shift(shift)
         definition = self._definition
         levers: dict[int, Lever] = {}
         for lever in definition.levers:
             if lever.id in self._shifted_ids:
                 pivot = replace(
                     lever.pivot,
-                    x=lever.pivot.x + shift[0],
-                    y=lever.pivot.y + shift[1],
+                    x=lever.pivot.x + dx,
+                    y=lever.pivot.y + dy,
+                    z=lever.pivot.z + dz,
                 )
             else:
                 pivot = lever.pivot

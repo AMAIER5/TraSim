@@ -222,7 +222,7 @@ def test_shift_clamped_to_definition_limits(setup):
     )
     assert optimizer.shift_for(
         candidate,
-    ) == (5.0, 0.0)
+    ) == (5.0, 0.0, 0.0)
     mechanism = optimizer._cached_mechanism(
         candidate,
         optimizer.shift_for(candidate),
@@ -373,14 +373,18 @@ def test_unbuildable_braked_adds_skip_penalty(setup):
     # is constructed here.
     from optimization.parameter import Parameter
 
-    shift_x_name, shift_y_name = (
+    shift_x_name, shift_y_name, shift_z_name = (
         shift_parameter_names(1)
     )
     parameters = [
         parameter
         for parameter in template.parameters
         if parameter.name
-        not in (shift_x_name, shift_y_name)
+        not in (
+            shift_x_name,
+            shift_y_name,
+            shift_z_name,
+        )
     ]
     parameters.extend([
         Parameter(
@@ -391,6 +395,12 @@ def test_unbuildable_braked_adds_skip_penalty(setup):
         ),
         Parameter(
             name=shift_y_name,
+            minimum=-5000.0,
+            maximum=5000.0,
+            value=5000.0,
+        ),
+        Parameter(
+            name=shift_z_name,
             minimum=-5000.0,
             maximum=5000.0,
             value=5000.0,
