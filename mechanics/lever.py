@@ -15,7 +15,9 @@ The lever itself does not store a dynamic state.
 Performance optimization:
 - cached normalized rotation axis
 - cached reference direction (perpendicular to rotation axis)
+- cached Rodrigues constants (axis x reference, axis . reference)
 - direct Rodrigues rotation
+- allocation-free endpoint components for solver hot loops
 
 This keeps kinematic solving separate from component definition.
 """
@@ -74,6 +76,20 @@ class Lever:
         repr=False,
     )
 
+    #
+    # Cached Rodrigues constants (axis x reference, axis . reference)
+    #
+
+    _axis_cross_reference: Vector3D = field(
+        init=False,
+        repr=False,
+    )
+
+    _axis_dot_reference: float = field(
+        init=False,
+        repr=False,
+    )
+
     def __post_init__(self) -> None:
         """
         Validate input data and cache normalized axis and reference direction.
@@ -119,6 +135,22 @@ class Lever:
                 "_reference_direction",
                 normalized,
             )
+
+        object.__setattr__(
+            self,
+            "_axis_cross_reference",
+            self._normalized_axis.cross(
+                self._reference_direction,
+            ),
+        )
+
+        object.__setattr__(
+            self,
+            "_axis_dot_reference",
+            self._normalized_axis.dot(
+                self._reference_direction,
+            ),
+        )
 
     def _auto_reference_direction(self) -> Vector3D:
         """
@@ -181,14 +213,65 @@ class Lever:
         c = cos(angle_rad)
         s = sin(angle_rad)
 
-        # Rodrigues formula
-        cross = axis.cross(v)
-        dot = axis.dot(v)
+        # Rodrigues formula with cached constants
+        cross = self._axis_cross_reference
+        dot = self._axis_dot_reference
 
         return (
             v * c
             + cross * s
             + axis * dot * (1.0 - c)
+        )
+
+    def end_position_components(
+        self,
+        angle_rad: float,
+    ) -> tuple[float, float, float]:
+        """
+        Calculate lever endpoint as plain float components.
+
+        Allocation-free equivalent of ``end_position`` for hot
+        solver loops: performs exactly the same floating-point
+        operations in the same order, but returns a tuple of
+        floats instead of allocating ``Vector3D``/``Point3D``
+        objects.
+
+        Formula
+        -------
+        P_end = P_pivot + direction * length
+        """
+        axis = self._normalized_axis
+        v = self._reference_direction
+        cross = self._axis_cross_reference
+        dot = self._axis_dot_reference
+
+        c = cos(angle_rad)
+        s = sin(angle_rad)
+
+        direction_x = (
+            v.x * c
+            + cross.x * s
+            + axis.x * dot * (1.0 - c)
+        )
+
+        direction_y = (
+            v.y * c
+            + cross.y * s
+            + axis.y * dot * (1.0 - c)
+        )
+
+        direction_z = (
+            v.z * c
+            + cross.z * s
+            + axis.z * dot * (1.0 - c)
+        )
+
+        length = self.length
+
+        return (
+            self.pivot.x + direction_x * length,
+            self.pivot.y + direction_y * length,
+            self.pivot.z + direction_z * length,
         )
 
     def end_position(
@@ -202,10 +285,50 @@ class Lever:
         -------
         P_end = P_pivot + direction * length
         """
-        end_vector = (
-            self.direction(angle_rad)
-            *
-            self.length
+        x, y, z = self.end_position_components(
+            angle_rad
         )
 
-        return self.pivot + end_vector
+        return Point3D(x, y, z)
+
+    def endpoint_constants(
+        self,
+    ) -> tuple[float, ...]:
+        """
+        Scalar constants for allocation-free endpoint evaluation.
+
+        Returns the fixed Rodrigues frame of this lever as plain
+        floats so that solver hot loops can evaluate endpoints
+        without allocating objects:
+
+            (pivot.x, pivot.y, pivot.z,
+             axis.x, axis.y, axis.z,
+             reference.x, reference.y, reference.z,
+             cross.x, cross.y, cross.z,
+             dot, length)
+
+        where ``axis`` is the normalized rotation axis,
+        ``reference`` the normalized reference direction,
+        ``cross = axis x reference``, ``dot = axis . reference``.
+        """
+        pivot = self.pivot
+        axis = self._normalized_axis
+        reference = self._reference_direction
+        cross = self._axis_cross_reference
+
+        return (
+            pivot.x,
+            pivot.y,
+            pivot.z,
+            axis.x,
+            axis.y,
+            axis.z,
+            reference.x,
+            reference.y,
+            reference.z,
+            cross.x,
+            cross.y,
+            cross.z,
+            self._axis_dot_reference,
+            self.length,
+        )

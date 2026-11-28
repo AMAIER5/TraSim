@@ -26,6 +26,10 @@ build/
 *.egg-info/
 pip-wheel-metadata/
 
+# Cython native build (see docs/performance.md)
+*.so
+solver/_rod_residual.c
+
 # Editor and IDE settings
 .vscode/
 .idea/
